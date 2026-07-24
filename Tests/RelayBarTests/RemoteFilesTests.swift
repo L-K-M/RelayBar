@@ -1098,8 +1098,9 @@ final class RemoteMarkdownTests: XCTestCase {
             display: true
         )
         XCTAssertNotNil(image)
-        XCTAssertLessThanOrEqual(image?.size.width ?? .infinity, 1_600)
-        XCTAssertLessThanOrEqual(image?.size.height ?? .infinity, 500)
+        XCTAssertFalse(image?.data.isEmpty ?? true)
+        XCTAssertLessThanOrEqual(image?.width ?? .infinity, 1_600)
+        XCTAssertLessThanOrEqual(image?.height ?? .infinity, 500)
 
         let oversized = String(
             repeating: "x",

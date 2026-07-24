@@ -98,12 +98,40 @@ final class RelayBarCodeSyntaxHighlighter: CodeSyntaxHighlighter, @unchecked Sen
     }
 }
 
+struct RemoteMathImage: Sendable {
+    let data: Data
+    let width: Double
+    let height: Double
+
+    var size: CGSize {
+        CGSize(width: width, height: height)
+    }
+
+    func makeImage(formula: String) -> NSImage? {
+        guard let image = NSImage(data: data) else {
+            return nil
+        }
+        image.size = size
+        image.isTemplate = true
+        image.accessibilityDescription = "Math formula: \(formula)"
+        return image
+    }
+}
+
 actor RemoteMathRenderer {
     static let shared = RemoteMathRenderer()
 
     private static let maximumDisplaySize = CGSize(width: 1_600, height: 500)
     private static let maximumInlineSize = CGSize(width: 360, height: 26)
-    private let cache = NSCache<NSString, NSImage>()
+    private let cache = NSCache<NSString, CachedRemoteMathImage>()
+
+    private final class CachedRemoteMathImage {
+        let value: RemoteMathImage
+
+        init(_ value: RemoteMathImage) {
+            self.value = value
+        }
+    }
 
     init() {
         cache.countLimit = 128
@@ -116,7 +144,7 @@ actor RemoteMathRenderer {
             && error == nil
     }
 
-    func image(for formula: String, display: Bool) -> NSImage? {
+    func image(for formula: String, display: Bool) -> RemoteMathImage? {
         guard
             !formula.isEmpty,
             formula.count <= ObsidianMarkdownCompatibility.maximumFormulaCharacterCount
@@ -126,7 +154,7 @@ actor RemoteMathRenderer {
 
         let cacheKey = "\(display ? "display" : "inline")|\(formula)" as NSString
         if let cached = cache.object(forKey: cacheKey) {
-            return cached
+            return cached.value
         }
 
         let renderer = MTMathImage(
@@ -151,14 +179,20 @@ actor RemoteMathRenderer {
             width: max(1, renderedImage.size.width * scale),
             height: max(1, renderedImage.size.height * scale)
         )
-        renderedImage.isTemplate = true
-        renderedImage.accessibilityDescription = "Math formula: \(formula)"
-        cache.setObject(
-            renderedImage,
-            forKey: cacheKey,
-            cost: Int(renderedImage.size.width * renderedImage.size.height * 4)
+        guard let data = renderedImage.tiffRepresentation else {
+            return nil
+        }
+        let image = RemoteMathImage(
+            data: data,
+            width: renderedImage.size.width,
+            height: renderedImage.size.height
         )
-        return renderedImage
+        cache.setObject(
+            CachedRemoteMathImage(image),
+            forKey: cacheKey,
+            cost: data.count
+        )
+        return image
     }
 }
 
@@ -217,10 +251,11 @@ struct SafeMarkdownInlineImageProvider: InlineImageProvider {
                 referenceToken: referenceToken
             ),
             ["inline", "display"].contains(math.kind),
-            let image = await RemoteMathRenderer.shared.image(
+            let renderedImage = await RemoteMathRenderer.shared.image(
                 for: math.value,
                 display: math.kind == "display"
-            )
+            ),
+            let image = renderedImage.makeImage(formula: math.value)
         {
             return Image(nsImage: image)
         }
@@ -246,6 +281,11 @@ private struct MarkdownMathBlock: View {
 
     @State private var image: NSImage?
     @State private var didFail = false
+
+    nonisolated init(formula: String, display: Bool) {
+        self.formula = formula
+        self.display = display
+    }
 
     var body: some View {
         Group {
@@ -291,7 +331,11 @@ private struct MarkdownMathBlock: View {
         .task(id: "\(display)|\(formula)") {
             image = nil
             didFail = false
-            image = await RemoteMathRenderer.shared.image(for: formula, display: display)
+            let renderedImage = await RemoteMathRenderer.shared.image(
+                for: formula,
+                display: display
+            )
+            image = renderedImage?.makeImage(formula: formula)
             didFail = image == nil
         }
     }
