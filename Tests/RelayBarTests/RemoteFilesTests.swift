@@ -1323,6 +1323,9 @@ final class RemoteMarkdownTests: XCTestCase {
         XCTAssertFalse(SafeMarkdownLinkPolicy.allows(URL(string: "javascript:alert(1)")!))
         XCTAssertFalse(SafeMarkdownLinkPolicy.allows(URL(string: "data:text/plain,hello")!))
         XCTAssertFalse(
+            SafeMarkdownLinkPolicy.allows(URL(string: "mailto:?subject=Missing%20recipient")!)
+        )
+        XCTAssertFalse(
             SafeMarkdownLinkPolicy.allows(
                 URL(
                     string:

@@ -139,11 +139,20 @@ enum SafeMarkdownLinkPolicy {
         }
 
         if scheme == "mailto" {
-            return !url.path.isEmpty
+            return hasMailRecipient(in: url.absoluteString)
         }
         return url.user == nil
             && url.password == nil
             && url.host?.isEmpty == false
+    }
+
+    private static func hasMailRecipient(in value: String) -> Bool {
+        guard let separator = value.firstIndex(of: ":") else {
+            return false
+        }
+        let payload = value[value.index(after: separator)...]
+        let recipient = payload.prefix { $0 != "?" && $0 != "#" }
+        return !recipient.isEmpty
     }
 
     private static func internalMarkdownReference(from url: URL) -> String? {

@@ -1601,7 +1601,7 @@ enum ObsidianMarkdownCompatibility {
             ["http", "https", "mailto"].contains(scheme)
         {
             if scheme == "mailto" {
-                return !url.path.isEmpty
+                return hasMailRecipient(in: value)
             }
             return url.user == nil
                 && url.password == nil
@@ -1616,6 +1616,15 @@ enum ObsidianMarkdownCompatibility {
         return emailParts.count == 2
             && !emailParts[0].isEmpty
             && emailParts[1].contains(".")
+    }
+
+    private static func hasMailRecipient(in value: String) -> Bool {
+        guard let separator = value.firstIndex(of: ":") else {
+            return false
+        }
+        let payload = value[value.index(after: separator)...]
+        let recipient = payload.prefix { $0 != "?" && $0 != "#" }
+        return !recipient.isEmpty
     }
 
     private static func escapeHTMLText(_ value: String) -> String {
