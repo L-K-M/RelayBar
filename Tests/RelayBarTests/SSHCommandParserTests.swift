@@ -231,6 +231,7 @@ final class TunnelTests: XCTestCase {
         XCTAssertEqual(tunnel.name, legacy.name)
         XCTAssertEqual(tunnel.sshHost, legacy.sshHost)
         XCTAssertEqual(tunnel.additionalArguments, legacy.additionalArguments)
+        XCTAssertNil(tunnel.groupTag)
         XCTAssertEqual(tunnel.rules.count, 1)
         XCTAssertEqual(tunnel.rules[0].kind, .local)
         XCTAssertEqual(tunnel.rules[0].listen, .tcp(bindAddress: "127.0.0.1", port: 5432))
@@ -241,15 +242,89 @@ final class TunnelTests: XCTestCase {
     }
 
     func testNewJSONUsesTypedRulesInsteadOfLegacyDestinationFields() throws {
-        let tunnel = makeTunnel(bindAddress: "localhost")
+        var tunnel = makeTunnel(bindAddress: "localhost")
+        tunnel.groupTag = "Work"
         let data = try JSONEncoder().encode(tunnel)
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
 
         XCTAssertNotNil(object["rules"])
+        XCTAssertEqual(object["groupTag"] as? String, "Work")
         XCTAssertNil(object["localPort"])
         XCTAssertNil(object["destinationHost"])
+    }
+
+    func testGroupTagValidationNormalizesAndBoundsUserVisibleCharacters() {
+        XCTAssertEqual(
+            TunnelGroupTag.validate("  Client   Projects  "),
+            .valid("Client Projects")
+        )
+        XCTAssertEqual(TunnelGroupTag.validate("   "), .ungrouped)
+        XCTAssertEqual(
+            TunnelGroupTag.validate(String(repeating: "🙂", count: 32)),
+            .valid(String(repeating: "🙂", count: 32))
+        )
+        XCTAssertNotNil(
+            TunnelGroupTag.validate(
+                String(repeating: "🙂", count: 33)
+            ).errorMessage
+        )
+        XCTAssertNotNil(TunnelGroupTag.validate("Work\nPersonal").errorMessage)
+        XCTAssertNotNil(TunnelGroupTag.validate("Work\tPersonal").errorMessage)
+    }
+
+    func testGroupTagMatchingReusesExistingSpellingWithoutLocaleDependence() {
+        XCTAssertEqual(
+            TunnelGroupTag.resolve(
+                "  work ",
+                existingNames: ["Personal", "Work"]
+            ),
+            .valid("Work")
+        )
+        XCTAssertEqual(
+            TunnelGroupTag.canonicalKey("WORK"),
+            TunnelGroupTag.canonicalKey("work")
+        )
+    }
+
+    func testLegacyForwardingRecordPreservesAnAlreadyAddedGroupTag() throws {
+        let legacy = TaggedLegacyTunnel(
+            id: UUID(),
+            name: "Database",
+            localPort: 5_432,
+            destinationHost: "db.internal",
+            destinationPort: 5_432,
+            sshHost: "bastion",
+            bindAddress: "127.0.0.1",
+            additionalArguments: ["-p", "2222"],
+            groupTag: "  Production   Access "
+        )
+
+        let tunnel = try JSONDecoder().decode(
+            Tunnel.self,
+            from: JSONEncoder().encode(legacy)
+        )
+
+        XCTAssertEqual(tunnel.groupTag, "Production Access")
+        XCTAssertEqual(tunnel.rules.count, 1)
+        XCTAssertEqual(tunnel.id, legacy.id)
+    }
+
+    func testInvalidPersistedGroupTagFailsClosed() throws {
+        let tunnel = makeTunnel(bindAddress: "localhost")
+        let data = try JSONEncoder().encode(tunnel)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        object["groupTag"] = "Work\nInjected"
+
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                Tunnel.self,
+                from: JSONSerialization.data(withJSONObject: object)
+            )
+        )
     }
 
     func testBrowserURLUsesTypeCorrectLocalTCPRule() {
@@ -427,6 +502,73 @@ final class TunnelTests: XCTestCase {
     }
 }
 
+final class TunnelGroupingTests: XCTestCase {
+    func testAllUngroupedProfilesKeepOneFlatOrderedBucket() {
+        let first = makeTunnel(name: "First")
+        let second = makeTunnel(name: "Second")
+
+        let grouping = TunnelGrouping(tunnels: [first, second])
+
+        XCTAssertFalse(grouping.isGrouped)
+        XCTAssertEqual(grouping.groupNames, [])
+        XCTAssertEqual(grouping.sections.count, 1)
+        XCTAssertEqual(grouping.sections[0].id, .ungrouped)
+        XCTAssertEqual(grouping.sections[0].tunnels.map(\.id), [first.id, second.id])
+    }
+
+    func testNamedBucketsSortAndKeepUngroupedLastWithoutDuplicatingProfiles() {
+        let ungrouped = makeTunnel(name: "Scratch")
+        let workFirst = makeTunnel(name: "Dashboard", groupTag: "Work")
+        let personal = makeTunnel(name: "Photos", groupTag: "Personal")
+        let workSecond = makeTunnel(name: "Desktop", groupTag: "work")
+
+        let grouping = TunnelGrouping(
+            tunnels: [ungrouped, workFirst, personal, workSecond]
+        )
+
+        XCTAssertTrue(grouping.isGrouped)
+        XCTAssertEqual(
+            grouping.sections.map(\.displayName),
+            ["Personal", "Work", "Ungrouped"]
+        )
+        XCTAssertEqual(
+            grouping.sections[1].tunnels.map(\.id),
+            [workFirst.id, workSecond.id]
+        )
+        let renderedIDs = grouping.sections.flatMap { $0.tunnels.map(\.id) }
+        XCTAssertEqual(renderedIDs.count, 4)
+        XCTAssertEqual(Set(renderedIDs).count, 4)
+        XCTAssertEqual(Set(renderedIDs), Set([
+            ungrouped.id, workFirst.id, personal.id, workSecond.id
+        ]))
+    }
+
+    func testOneNamedBucketStillEnablesGroupedPresentation() {
+        let first = makeTunnel(name: "One", groupTag: "Work")
+        let second = makeTunnel(name: "Two", groupTag: "Work")
+
+        let grouping = TunnelGrouping(tunnels: [first, second])
+
+        XCTAssertTrue(grouping.isGrouped)
+        XCTAssertEqual(grouping.sections.map(\.displayName), ["Work"])
+        XCTAssertEqual(grouping.sections[0].tunnels.map(\.id), [first.id, second.id])
+    }
+
+    private func makeTunnel(
+        name: String,
+        groupTag: String? = nil
+    ) -> Tunnel {
+        Tunnel(
+            name: name,
+            localPort: 8_000 + name.count,
+            destinationHost: "localhost",
+            destinationPort: 80,
+            sshHost: "server",
+            groupTag: groupTag
+        )
+    }
+}
+
 private struct LegacyTunnel: Codable {
     let id: UUID
     let name: String
@@ -436,4 +578,16 @@ private struct LegacyTunnel: Codable {
     let sshHost: String
     let bindAddress: String?
     let additionalArguments: [String]
+}
+
+private struct TaggedLegacyTunnel: Codable {
+    let id: UUID
+    let name: String
+    let localPort: Int
+    let destinationHost: String
+    let destinationPort: Int
+    let sshHost: String
+    let bindAddress: String?
+    let additionalArguments: [String]
+    let groupTag: String?
 }

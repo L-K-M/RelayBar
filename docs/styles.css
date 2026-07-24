@@ -432,6 +432,36 @@ h1 {
   height: auto;
 }
 
+.remote-files {
+  padding-block: 120px;
+  border-top: 1px solid var(--line);
+}
+
+.remote-files-intro {
+  max-width: 760px;
+  margin-bottom: 44px;
+}
+
+.capability-shot {
+  overflow: hidden;
+  border: 1px solid rgba(16, 33, 59, 0.15);
+  border-radius: 24px;
+  background: #15181c;
+  box-shadow: 0 30px 80px rgba(20, 47, 78, 0.16);
+}
+
+.capability-shot .shot-caption {
+  border-color: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.65);
+  background: #1b1e22;
+}
+
+.capability-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .roadmap {
   padding-block: 120px;
   border-top: 1px solid var(--line);
@@ -822,6 +852,13 @@ h1 {
     min-height: 470px;
   }
 
+  .glow-one {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    transform: translate(0, -10px);
+  }
+
   .screenshot-window {
     width: 92%;
     border-radius: 19px;
@@ -843,6 +880,14 @@ h1 {
 
   .workflow {
     padding-block: 90px;
+  }
+
+  .remote-files {
+    padding-block: 85px;
+  }
+
+  .capability-shot {
+    border-radius: 18px;
   }
 
   .section-copy h2,

@@ -20,6 +20,7 @@
 - A successful complete profile resets the retry count.
 - Each retry creates a new control directory and clears prior runtime port allocations.
 - Stop, edit, delete, and quit terminate the master and active helper, cancel startup and pending retries, and clean owned sockets and control files.
+- Group-only edits and group move, rename, or ungroup actions do not stop or launch SSH. They preserve stopped, starting, retrying, running, or failed phase and all process-owned runtime state.
 - Exhaustion changes the profile to failed and requires another user start.
 
 Phases are `stopped`, `starting`, `retrying`, `running`, and `failed`.

@@ -151,6 +151,48 @@ final class RemoteServerTests: XCTestCase {
     }
 
     @MainActor
+    func testGroupTagsDoNotSplitOrMergeRemoteServerConnections() {
+        let work = Tunnel(
+            name: "Dashboard",
+            localPort: 9_119,
+            destinationHost: "127.0.0.1",
+            destinationPort: 9_119,
+            sshHost: "spark-422e.local",
+            additionalArguments: ["-p", "22"],
+            groupTag: "Work"
+        )
+        let personal = Tunnel(
+            name: "Photos",
+            localPort: 9_120,
+            destinationHost: "127.0.0.1",
+            destinationPort: 9_120,
+            sshHost: "spark-422e.local",
+            additionalArguments: ["-p", "22"],
+            groupTag: "Personal"
+        )
+        let distinct = Tunnel(
+            name: "Alternate",
+            localPort: 9_121,
+            destinationHost: "127.0.0.1",
+            destinationPort: 9_121,
+            sshHost: "spark-422e.local",
+            additionalArguments: ["-p", "2222"],
+            groupTag: "Work"
+        )
+
+        let model = RemoteFilesModel(tunnels: [work, personal, distinct])
+
+        XCTAssertEqual(model.servers.count, 2)
+        XCTAssertEqual(
+            Set(model.servers.map(\.connectionIdentity)),
+            Set([
+                RemoteServer(tunnel: work).connectionIdentity,
+                RemoteServer(tunnel: distinct).connectionIdentity
+            ])
+        )
+    }
+
+    @MainActor
     func testKeepsSSHConnectionsWithDifferentAliasesOrArgumentsSeparate() {
         let defaultConnection = Tunnel(
             name: "Dashboard",

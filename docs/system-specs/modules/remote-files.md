@@ -7,7 +7,7 @@ Remote Files opens an exact folder on a saved SSH server without adding search, 
 - A labeled **Remote Files…** row appears below the tunnel list.
 - The row opens or focuses one separate native window.
 - The launcher requires an absolute remote path and a saved server.
-- The server picker collapses forwarding presets that have the exact same SSH host and SSH arguments into one SSH-host entry. Different host aliases or SSH arguments remain separate because they may select different credentials, ports, or routes.
+- The server picker collapses forwarding presets that have the exact same SSH host and SSH arguments into one SSH-host entry. Group tags and forwarding-rule differences do not split equivalent connections. Different host aliases or SSH arguments remain separate because they may select different credentials, ports, or routes.
 - A single Quick Add tunnel whose generated name matches its forwarded destination is labelled by its SSH host in the server picker. An intentional custom name remains visible with the SSH host for context when that SSH connection is not duplicated.
 - A successful open changes the compact launcher into a wider browser window.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.

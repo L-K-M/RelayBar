@@ -2,7 +2,8 @@
 
 RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profiles and exact-path remote file access. It runs macOS's built-in `/usr/bin/ssh` and `/usr/bin/sftp` directly.
 
-[Download the latest release](https://github.com/lx2026/RelayBar/releases/latest)
+[Download v1.2.0-beta.1](https://github.com/lx2026/RelayBar/releases/download/v1.2.0-beta.1/RelayBar.zip)
+· [Changelog](CHANGELOG.md)
 
 ## Screenshots
 
@@ -11,11 +12,16 @@ RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profi
   <img src="docs/screenshots/relaybar-add-tunnel.png" alt="RelayBar new tunnel form" width="360">
 </p>
 
+<p align="center">
+  <img src="docs/designs/media/001/remote-files-concept-a.png" alt="RelayBar Remote Files flow from the menu through browsing, preview, and download" width="760">
+</p>
+
 ## What it does
 
 - Imports repeated and mixed `-L`, `-D`, and `-R` rules from forwarding-only SSH commands
 - Supports TCP ports, Unix sockets, local SOCKS, reverse SOCKS, and automatic remote ports
 - Runs every rule in a profile over one managed SSH connection
+- Optionally groups saved profiles into lightweight menu-bar sections
 - Starts and stops each profile with one click
 - Opens an unambiguous local TCP forward in the default browser with one click
 - Retries unexpected disconnects up to 10 times with exponential backoff
@@ -54,13 +60,14 @@ RelayBar handles the few steps between a remote server and your Mac. Use Claude 
    - ~~Stop managed SSH processes when RelayBar quits.~~
    - ~~Combine repeated local, SOCKS, remote, and Unix-socket rules in one profile.~~
    - ~~Show OpenSSH-assigned remote ports and type-correct endpoint actions.~~
-2. **Remote files** (in development; implementation complete, live verification pending)
-   1. **Open a pasted path:** paste an absolute path copied from remote `pwd`, choose a saved server, and open that folder.
-   2. **Navigate folders:** show the files and subfolders at that path, with basic navigation and refresh. No search or indexing.
-   3. **Download a file:** choose a local destination, track progress, cancel, and reveal the result in Finder.
-   4. **Download a folder:** transfer a folder recursively, show progress, and allow cancellation.
-   5. **Preview images:** preview one supported remote image at a time.
-   6. **Render Markdown** (ready for product review): render GFM and common Obsidian reading syntax in a bounded, read-only native view. Remote images and embeds are not fetched, raw HTML is inert, and Mermaid remains source-only.
+   - ~~Group saved profiles without changing their SSH process state.~~
+2. **Remote files** (complete)
+   1. ~~**Open a pasted path:** paste an absolute path copied from remote `pwd`, choose a saved server, and open that folder.~~
+   2. ~~**Navigate folders:** show the files and subfolders at that path, with basic navigation and refresh. No search or indexing.~~
+   3. ~~**Download a file:** choose a local destination, track progress, cancel, and reveal the result in Finder.~~
+   4. ~~**Download a folder:** transfer a folder recursively, show progress, and allow cancellation.~~
+   5. ~~**Preview images:** preview one supported remote image at a time.~~
+   6. ~~**Render Markdown:** render GFM and common Obsidian reading syntax in a bounded, read-only native view. Remote images and embeds are not fetched, raw HTML is inert, and Mermaid remains source-only.~~
 
 Remote file operations stop at opening, previewing, and downloading.
 

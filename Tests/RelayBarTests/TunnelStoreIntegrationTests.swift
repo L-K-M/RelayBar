@@ -173,6 +173,193 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertNotNil(defaults.data(forKey: "savedTunnels.v1"))
     }
 
+    func testGroupMutationsNormalizeMergeAndPersistWithoutASeparateGroupStore() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        var dashboard = makeLocalProfile()
+        dashboard.name = "Dashboard"
+        dashboard.groupTag = "Work"
+        var desktop = makeLocalProfile()
+        desktop.name = "Desktop"
+        desktop.groupTag = "  work  "
+        var photos = makeLocalProfile()
+        photos.name = "Photos"
+        photos.groupTag = "Personal"
+        var scratch = makeLocalProfile()
+        scratch.name = "Scratch"
+
+        store.add(dashboard)
+        store.add(desktop)
+        store.add(photos)
+        store.add(scratch)
+
+        XCTAssertEqual(
+            store.tunnels.map(\.groupTag),
+            ["Work", "Work", "Personal", nil]
+        )
+        XCTAssertEqual(store.groupNames, ["Personal", "Work"])
+
+        store.move(scratch, toGroup: " work ")
+        XCTAssertEqual(store.tunnels[3].groupTag, "Work")
+        store.move(scratch, toGroup: nil)
+        XCTAssertNil(store.tunnels[3].groupTag)
+
+        store.renameGroup("Work", to: " personal ")
+
+        XCTAssertEqual(store.groupNames, ["Personal"])
+        XCTAssertEqual(
+            store.tunnels.map(\.groupTag),
+            ["Personal", "Personal", "Personal", nil]
+        )
+
+        store.ungroup("PERSONAL")
+
+        XCTAssertTrue(store.tunnels.allSatisfy { $0.groupTag == nil })
+        XCTAssertFalse(store.grouping.isGrouped)
+        XCTAssertNil(defaults.object(forKey: "savedTunnelGroups"))
+        let persisted = try JSONDecoder().decode(
+            [Tunnel].self,
+            from: try XCTUnwrap(defaults.data(forKey: "savedTunnels.v2"))
+        )
+        XCTAssertTrue(persisted.allSatisfy { $0.groupTag == nil })
+
+        var invalid = makeLocalProfile()
+        invalid.groupTag = String(repeating: "x", count: 33)
+        store.add(invalid)
+        XCTAssertEqual(store.tunnels.count, 4)
+    }
+
+    func testMoveAndTagOnlyUpdatePreserveStartingRunningAndPendingBrowserWork() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            browserOpener: { openedURLs.append($0) }
+        )
+        let profile = makeLocalProfile()
+        store.add(profile)
+
+        store.openInBrowser(profile)
+        XCTAssertEqual(store.phase(for: profile), .starting)
+        store.move(profile, toGroup: "Work")
+        XCTAssertEqual(store.phase(for: profile), .starting)
+
+        let opened = await waitUntil { !openedURLs.isEmpty }
+        XCTAssertTrue(opened)
+        XCTAssertEqual(store.phase(for: profile), .running)
+        let invocationCount = parsedInvocations(
+            try String(contentsOf: fixture.logURL)
+        ).count
+
+        store.renameGroup("Work", to: "Client")
+        XCTAssertEqual(store.phase(for: profile), .running)
+        XCTAssertEqual(store.tunnels[0].groupTag, "Client")
+
+        var edited = store.tunnels[0]
+        edited.groupTag = "Operations"
+        store.update(edited)
+        XCTAssertEqual(store.phase(for: profile), .running)
+        XCTAssertEqual(store.tunnels[0].groupTag, "Operations")
+
+        store.ungroup("Operations")
+        XCTAssertEqual(store.phase(for: profile), .running)
+        XCTAssertNil(store.tunnels[0].groupTag)
+        XCTAssertEqual(
+            parsedInvocations(try String(contentsOf: fixture.logURL)).count,
+            invocationCount
+        )
+        XCTAssertEqual(openedURLs, [try XCTUnwrap(profile.browserURL)])
+        store.stop(profile)
+    }
+
+    func testGroupMovesPreserveStoppedFailedAndRetryingPhases() async throws {
+        let (stoppedDefaults, stoppedSuite) = makeIsolatedDefaults()
+        defer { stoppedDefaults.removePersistentDomain(forName: stoppedSuite) }
+        let stoppedStore = TunnelStore(defaults: stoppedDefaults)
+        let stopped = makeLocalProfile()
+        stoppedStore.add(stopped)
+        stoppedStore.move(stopped, toGroup: "Work")
+        XCTAssertEqual(stoppedStore.phase(for: stopped), .stopped)
+
+        let failed = Tunnel(
+            name: "Invalid",
+            localPort: 43_211,
+            destinationHost: "localhost",
+            destinationPort: 80,
+            sshHost: "-blocked"
+        )
+        stoppedStore.add(failed)
+        stoppedStore.start(failed)
+        let failedPhase = stoppedStore.phase(for: failed)
+        guard case .failed = failedPhase else {
+            return XCTFail("Expected an invalid profile to fail.")
+        }
+        stoppedStore.move(failed, toGroup: "Work")
+        XCTAssertEqual(stoppedStore.phase(for: failed), failedPhase)
+
+        let (retryDefaults, retrySuite) = makeIsolatedDefaults()
+        defer { retryDefaults.removePersistentDomain(forName: retrySuite) }
+        let retryStore = TunnelStore(
+            defaults: retryDefaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            retryDelayProvider: { _ in 1 }
+        )
+        let retrying = makeLocalProfile()
+        retryStore.add(retrying)
+        retryStore.start(retrying)
+        let enteredRetry = await waitUntil {
+            if case .retrying = retryStore.phase(for: retrying) { return true }
+            return false
+        }
+        XCTAssertTrue(enteredRetry)
+        let retryingPhase = retryStore.phase(for: retrying)
+        retryStore.move(retrying, toGroup: "Operations")
+        XCTAssertEqual(retryStore.phase(for: retrying), retryingPhase)
+        retryStore.stop(retrying)
+    }
+
+    func testTagMutationKeepsAutomaticRuntimePortAndConnectionEditStillStops() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let rule = ForwardingRule(
+            kind: .remote,
+            listen: .tcp(bindAddress: "localhost", port: 0),
+            destination: .tcp(host: "localhost", port: 3_000)
+        )
+        let profile = Tunnel(
+            name: "Automatic",
+            sshHost: "server",
+            rules: [rule]
+        )
+        store.add(profile)
+        store.start(profile)
+        let reachedRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+        let allocatedPorts = store.runtimePorts(for: profile)
+
+        store.move(profile, toGroup: "Work")
+
+        XCTAssertEqual(store.phase(for: profile), .running)
+        XCTAssertEqual(store.runtimePorts(for: profile), allocatedPorts)
+
+        var connectionEdit = store.tunnels[0]
+        connectionEdit.sshHost = "replacement-server"
+        store.update(connectionEdit)
+
+        XCTAssertEqual(store.phase(for: profile), .stopped)
+        XCTAssertTrue(store.runtimePorts(for: profile).isEmpty)
+    }
+
     func testInstallsMixedRulesSeparatelyAndMapsAutomaticPorts() async throws {
         let fixture = try makeFakeSSHFixture()
         defer { fixture.cleanup() }

@@ -105,7 +105,84 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.setActivationPolicy(.regular)
 
         let previewStore: TunnelStore
-        if arguments.contains("--flexible-forwarding-preview") {
+        if arguments.contains("--grouping-preview") {
+            let suite = "RelayBar.GroupingPreview.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            let store = TunnelStore(defaults: defaults)
+            let scenario: String
+            if
+                let index = arguments.firstIndex(of: "--grouping-preview"),
+                arguments.indices.contains(index + 1),
+                !arguments[index + 1].hasPrefix("--")
+            {
+                scenario = arguments[index + 1]
+            } else {
+                scenario = "mixed"
+            }
+            let fixtures: [(name: String, group: String?)]
+            switch scenario {
+            case "empty":
+                fixtures = []
+            case "all-untagged", "zero-tag":
+                fixtures = [
+                    ("Hermes Dashboard", nil),
+                    ("Virtual Desktop", nil),
+                    ("Scratch", nil)
+                ]
+            case "one-bucket":
+                fixtures = [
+                    ("Hermes Dashboard", "Work"),
+                    ("Virtual Desktop", "Work"),
+                    ("Preview Server", "Work")
+                ]
+            case "all-tagged":
+                fixtures = [
+                    ("Hermes Dashboard", "Work"),
+                    ("Virtual Desktop", "Work"),
+                    ("Photos", "Personal")
+                ]
+            case "long-tag":
+                let maximumWidthGroup = "Group "
+                    + String(repeating: "🌐", count: 26)
+                fixtures = [
+                    ("Quarterly Dashboard", maximumWidthGroup),
+                    ("Research Preview", maximumWidthGroup)
+                ]
+            case "many-sections":
+                fixtures = [
+                    ("Build Monitor", "Engineering"),
+                    ("CRM", "Client Work"),
+                    ("Photos", "Personal"),
+                    ("Research", "Research"),
+                    ("Status", "Operations"),
+                    ("Preview", "Design")
+                ]
+            default:
+                fixtures = [
+                    ("Hermes Dashboard", "Work"),
+                    ("Virtual Desktop", "Work"),
+                    ("Photos", "Personal"),
+                    ("Scratch", nil)
+                ]
+            }
+
+            for (index, fixture) in fixtures.enumerated() {
+                store.add(
+                    Tunnel(
+                        name: fixture.name,
+                        localPort: 8_000 + index,
+                        destinationHost: "localhost",
+                        destinationPort: 3_000 + index,
+                        sshHost: "preview-\(index + 1).example.com",
+                        groupTag: fixture.group
+                    )
+                )
+            }
+            tunnelPreviewStore = store
+            tunnelPreviewDefaultsSuite = suite
+            previewStore = store
+        } else if arguments.contains("--flexible-forwarding-preview") {
             let suite = "RelayBar.FlexibleForwardingPreview.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defaults.removePersistentDomain(forName: suite)

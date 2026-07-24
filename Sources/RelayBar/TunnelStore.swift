@@ -90,6 +90,14 @@ final class TunnelStore: ObservableObject {
         }.count
     }
 
+    var grouping: TunnelGrouping {
+        TunnelGrouping(tunnels: tunnels)
+    }
+
+    var groupNames: [String] {
+        grouping.groupNames
+    }
+
     func phase(for tunnel: Tunnel) -> TunnelPhase {
         phases[tunnel.id] ?? .stopped
     }
@@ -99,17 +107,90 @@ final class TunnelStore: ObservableObject {
     }
 
     func add(_ tunnel: Tunnel) {
+        guard let tunnel = resolvingGroupTag(in: tunnel) else { return }
         tunnels.append(tunnel)
         save()
     }
 
     func update(_ tunnel: Tunnel) {
-        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else { return }
+        guard
+            let index = tunnels.firstIndex(where: { $0.id == tunnel.id }),
+            let tunnel = resolvingGroupTag(in: tunnel)
+        else {
+            return
+        }
+        let previous = tunnels[index]
+        if previous.hasSameNonTagFields(as: tunnel) {
+            applyGroupTag(tunnel.groupTag, at: index)
+            return
+        }
+
         let wasActive = desiredTunnels[tunnel.id] != nil
         if wasActive { stop(tunnel) }
         tunnels[index] = tunnel
         phases[tunnel.id] = .stopped
         save()
+    }
+
+    func move(_ tunnel: Tunnel, toGroup rawGroup: String?) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return
+        }
+        let groupTag: String?
+        if let rawGroup {
+            guard
+                case .valid(let resolved) = TunnelGroupTag.resolve(
+                    rawGroup,
+                    existingNames: groupNames
+                )
+            else {
+                return
+            }
+            groupTag = resolved
+        } else {
+            groupTag = nil
+        }
+        applyGroupTag(groupTag, at: index)
+    }
+
+    func renameGroup(_ groupName: String, to rawGroup: String) {
+        let sourceKey = TunnelGroupTag.canonicalKey(groupName)
+        guard
+            case .valid(let resolved) = TunnelGroupTag.resolve(
+                rawGroup,
+                existingNames: groupNames
+            )
+        else {
+            return
+        }
+
+        var changed = false
+        for index in tunnels.indices where tunnels[index].groupTag.map(
+            TunnelGroupTag.canonicalKey
+        ) == sourceKey {
+            guard tunnels[index].groupTag != resolved else { continue }
+            tunnels[index].groupTag = resolved
+            if desiredTunnels[tunnels[index].id] != nil {
+                desiredTunnels[tunnels[index].id]?.groupTag = resolved
+            }
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    func ungroup(_ groupName: String) {
+        let key = TunnelGroupTag.canonicalKey(groupName)
+        var changed = false
+        for index in tunnels.indices where tunnels[index].groupTag.map(
+            TunnelGroupTag.canonicalKey
+        ) == key {
+            tunnels[index].groupTag = nil
+            if desiredTunnels[tunnels[index].id] != nil {
+                desiredTunnels[tunnels[index].id]?.groupTag = nil
+            }
+            changed = true
+        }
+        if changed { save() }
     }
 
     func delete(_ tunnel: Tunnel) {
@@ -937,6 +1018,31 @@ final class TunnelStore: ObservableObject {
     private func save() {
         guard let data = try? JSONEncoder().encode(tunnels) else { return }
         defaults.set(data, forKey: storageKey)
+    }
+
+    private func resolvingGroupTag(in tunnel: Tunnel) -> Tunnel? {
+        var resolvedTunnel = tunnel
+        guard let groupTag = tunnel.groupTag else { return resolvedTunnel }
+        guard
+            case .valid(let resolved) = TunnelGroupTag.resolve(
+                groupTag,
+                existingNames: groupNames
+            )
+        else {
+            return nil
+        }
+        resolvedTunnel.groupTag = resolved
+        return resolvedTunnel
+    }
+
+    private func applyGroupTag(_ groupTag: String?, at index: Int) {
+        guard tunnels[index].groupTag != groupTag else { return }
+        tunnels[index].groupTag = groupTag
+        let id = tunnels[index].id
+        if desiredTunnels[id] != nil {
+            desiredTunnels[id]?.groupTag = groupTag
+        }
+        save()
     }
 }
 

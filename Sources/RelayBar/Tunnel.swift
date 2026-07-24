@@ -406,6 +406,75 @@ struct StreamLocalSettings: Codable, Equatable, Sendable {
     }
 }
 
+enum TunnelGroupTag {
+    static let maximumCharacterCount = 32
+
+    enum Validation: Equatable {
+        case ungrouped
+        case valid(String)
+        case invalid(String)
+
+        var normalizedName: String? {
+            guard case .valid(let name) = self else { return nil }
+            return name
+        }
+
+        var errorMessage: String? {
+            guard case .invalid(let message) = self else { return nil }
+            return message
+        }
+    }
+
+    static func validate(_ rawValue: String) -> Validation {
+        if rawValue.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+                || CharacterSet.newlines.contains($0)
+        }) {
+            return .invalid(
+                "Group names cannot contain line breaks or control characters."
+            )
+        }
+
+        let normalized = rawValue
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return .ungrouped }
+        guard normalized.count <= maximumCharacterCount else {
+            return .invalid(
+                "Group names can contain at most \(maximumCharacterCount) characters."
+            )
+        }
+        return .valid(normalized)
+    }
+
+    static func resolve(
+        _ rawValue: String,
+        existingNames: [String]
+    ) -> Validation {
+        let validation = validate(rawValue)
+        guard case .valid(let normalized) = validation else {
+            return validation
+        }
+        let key = canonicalKey(normalized)
+        if let existing = existingNames.first(where: { canonicalKey($0) == key }) {
+            return .valid(existing)
+        }
+        return .valid(normalized)
+    }
+
+    static func canonicalKey(_ normalizedName: String) -> String {
+        normalizedName.folding(
+            options: [.caseInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+    }
+
+    static func isValidStoredValue(_ value: String?) -> Bool {
+        guard let value else { return true }
+        return validate(value) == .valid(value)
+    }
+}
+
 struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var name: String
@@ -414,6 +483,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     var rules: [ForwardingRule]
     var reverseSOCKSPolicy: ReverseSOCKSPolicy?
     var streamLocalSettings: StreamLocalSettings
+    var groupTag: String?
 
     init(
         id: UUID = UUID(),
@@ -422,7 +492,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         additionalArguments: [String] = [],
         rules: [ForwardingRule],
         reverseSOCKSPolicy: ReverseSOCKSPolicy? = nil,
-        streamLocalSettings: StreamLocalSettings = StreamLocalSettings()
+        streamLocalSettings: StreamLocalSettings = StreamLocalSettings(),
+        groupTag: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -431,6 +502,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         self.rules = rules
         self.reverseSOCKSPolicy = reverseSOCKSPolicy
         self.streamLocalSettings = streamLocalSettings
+        self.groupTag = groupTag
     }
 
     init(
@@ -441,7 +513,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         destinationPort: Int,
         sshHost: String,
         bindAddress: String? = nil,
-        additionalArguments: [String] = []
+        additionalArguments: [String] = [],
+        groupTag: String? = nil
     ) {
         self.init(
             id: id,
@@ -455,7 +528,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
                     destinationHost: destinationHost,
                     destinationPort: destinationPort
                 )
-            ]
+            ],
+            groupTag: groupTag
         )
     }
 
@@ -467,6 +541,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         case rules
         case reverseSOCKSPolicy
         case streamLocalSettings
+        case groupTag
         case localPort
         case destinationHost
         case destinationPort
@@ -482,6 +557,25 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             [String].self,
             forKey: .additionalArguments
         ) ?? []
+        if let decodedGroup = try container.decodeIfPresent(
+            String.self,
+            forKey: .groupTag
+        ) {
+            switch TunnelGroupTag.validate(decodedGroup) {
+            case .ungrouped:
+                groupTag = nil
+            case .valid(let normalized):
+                groupTag = normalized
+            case .invalid(let message):
+                throw DecodingError.dataCorruptedError(
+                    forKey: .groupTag,
+                    in: container,
+                    debugDescription: message
+                )
+            }
+        } else {
+            groupTag = nil
+        }
 
         if let decodedRules = try container.decodeIfPresent(
             [ForwardingRule].self,
@@ -523,6 +617,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         try container.encode(rules, forKey: .rules)
         try container.encodeIfPresent(reverseSOCKSPolicy, forKey: .reverseSOCKSPolicy)
         try container.encode(streamLocalSettings, forKey: .streamLocalSettings)
+        try container.encodeIfPresent(groupTag, forKey: .groupTag)
     }
 
     var displayName: String {
@@ -594,6 +689,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             Set(rules.map(\.id)).count == rules.count,
             rules.allSatisfy(\.isValid),
             streamLocalSettings.isValid,
+            TunnelGroupTag.isValidStoredValue(groupTag),
             SSHArgumentPolicy.isValidHostTarget(sshHost),
             SSHArgumentPolicy.areAdditionalArgumentsSafe(additionalArguments),
             !hasConflictingListeners
@@ -605,6 +701,16 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             guard let reverseSOCKSPolicy, reverseSOCKSPolicy.isValid else { return false }
         }
         return true
+    }
+
+    func hasSameNonTagFields(as other: Tunnel) -> Bool {
+        id == other.id
+            && name == other.name
+            && sshHost == other.sshHost
+            && additionalArguments == other.additionalArguments
+            && rules == other.rules
+            && reverseSOCKSPolicy == other.reverseSOCKSPolicy
+            && streamLocalSettings == other.streamLocalSettings
     }
 
     var hasConflictingListeners: Bool {
@@ -650,6 +756,84 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
 
     var destinationEndpoint: String {
         rules.first?.destination?.displayText ?? rules.first?.kind.label ?? ""
+    }
+}
+
+struct TunnelGroupSection: Identifiable, Equatable {
+    enum ID: Hashable {
+        case named(String)
+        case ungrouped
+    }
+
+    let id: ID
+    let name: String?
+    let tunnels: [Tunnel]
+
+    var displayName: String {
+        name ?? "Ungrouped"
+    }
+}
+
+struct TunnelGrouping: Equatable {
+    let sections: [TunnelGroupSection]
+    let isGrouped: Bool
+
+    init(tunnels: [Tunnel]) {
+        var namedBuckets: [String: (name: String, tunnels: [Tunnel])] = [:]
+        var ungrouped: [Tunnel] = []
+
+        for tunnel in tunnels {
+            guard
+                let rawGroupTag = tunnel.groupTag,
+                case .valid(let groupTag) = TunnelGroupTag.validate(rawGroupTag)
+            else {
+                ungrouped.append(tunnel)
+                continue
+            }
+            let key = TunnelGroupTag.canonicalKey(groupTag)
+            if namedBuckets[key] == nil {
+                namedBuckets[key] = (groupTag, [])
+            }
+            namedBuckets[key]?.tunnels.append(tunnel)
+        }
+
+        let namedSections = namedBuckets
+            .map { key, bucket in
+                TunnelGroupSection(
+                    id: .named(key),
+                    name: bucket.name,
+                    tunnels: bucket.tunnels
+                )
+            }
+            .sorted {
+                $0.displayName.localizedStandardCompare($1.displayName)
+                    == .orderedAscending
+            }
+
+        isGrouped = !namedSections.isEmpty
+        if isGrouped, !ungrouped.isEmpty {
+            sections = namedSections + [
+                TunnelGroupSection(
+                    id: .ungrouped,
+                    name: nil,
+                    tunnels: ungrouped
+                )
+            ]
+        } else if isGrouped {
+            sections = namedSections
+        } else {
+            sections = [
+                TunnelGroupSection(
+                    id: .ungrouped,
+                    name: nil,
+                    tunnels: ungrouped
+                )
+            ]
+        }
+    }
+
+    var groupNames: [String] {
+        sections.compactMap(\.name)
     }
 }
 

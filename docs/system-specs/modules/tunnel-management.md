@@ -5,6 +5,9 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 ## Contract
 
 - Users can add, edit, delete, start, and stop profiles.
+- Each profile may have one optional group tag. The editor places a native **Group · Optional** picker below Name, and Quick Add leaves the selected group unchanged.
+- When every profile is ungrouped, the saved list keeps its original flat presentation. Once any profile has a group, named sections use localized standard ordering, preserve saved order within each section, and place **Ungrouped** last when needed.
+- Row menus can move a profile to Ungrouped, an existing group, or a new inline-created group. Named section menus can rename the group or ungroup every member; no separate group records are stored.
 - A rule is Local, Local SOCKS, Remote, or Remote SOCKS. Fixed Local and Remote rules independently support TCP-port and Unix-socket listeners and destinations; SOCKS listeners are TCP.
 - The editor can add, remove, duplicate, and reorder rules. It requires valid endpoints, unique rule identities, no overlapping listeners in the same namespace, and at least one rule.
 - New listeners default to explicit loopback. Each explicit non-loopback listener names its rule and whether exposure is on the Mac or SSH server.
@@ -13,7 +16,8 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 - Profile-level Unix controls store a validated octal bind mask and whether a retry may remove a stale local socket whose type, device, and inode RelayBar recorded during the current app run. RelayBar never replaces an unowned path; remote socket cleanup remains server-controlled.
 - Single Local TCP profiles retain the browser shortcut. Menus otherwise expose only type-correct copy or local-socket reveal actions.
 - Editing an active profile stops it before replacing its definition.
+- Changing only a group tag, moving a profile, renaming a group, or ungrouping members is metadata-only and preserves process phase, retries, pending browser work, runtime ports, and process ownership.
 - Deleting a profile cancels its connection, control operation, retry, pending browser launch, runtime ports, and owned temporary artifacts.
-- Definitions persist immediately after add, edit, or delete.
+- Definitions persist immediately after add, edit, delete, move, rename, or ungroup operations.
 
 See [Data and state](../shared/data-and-state.md) for the stored schema.

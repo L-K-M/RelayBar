@@ -2,6 +2,7 @@
 
 - RelayBar invokes `/usr/bin/ssh` directly and never invokes a shell.
 - Forwarding input becomes typed Local, Local SOCKS, Remote, or Remote SOCKS rules. Persisted profiles and structured settings are validated again immediately before launch.
+- Optional group tags are bounded, single-line local display metadata. They are never passed to SSH, SFTP, a shell, or Remote Files connection identity.
 - The managed master clears SSH-config forwarding declarations, and its `-F none` control helpers add only the rules visible in RelayBar. Normal connection, identity, host-key, agent, and jump-host configuration remains available to the master.
 - Remote Files invokes `/usr/bin/sftp` directly with structured arguments and batch input; it also never invokes a shell.
 - Host values cannot be empty, option-shaped, whitespace-separated, or contain control characters.

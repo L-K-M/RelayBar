@@ -2,10 +2,12 @@ import SwiftUI
 
 struct TunnelEditorView: View {
     let tunnel: Tunnel?
+    let availableGroups: [String]
     let onCancel: () -> Void
     let onSave: (Tunnel) -> Void
 
     @State private var name: String
+    @State private var groupTag: String?
     @State private var sshHost: String
     @State private var command = ""
     @State private var rules: [ForwardingRuleDraft]
@@ -15,6 +17,7 @@ struct TunnelEditorView: View {
     @State private var streamBindMask: String
     @State private var unlinkStaleSocket: Bool
     @State private var importError: String?
+    @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -25,13 +28,16 @@ struct TunnelEditorView: View {
 
     init(
         tunnel: Tunnel?,
+        availableGroups: [String],
         onCancel: @escaping () -> Void,
         onSave: @escaping (Tunnel) -> Void
     ) {
         self.tunnel = tunnel
+        self.availableGroups = availableGroups
         self.onCancel = onCancel
         self.onSave = onSave
         _name = State(initialValue: tunnel?.name ?? "")
+        _groupTag = State(initialValue: tunnel?.groupTag)
         _sshHost = State(initialValue: tunnel?.sshHost ?? "")
         _rules = State(
             initialValue: tunnel?.rules.map(ForwardingRuleDraft.init)
@@ -157,6 +163,12 @@ struct TunnelEditorView: View {
                 TextField("Development access", text: $name)
                     .focused($focusedField, equals: .name)
             }
+
+            GroupSelectionControl(
+                selection: $groupTag,
+                hasPendingName: $hasPendingGroupName,
+                availableGroups: availableGroups
+            )
 
             EditorField(label: "SSH host", hint: "user@server") {
                 TextField("user@bastion.example.com", text: $sshHost)
@@ -373,13 +385,14 @@ struct TunnelEditorView: View {
             streamLocalSettings: StreamLocalSettings(
                 bindMask: mask,
                 unlinkStaleSocket: unlinkStaleSocket
-            )
+            ),
+            groupTag: groupTag
         )
         return profile.isSafeToRun ? profile : nil
     }
 
     private var isValid: Bool {
-        builtTunnel != nil
+        !hasPendingGroupName && builtTunnel != nil
     }
 
     private var hasReverseSOCKS: Bool {
@@ -468,6 +481,132 @@ struct TunnelEditorView: View {
             .tracking(0.6)
             .foregroundStyle(.tertiary)
     }
+}
+
+private struct GroupSelectionControl: View {
+    @Binding var selection: String?
+    @Binding var hasPendingName: Bool
+    let availableGroups: [String]
+
+    @State private var isNamingNewGroup = false
+    @State private var draftName = ""
+    @State private var validationMessage: String?
+    @FocusState private var isDraftFocused: Bool
+
+    var body: some View {
+        EditorField(label: "Group", hint: "Optional") {
+            if isNamingNewGroup {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        TextField("New group name", text: $draftName)
+                            .accessibilityLabel("New group name")
+                            .focused($isDraftFocused)
+                            .onSubmit(commitDraft)
+                            .onExitCommand(perform: cancelDraft)
+
+                        Button(action: commitDraft) {
+                            Image(systemName: "checkmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Create group")
+                        .accessibilityLabel("Create group")
+
+                        Button(action: cancelDraft) {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Cancel new group")
+                        .accessibilityLabel("Cancel new group")
+                    }
+
+                    if let validationMessage {
+                        Text(validationMessage)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red)
+                    }
+                }
+                .onAppear {
+                    isDraftFocused = true
+                }
+            } else {
+                Picker("Group", selection: pickerSelection) {
+                    Text("Ungrouped").tag(GroupPickerChoice.ungrouped)
+                    ForEach(groupChoices, id: \.self) { group in
+                        Text(group).tag(GroupPickerChoice.named(group))
+                    }
+                    Divider()
+                    Text("New Group…").tag(GroupPickerChoice.newGroup)
+                }
+                .pickerStyle(.menu)
+                .accessibilityLabel("Group, Optional")
+            }
+        }
+    }
+
+    private var pickerSelection: Binding<GroupPickerChoice> {
+        Binding {
+            selection.map(GroupPickerChoice.named) ?? .ungrouped
+        } set: { choice in
+            switch choice {
+            case .ungrouped:
+                selection = nil
+            case .named(let group):
+                selection = group
+            case .newGroup:
+                draftName = ""
+                validationMessage = nil
+                isNamingNewGroup = true
+                hasPendingName = true
+            }
+        }
+    }
+
+    private var groupChoices: [String] {
+        var names = availableGroups
+        if
+            let selection,
+            !names.contains(where: {
+                TunnelGroupTag.canonicalKey($0)
+                    == TunnelGroupTag.canonicalKey(selection)
+            })
+        {
+            names.append(selection)
+            names.sort {
+                $0.localizedStandardCompare($1) == .orderedAscending
+            }
+        }
+        return names
+    }
+
+    private func commitDraft() {
+        switch TunnelGroupTag.resolve(
+            draftName,
+            existingNames: availableGroups
+        ) {
+        case .ungrouped:
+            validationMessage = "Enter a group name."
+        case .invalid(let message):
+            validationMessage = message
+        case .valid(let normalized):
+            selection = normalized
+            validationMessage = nil
+            isNamingNewGroup = false
+            hasPendingName = false
+        }
+    }
+
+    private func cancelDraft() {
+        draftName = ""
+        validationMessage = nil
+        isNamingNewGroup = false
+        hasPendingName = false
+    }
+}
+
+private enum GroupPickerChoice: Hashable {
+    case ungrouped
+    case named(String)
+    case newGroup
 }
 
 private struct ForwardingRuleEditor: View {
