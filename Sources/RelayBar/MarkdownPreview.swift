@@ -133,8 +133,6 @@ enum SafeMarkdownLinkPolicy {
         guard
             let scheme = url.scheme?.lowercased(),
             ["http", "https", "mailto"].contains(scheme),
-            url.user == nil,
-            url.password == nil,
             decodedWithoutControls(url.absoluteString) != nil
         else {
             return false
@@ -143,7 +141,9 @@ enum SafeMarkdownLinkPolicy {
         if scheme == "mailto" {
             return !url.path.isEmpty
         }
-        return url.host?.isEmpty == false
+        return url.user == nil
+            && url.password == nil
+            && url.host?.isEmpty == false
     }
 
     private static func internalMarkdownReference(from url: URL) -> String? {

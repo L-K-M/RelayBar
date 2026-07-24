@@ -1598,14 +1598,14 @@ enum ObsidianMarkdownCompatibility {
         if
             let url = URL(string: value),
             let scheme = url.scheme?.lowercased(),
-            ["http", "https", "mailto"].contains(scheme),
-            url.user == nil,
-            url.password == nil
+            ["http", "https", "mailto"].contains(scheme)
         {
             if scheme == "mailto" {
                 return !url.path.isEmpty
             }
-            return url.host?.isEmpty == false
+            return url.user == nil
+                && url.password == nil
+                && url.host?.isEmpty == false
         }
 
         let emailParts = value.split(
