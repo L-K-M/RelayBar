@@ -2,12 +2,17 @@ import Foundation
 
 enum SSHCommandParser {
     struct ImportedTunnel: Equatable {
-        var localPort: Int
-        var destinationHost: String
-        var destinationPort: Int
+        var rules: [ForwardingRule]
         var sshHost: String
-        var bindAddress: String?
         var additionalArguments: [String]
+        var reverseSOCKSPolicy: ReverseSOCKSPolicy?
+        var streamLocalSettings: StreamLocalSettings
+
+        // Compatibility accessors for callers that still inspect a single local rule.
+        var localPort: Int { rules.first?.listen.tcp?.port ?? 0 }
+        var destinationHost: String { rules.first?.destination?.tcp?.host ?? "" }
+        var destinationPort: Int { rules.first?.destination?.tcp?.port ?? 0 }
+        var bindAddress: String? { rules.first?.listen.tcp?.bindAddress }
     }
 
     enum ParseError: LocalizedError, Equatable {
@@ -20,30 +25,33 @@ enum SSHCommandParser {
         case missingOptionValue(String)
         case unsupportedOption(String)
         case unsafeOption(String)
+        case conflictingOption(String)
         case remoteCommand
 
         var errorDescription: String? {
             switch self {
             case .empty:
-                return "Paste an SSH command first."
+                "Paste an SSH command first."
             case .notSSH:
-                return "The command needs to start with ssh."
+                "The command needs to start with ssh."
             case .unclosedQuote:
-                return "One of the quotes in the command is not closed."
+                "One of the quotes in the command is not closed."
             case .missingForward:
-                return "The command needs one -L forward."
+                "The command needs at least one -L, -D, or -R forward."
             case .invalidForward:
-                return "Use -L localPort:host:remotePort."
+                "One forwarding rule has an invalid listen or destination endpoint."
             case .missingHost:
-                return "The SSH host is missing."
+                "The SSH host is missing."
             case .missingOptionValue(let option):
-                return "\(option) needs a value."
+                "\(option) needs a value."
             case .unsupportedOption(let option):
-                return "\(option) is not supported by the quick importer."
+                "\(option) is not supported by the quick importer."
             case .unsafeOption(let option):
-                return "\(option) is blocked because it can execute commands or access arbitrary files."
+                "\(option) is blocked because it can execute commands or access arbitrary files."
+            case .conflictingOption(let option):
+                "\(option) is specified more than once with ambiguous values."
             case .remoteCommand:
-                return "RelayBar only imports forwarding commands, not remote commands."
+                "RelayBar imports forwarding commands, not remote commands."
             }
         }
     }
@@ -55,9 +63,12 @@ enum SSHCommandParser {
         let executable = URL(fileURLWithPath: tokens[0]).lastPathComponent
         guard executable == "ssh" else { throw ParseError.notSSH }
 
-        var forward: String?
+        var rules: [ForwardingRule] = []
         var sshHost: String?
         var extraArguments: [String] = []
+        var reverseSOCKSPolicy: ReverseSOCKSPolicy?
+        var streamBindMask: UInt16?
+        var streamUnlink: Bool?
         var index = 1
 
         let flagsToDiscard: Set<String> = ["-N", "-T", "-n", "-f"]
@@ -72,37 +83,68 @@ enum SSHCommandParser {
                 index += 1
                 guard index < tokens.count else { throw ParseError.missingHost }
                 sshHost = tokens[index]
-            } else if token == "-L" {
+            } else if ["-L", "-D", "-R"].contains(token) {
                 index += 1
-                guard index < tokens.count else { throw ParseError.missingOptionValue("-L") }
-                guard forward == nil else { throw ParseError.unsupportedOption("Multiple -L forwards") }
-                forward = tokens[index]
-            } else if token.hasPrefix("-L"), token.count > 2 {
-                guard forward == nil else { throw ParseError.unsupportedOption("Multiple -L forwards") }
-                forward = String(token.dropFirst(2))
+                guard index < tokens.count else {
+                    throw ParseError.missingOptionValue(token)
+                }
+                rules.append(try parseForward(option: token, specification: tokens[index]))
+            } else if let option = ["-L", "-D", "-R"].first(where: {
+                token.hasPrefix($0) && token.count > $0.count
+            }) {
+                rules.append(
+                    try parseForward(
+                        option: option,
+                        specification: String(token.dropFirst(option.count))
+                    )
+                )
             } else if flagsToDiscard.contains(token) {
-                // RelayBar supplies these itself. In particular, -f would detach SSH
-                // and make it impossible for the app to manage the process.
+                // RelayBar owns the process and supplies these management flags itself.
             } else if SSHArgumentPolicy.allowedFlags.contains(token) {
                 extraArguments.append(token)
             } else if SSHArgumentPolicy.optionsWithValues.contains(token) {
                 index += 1
-                guard index < tokens.count else { throw ParseError.missingOptionValue(token) }
-                let value = tokens[index]
-                guard SSHArgumentPolicy.areAdditionalArgumentsSafe([token, value]) else {
-                    throw ParseError.unsafeOption("\(token) \(value)")
+                guard index < tokens.count else {
+                    throw ParseError.missingOptionValue(token)
                 }
-                extraArguments.append(contentsOf: [token, value])
+                let value = tokens[index]
+                if token == "-o" {
+                    try consumeOpenSSHOption(
+                        value,
+                        original: "-o \(value)",
+                        reverseSOCKSPolicy: &reverseSOCKSPolicy,
+                        streamBindMask: &streamBindMask,
+                        streamUnlink: &streamUnlink,
+                        extraArguments: &extraArguments
+                    )
+                } else {
+                    guard SSHArgumentPolicy.isSafeOptionValue(value) else {
+                        throw ParseError.unsafeOption("\(token) \(value)")
+                    }
+                    extraArguments.append(contentsOf: [token, value])
+                }
             } else if token.hasPrefix("-") {
-                if SSHArgumentPolicy.attachedOptionPrefixes.contains(where: {
+                guard let prefix = SSHArgumentPolicy.attachedOptionPrefixes.first(where: {
                     token.hasPrefix($0) && token.count > $0.count
-                }) {
-                    guard SSHArgumentPolicy.areAdditionalArgumentsSafe([token]) else {
+                }) else {
+                    throw ParseError.unsupportedOption(token)
+                }
+
+                let value = String(token.dropFirst(prefix.count))
+                if prefix == "-o" {
+                    try consumeOpenSSHOption(
+                        value,
+                        original: token,
+                        reverseSOCKSPolicy: &reverseSOCKSPolicy,
+                        streamBindMask: &streamBindMask,
+                        streamUnlink: &streamUnlink,
+                        extraArguments: &extraArguments
+                    )
+                } else {
+                    guard SSHArgumentPolicy.isSafeOptionValue(value) else {
                         throw ParseError.unsafeOption(token)
                     }
                     extraArguments.append(token)
-                } else {
-                    throw ParseError.unsupportedOption(token)
                 }
             } else {
                 sshHost = token
@@ -111,55 +153,286 @@ enum SSHCommandParser {
             index += 1
         }
 
-        guard let forward else { throw ParseError.missingForward }
-        guard let sshHost, SSHArgumentPolicy.isValidHostTarget(sshHost) else { throw ParseError.missingHost }
-        let parsedForward = try parseForward(forward)
+        guard !rules.isEmpty else { throw ParseError.missingForward }
+        guard let sshHost, SSHArgumentPolicy.isValidHostTarget(sshHost) else {
+            throw ParseError.missingHost
+        }
+
+        if rules.contains(where: { $0.kind == .remoteDynamic }),
+           reverseSOCKSPolicy == nil {
+            reverseSOCKSPolicy = .any
+        }
 
         return ImportedTunnel(
-            localPort: parsedForward.localPort,
-            destinationHost: parsedForward.destinationHost,
-            destinationPort: parsedForward.destinationPort,
+            rules: rules,
             sshHost: sshHost,
-            bindAddress: parsedForward.bindAddress,
-            additionalArguments: extraArguments
+            additionalArguments: extraArguments,
+            reverseSOCKSPolicy: reverseSOCKSPolicy,
+            streamLocalSettings: StreamLocalSettings(
+                bindMask: streamBindMask ?? 0o177,
+                unlinkStaleSocket: streamUnlink ?? false
+            )
         )
     }
 
-    private static func parseForward(_ spec: String) throws -> (
-        localPort: Int,
-        destinationHost: String,
-        destinationPort: Int,
-        bindAddress: String?
-    ) {
-        let pattern = #"^(?:(.+):)?([0-9]+):(\[[^\]]+\]|[^:]+):([0-9]+)$"#
-        let expression = try NSRegularExpression(pattern: pattern)
-        let range = NSRange(spec.startIndex..., in: spec)
-        guard let match = expression.firstMatch(in: spec, range: range), match.range == range else {
+    private static func consumeOpenSSHOption(
+        _ value: String,
+        original: String,
+        reverseSOCKSPolicy: inout ReverseSOCKSPolicy?,
+        streamBindMask: inout UInt16?,
+        streamUnlink: inout Bool?,
+        extraArguments: inout [String]
+    ) throws {
+        guard let option = SSHArgumentPolicy.splitOpenSSHOption(value) else {
+            throw ParseError.unsafeOption(original)
+        }
+
+        switch option.key.lowercased() {
+        case "permitremoteopen":
+            guard reverseSOCKSPolicy == nil else {
+                throw ParseError.conflictingOption("PermitRemoteOpen")
+            }
+            reverseSOCKSPolicy = try parsePermitRemoteOpen(option.value)
+        case "streamlocalbindmask":
+            guard streamBindMask == nil else {
+                throw ParseError.conflictingOption("StreamLocalBindMask")
+            }
+            guard
+                !option.value.isEmpty,
+                option.value.allSatisfy({ ("0"..."7").contains(String($0)) }),
+                let mask = UInt16(option.value, radix: 8),
+                mask <= 0o777
+            else {
+                throw ParseError.unsafeOption(original)
+            }
+            streamBindMask = mask
+        case "streamlocalbindunlink":
+            guard streamUnlink == nil else {
+                throw ParseError.conflictingOption("StreamLocalBindUnlink")
+            }
+            switch option.value.lowercased() {
+            case "yes":
+                streamUnlink = true
+            case "no":
+                streamUnlink = false
+            default:
+                throw ParseError.unsafeOption(original)
+            }
+        default:
+            guard SSHArgumentPolicy.isSafeOpenSSHOption(value) else {
+                throw ParseError.unsafeOption(original)
+            }
+            extraArguments.append(contentsOf: ["-o", value])
+        }
+    }
+
+    private static func parsePermitRemoteOpen(
+        _ value: String
+    ) throws -> ReverseSOCKSPolicy {
+        switch value.lowercased() {
+        case "any":
+            return .any
+        case "none":
+            return .none
+        default:
+            let destinations = value.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard
+                !destinations.isEmpty,
+                destinations.allSatisfy(
+                    SSHArgumentPolicy.isValidPermitRemoteOpenDestination
+                )
+            else {
+                throw ParseError.unsafeOption("-o PermitRemoteOpen=\(value)")
+            }
+            return .allow(destinations)
+        }
+    }
+
+    private static func parseForward(
+        option: String,
+        specification: String
+    ) throws -> ForwardingRule {
+        let rule: ForwardingRule
+        switch option {
+        case "-L":
+            rule = try parseFixedForward(
+                kind: .local,
+                specification: specification
+            )
+        case "-D":
+            rule = ForwardingRule(
+                kind: .localDynamic,
+                listen: try parseTCPListen(specification),
+                destination: nil
+            )
+        case "-R":
+            if let fixed = try? parseFixedForward(
+                kind: .remote,
+                specification: specification
+            ) {
+                rule = fixed
+            } else {
+                rule = ForwardingRule(
+                    kind: .remoteDynamic,
+                    listen: try parseTCPListen(specification),
+                    destination: nil
+                )
+            }
+        default:
+            throw ParseError.unsupportedOption(option)
+        }
+
+        var normalized = rule
+        if normalized.listen.kind == .tcp,
+           normalized.listen.tcp?.bindAddress == nil {
+            normalized.listen.tcp?.bindAddress = "localhost"
+        }
+        guard normalized.isValid else { throw ParseError.invalidForward }
+        return normalized
+    }
+
+    private static func parseFixedForward(
+        kind: ForwardingRuleKind,
+        specification: String
+    ) throws -> ForwardingRule {
+        let parts = try splitForwardSpecification(specification)
+        let listen: ForwardListenEndpoint
+        let destination: ForwardDestinationEndpoint
+
+        if parts.first?.hasPrefix("/") == true {
+            guard let path = parts.first, SSHArgumentPolicy.isValidSocketPath(path) else {
+                throw ParseError.invalidForward
+            }
+            listen = .unix(path: path)
+            if parts.count == 2, parts[1].hasPrefix("/") {
+                destination = .unix(path: parts[1])
+            } else if parts.count == 3 {
+                destination = try parseTCPDestination(
+                    host: parts[1],
+                    port: parts[2]
+                )
+            } else {
+                throw ParseError.invalidForward
+            }
+        } else if parts.last?.hasPrefix("/") == true {
+            let destinationPath = parts[parts.count - 1]
+            guard SSHArgumentPolicy.isValidSocketPath(destinationPath) else {
+                throw ParseError.invalidForward
+            }
+            destination = .unix(path: destinationPath)
+            switch parts.count {
+            case 2:
+                listen = try parseTCPListenParts(bind: nil, port: parts[0])
+            case 3:
+                listen = try parseTCPListenParts(bind: parts[0], port: parts[1])
+            default:
+                throw ParseError.invalidForward
+            }
+        } else {
+            switch parts.count {
+            case 3:
+                listen = try parseTCPListenParts(bind: nil, port: parts[0])
+                destination = try parseTCPDestination(
+                    host: parts[1],
+                    port: parts[2]
+                )
+            case 4:
+                listen = try parseTCPListenParts(bind: parts[0], port: parts[1])
+                destination = try parseTCPDestination(
+                    host: parts[2],
+                    port: parts[3]
+                )
+            default:
+                throw ParseError.invalidForward
+            }
+        }
+
+        return ForwardingRule(
+            kind: kind,
+            listen: listen,
+            destination: destination
+        )
+    }
+
+    private static func parseTCPListen(
+        _ specification: String
+    ) throws -> ForwardListenEndpoint {
+        let parts = try splitForwardSpecification(specification)
+        switch parts.count {
+        case 1:
+            return try parseTCPListenParts(bind: nil, port: parts[0])
+        case 2:
+            return try parseTCPListenParts(bind: parts[0], port: parts[1])
+        default:
             throw ParseError.invalidForward
         }
+    }
 
-        func value(at index: Int) -> String? {
-            let matchRange = match.range(at: index)
-            guard matchRange.location != NSNotFound, let range = Range(matchRange, in: spec) else { return nil }
-            return String(spec[range])
+    private static func parseTCPListenParts(
+        bind: String?,
+        port: String
+    ) throws -> ForwardListenEndpoint {
+        guard let port = Int(port), (0...65_535).contains(port) else {
+            throw ParseError.invalidForward
         }
+        let bindAddress = bind.map(SSHForwardingFormat.unbracket)
+        guard SSHArgumentPolicy.isValidBindAddress(bindAddress) else {
+            throw ParseError.invalidForward
+        }
+        return .tcp(bindAddress: bindAddress, port: port)
+    }
 
+    private static func parseTCPDestination(
+        host: String,
+        port: String
+    ) throws -> ForwardDestinationEndpoint {
+        let host = SSHForwardingFormat.unbracket(host)
         guard
-            let localText = value(at: 2),
-            let localPort = Int(localText), (1...65_535).contains(localPort),
-            var destinationHost = value(at: 3),
-            let destinationText = value(at: 4),
-            let destinationPort = Int(destinationText), (1...65_535).contains(destinationPort)
+            SSHArgumentPolicy.isValidDestinationHost(host),
+            let port = Int(port),
+            (1...65_535).contains(port)
+        else {
+            throw ParseError.invalidForward
+        }
+        return .tcp(host: host, port: port)
+    }
+
+    private static func splitForwardSpecification(
+        _ specification: String
+    ) throws -> [String] {
+        guard
+            !specification.isEmpty,
+            !specification.unicodeScalars.contains(where: {
+                CharacterSet.controlCharacters.contains($0)
+                    || CharacterSet.newlines.contains($0)
+            })
         else {
             throw ParseError.invalidForward
         }
 
-        if destinationHost.hasPrefix("[") && destinationHost.hasSuffix("]") {
-            destinationHost.removeFirst()
-            destinationHost.removeLast()
+        var parts: [String] = []
+        var current = ""
+        var bracketDepth = 0
+        for character in specification {
+            switch character {
+            case "[":
+                bracketDepth += 1
+                guard bracketDepth == 1 else { throw ParseError.invalidForward }
+                current.append(character)
+            case "]":
+                bracketDepth -= 1
+                guard bracketDepth == 0 else { throw ParseError.invalidForward }
+                current.append(character)
+            case ":" where bracketDepth == 0:
+                parts.append(current)
+                current = ""
+            default:
+                current.append(character)
+            }
         }
-
-        return (localPort, destinationHost, destinationPort, value(at: 1))
+        guard bracketDepth == 0 else { throw ParseError.invalidForward }
+        parts.append(current)
+        return parts
     }
 
     private static func tokenize(_ command: String) throws -> [String] {

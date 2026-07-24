@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct RelayBarRootView: View {
@@ -60,8 +61,12 @@ private struct TunnelListView: View {
                             TunnelRow(
                                 tunnel: tunnel,
                                 phase: store.phase(for: tunnel),
+                                runtimePorts: store.runtimePorts(for: tunnel),
                                 onToggle: { store.toggle(tunnel) },
                                 onOpen: { store.openInBrowser(tunnel) },
+                                onOpenRule: {
+                                    store.openInBrowser(tunnel, ruleID: $0)
+                                },
                                 onEdit: { onEdit(tunnel) },
                                 onDelete: { store.delete(tunnel) }
                             )
@@ -186,8 +191,10 @@ private struct TunnelListView: View {
 private struct TunnelRow: View {
     let tunnel: Tunnel
     let phase: TunnelPhase
+    let runtimePorts: [UUID: Int]
     let onToggle: () -> Void
     let onOpen: () -> Void
+    let onOpenRule: (UUID) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -217,7 +224,7 @@ private struct TunnelRow: View {
                     }
                 }
 
-                Text("\(tunnel.localEndpoint)  →  \(tunnel.destinationEndpoint)")
+                Text(tunnel.displaySummary(runtimePorts: runtimePorts))
                     .font(.system(size: 11.5, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -230,17 +237,61 @@ private struct TunnelRow: View {
 
             Spacer(minLength: 4)
 
-            Button(action: onOpen) {
-                Image(systemName: "safari")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.accentColor.opacity(0.1)))
+            if tunnel.unambiguousBrowserURL != nil {
+                Button(action: onOpen) {
+                    Image(systemName: "safari")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.accentColor.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help(openButtonHelp)
+                .accessibilityLabel("Open \(tunnel.displayName) in browser")
             }
-            .buttonStyle(.plain)
-            .help(openButtonHelp)
-            .accessibilityLabel("Open \(tunnel.displayName) in browser")
 
             Menu {
+                ForEach(Array(tunnel.rules.enumerated()), id: \.element.id) { index, rule in
+                    Menu("Rule \(index + 1) · \(rule.kind.label)") {
+                        if rule.localBrowserURL != nil {
+                            Button("Open in Browser", systemImage: "safari") {
+                                onOpenRule(rule.id)
+                            }
+                        }
+
+                        if let endpoint = rule.copyableListenEndpoint(
+                            runtimePort: runtimePorts[rule.id]
+                        ) {
+                            Button("Copy \(copyLabel(for: rule))", systemImage: "doc.on.doc") {
+                                copy(endpoint)
+                            }
+                        } else if rule.listen.tcp?.port == 0 {
+                            Button("Allocated port available while running") {}
+                                .disabled(true)
+                        }
+
+                        if
+                            rule.kind == .remoteDynamic,
+                            let policy = tunnel.reverseSOCKSPolicy
+                        {
+                            Button("Destinations: \(policy.displayText)") {}
+                                .disabled(true)
+                        }
+
+                        if
+                            rule.kind == .local,
+                            rule.listen.kind == .unix,
+                            let path = rule.listen.path,
+                            FileManager.default.fileExists(atPath: path)
+                        {
+                            Button("Reveal Local Socket", systemImage: "finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting(
+                                    [URL(fileURLWithPath: path)]
+                                )
+                            }
+                        }
+                    }
+                }
+                Divider()
                 Button("Edit", systemImage: "pencil", action: onEdit)
                 Divider()
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
@@ -261,8 +312,10 @@ private struct TunnelRow: View {
                 }
             }
             .buttonStyle(.plain)
-            .help(isActive ? "Stop tunnel" : "Start tunnel")
-            .accessibilityLabel(isActive ? "Stop \(tunnel.displayName)" : "Start \(tunnel.displayName)")
+            .help(isActive ? "Stop profile" : "Start profile")
+            .accessibilityLabel(
+                isActive ? "Stop \(tunnel.displayName)" : "Start \(tunnel.displayName)"
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
@@ -352,6 +405,20 @@ private struct TunnelRow: View {
         case .stopped, .starting, .running:
             return "via \(tunnel.sshHost)"
         }
+    }
+
+    private func copyLabel(for rule: ForwardingRule) -> String {
+        switch rule.listen.kind {
+        case .unix:
+            return "Socket Path"
+        case .tcp:
+            return rule.kind.isDynamic ? "SOCKS Endpoint" : "Listen Endpoint"
+        }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 }
 

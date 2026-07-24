@@ -28,5 +28,3 @@ A task may be marked `Complete` only after:
 Completion does not authorize a commit, push, release, or deployment. Follow [`AGENTS.md`](../../AGENTS.md) and obtain explicit deployment approval.
 
 ## Active tasks
-
-- [Task 003 — Flexible SSH Forwarding Profiles](003-flexible-ssh-forwarding.md)

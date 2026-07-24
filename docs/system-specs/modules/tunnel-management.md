@@ -1,14 +1,19 @@
 # Tunnel Management
 
-Each saved item represents one SSH local (`-L`) port forward.
+Each saved item is a forwarding profile: one SSH connection plus an ordered, non-empty collection of typed forwarding rules.
 
 ## Contract
 
-- Users can add, edit, delete, start, and stop tunnels.
-- The editor accepts a name, SSH host, local port, destination host, and destination port.
-- Imported bind addresses and allowed SSH arguments are preserved.
-- Editing an active tunnel stops it before replacing its definition.
-- Deleting a tunnel cancels its process, retry, and pending browser launch.
-- Tunnel definitions persist immediately after add, edit, or delete.
+- Users can add, edit, delete, start, and stop profiles.
+- A rule is Local, Local SOCKS, Remote, or Remote SOCKS. Fixed Local and Remote rules independently support TCP-port and Unix-socket listeners and destinations; SOCKS listeners are TCP.
+- The editor can add, remove, duplicate, and reorder rules. It requires valid endpoints, unique rule identities, no overlapping listeners in the same namespace, and at least one rule.
+- New listeners default to explicit loopback. Each explicit non-loopback listener names its rule and whether exposure is on the Mac or SSH server.
+- Remote SOCKS requires an explicit Any, None, or host-and-port allowlist policy. Its effective policy remains visible in the profile summary and rule menu.
+- Remote TCP port `0` means Automatic. Its allocated port is runtime-only, is shown and copyable while running, and is cleared on stop or restart.
+- Profile-level Unix controls store a validated octal bind mask and whether a retry may remove a stale local socket whose type, device, and inode RelayBar recorded during the current app run. RelayBar never replaces an unowned path; remote socket cleanup remains server-controlled.
+- Single Local TCP profiles retain the browser shortcut. Menus otherwise expose only type-correct copy or local-socket reveal actions.
+- Editing an active profile stops it before replacing its definition.
+- Deleting a profile cancels its connection, control operation, retry, pending browser launch, runtime ports, and owned temporary artifacts.
+- Definitions persist immediately after add, edit, or delete.
 
 See [Data and state](../shared/data-and-state.md) for the stored schema.

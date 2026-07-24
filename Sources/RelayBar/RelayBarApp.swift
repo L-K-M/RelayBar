@@ -25,6 +25,8 @@ struct RelayBarApp: App {
 final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
     #if DEBUG
     private var previewWindow: NSWindow?
+    private var tunnelPreviewStore: TunnelStore?
+    private var tunnelPreviewDefaultsSuite: String?
     private var remoteFilesPreviewPresenter: RemoteFilesPreviewPresenter?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -102,8 +104,75 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         guard arguments.contains("--preview-window") else { return }
         NSApplication.shared.setActivationPolicy(.regular)
 
+        let previewStore: TunnelStore
+        if arguments.contains("--flexible-forwarding-preview") {
+            let suite = "RelayBar.FlexibleForwardingPreview.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            let store = TunnelStore(defaults: defaults)
+            store.add(
+                Tunnel(
+                    name: "Development Web",
+                    sshHost: "dev@example.com",
+                    rules: [
+                        .localTCP(
+                            bindAddress: "localhost",
+                            port: 3_000,
+                            destinationHost: "localhost",
+                            destinationPort: 3_000
+                        )
+                    ]
+                )
+            )
+            store.add(
+                Tunnel(
+                    name: "Web, SOCKS & Preview",
+                    sshHost: "bastion.example.com",
+                    additionalArguments: ["-p", "2222"],
+                    rules: [
+                        .localTCP(
+                            bindAddress: "localhost",
+                            port: 8_080,
+                            destinationHost: "web.internal",
+                            destinationPort: 80
+                        ),
+                        ForwardingRule(
+                            kind: .localDynamic,
+                            listen: .tcp(bindAddress: "localhost", port: 1_080)
+                        ),
+                        ForwardingRule(
+                            kind: .remote,
+                            listen: .tcp(bindAddress: "localhost", port: 0),
+                            destination: .tcp(host: "localhost", port: 4_321)
+                        )
+                    ]
+                )
+            )
+            store.add(
+                Tunnel(
+                    name: "Restricted Reverse SOCKS",
+                    sshHost: "gateway.example.com",
+                    rules: [
+                        ForwardingRule(
+                            kind: .remoteDynamic,
+                            listen: .tcp(bindAddress: "0.0.0.0", port: 1_081)
+                        )
+                    ],
+                    reverseSOCKSPolicy: .allow([
+                        "api.example.com:443",
+                        "*.internal:8443"
+                    ])
+                )
+            )
+            tunnelPreviewStore = store
+            tunnelPreviewDefaultsSuite = suite
+            previewStore = store
+        } else {
+            previewStore = TunnelStore.shared
+        }
+
         let rootView = RelayBarRootView()
-            .environmentObject(TunnelStore.shared)
+            .environmentObject(previewStore)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 440),
             styleMask: [.titled, .closable],
@@ -123,6 +192,11 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         RemoteFilesWindowController.shared.close()
         #if DEBUG
         remoteFilesPreviewPresenter?.cleanup()
+        if let tunnelPreviewDefaultsSuite {
+            UserDefaults.standard.removePersistentDomain(
+                forName: tunnelPreviewDefaultsSuite
+            )
+        }
         #endif
         TunnelStore.shared.stopAll()
     }

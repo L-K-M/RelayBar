@@ -2,125 +2,417 @@ import XCTest
 @testable import RelayBar
 
 final class SSHCommandParserTests: XCTestCase {
-    func testParsesBasicForward() throws {
-        let result = try SSHCommandParser.parse("ssh -N -L 8080:localhost:3000 user@example.com")
+    func testParsesBasicLocalForwardAndNormalizesLoopback() throws {
+        let result = try SSHCommandParser.parse(
+            "ssh -N -L 8080:localhost:3000 user@example.com"
+        )
 
-        XCTAssertEqual(result.localPort, 8080)
-        XCTAssertEqual(result.destinationHost, "localhost")
-        XCTAssertEqual(result.destinationPort, 3000)
+        XCTAssertEqual(result.rules.count, 1)
+        XCTAssertEqual(result.rules[0].kind, .local)
+        XCTAssertEqual(result.rules[0].listen, .tcp(bindAddress: "localhost", port: 8080))
+        XCTAssertEqual(result.rules[0].destination, .tcp(host: "localhost", port: 3000))
         XCTAssertEqual(result.sshHost, "user@example.com")
-        XCTAssertNil(result.bindAddress)
         XCTAssertTrue(result.additionalArguments.isEmpty)
     }
 
-    func testParsesAttachedForwardBindAndOptions() throws {
+    func testImportsRequestedDynamicSOCKSCommandAndSSHPort() throws {
         let result = try SSHCommandParser.parse(
-            "ssh -p 2222 -i ~/.ssh/work -L0.0.0.0:5432:db.internal:5432 ops@bastion"
+            "ssh -N -D 9999 -p 1234 user@server"
         )
 
-        XCTAssertEqual(result.localPort, 5432)
-        XCTAssertEqual(result.destinationHost, "db.internal")
-        XCTAssertEqual(result.destinationPort, 5432)
-        XCTAssertEqual(result.bindAddress, "0.0.0.0")
-        XCTAssertEqual(result.additionalArguments, ["-p", "2222", "-i", "~/.ssh/work"])
+        XCTAssertEqual(result.rules.count, 1)
+        XCTAssertEqual(result.rules[0].kind, .localDynamic)
+        XCTAssertEqual(result.rules[0].listen, .tcp(bindAddress: "localhost", port: 9999))
+        XCTAssertNil(result.rules[0].destination)
+        XCTAssertEqual(result.additionalArguments, ["-p", "1234"])
     }
 
-    func testParsesQuotedOption() throws {
+    func testImportsReverseSOCKSWithExplicitDefaultPolicy() throws {
+        let result = try SSHCommandParser.parse("ssh -N -R 1081 server")
+
+        XCTAssertEqual(result.rules[0].kind, .remoteDynamic)
+        XCTAssertEqual(result.rules[0].listen, .tcp(bindAddress: "localhost", port: 1081))
+        XCTAssertEqual(result.reverseSOCKSPolicy, .any)
+    }
+
+    func testImportsMixedRepeatedRulesInOrder() throws {
         let result = try SSHCommandParser.parse(
-            "ssh -o \"ConnectTimeout=5\" -L 9000:127.0.0.1:9001 host"
+            "ssh -L8080:web:80 -D 1080 -R9000:localhost:9001 -L 8443:web:443 host"
         )
 
-        XCTAssertEqual(result.additionalArguments, ["-o", "ConnectTimeout=5"])
-    }
-
-    func testPreservesIPv6ForwardSyntax() throws {
-        let result = try SSHCommandParser.parse("ssh -L 8080:[::1]:3000 host")
-        let tunnel = Tunnel(
-            name: "IPv6",
-            localPort: result.localPort,
-            destinationHost: result.destinationHost,
-            destinationPort: result.destinationPort,
-            sshHost: result.sshHost
+        XCTAssertEqual(result.rules.map(\.kind), [.local, .localDynamic, .remote, .local])
+        XCTAssertEqual(
+            result.rules.map(\.specification),
+            [
+                "localhost:8080:web:80",
+                "localhost:1080",
+                "localhost:9000:localhost:9001",
+                "localhost:8443:web:443"
+            ]
         )
-
-        XCTAssertEqual(result.destinationHost, "::1")
-        XCTAssertEqual(tunnel.forwardSpec, "8080:[::1]:3000")
     }
 
-    func testRejectsRemoteCommand() {
-        XCTAssertThrowsError(try SSHCommandParser.parse("ssh -L 8080:localhost:80 host uptime")) { error in
-            XCTAssertEqual(error as? SSHCommandParser.ParseError, .remoteCommand)
-        }
-    }
+    func testParsesAllFixedTCPAndUnixCombinations() throws {
+        let cases: [(String, ForwardingRuleKind, String)] = [
+            ("-L 8080:db:5432", .local, "localhost:8080:db:5432"),
+            ("-L 8080:/var/run/db.sock", .local, "localhost:8080:/var/run/db.sock"),
+            ("-L /tmp/local.sock:db:5432", .local, "/tmp/local.sock:db:5432"),
+            (
+                "-L /tmp/local.sock:/var/run/db.sock",
+                .local,
+                "/tmp/local.sock:/var/run/db.sock"
+            ),
+            ("-R 8080:db:5432", .remote, "localhost:8080:db:5432"),
+            ("-R 8080:/tmp/local.sock", .remote, "localhost:8080:/tmp/local.sock"),
+            ("-R /tmp/remote.sock:db:5432", .remote, "/tmp/remote.sock:db:5432"),
+            (
+                "-R /tmp/remote.sock:/tmp/local.sock",
+                .remote,
+                "/tmp/remote.sock:/tmp/local.sock"
+            )
+        ]
 
-    func testRejectsDynamicForward() {
-        XCTAssertThrowsError(try SSHCommandParser.parse("ssh -D 1080 host")) { error in
-            XCTAssertEqual(error as? SSHCommandParser.ParseError, .unsupportedOption("-D"))
-        }
-    }
-
-    func testRejectsOptionsThatCanExecuteLocalCommands() {
-        XCTAssertThrowsError(
-            try SSHCommandParser.parse("ssh -o 'ProxyCommand=sh -c whoami' -L 8080:localhost:80 host")
-        ) { error in
+        for (forward, kind, expectedSpecification) in cases {
+            let result = try SSHCommandParser.parse("ssh \(forward) server")
+            XCTAssertEqual(result.rules[0].kind, kind, forward)
             XCTAssertEqual(
-                error as? SSHCommandParser.ParseError,
-                .unsafeOption("-o ProxyCommand=sh -c whoami")
+                result.rules[0].specification,
+                expectedSpecification,
+                forward
             )
         }
-        XCTAssertThrowsError(
-            try SSHCommandParser.parse(
-                "ssh -o 'User=alice\nProxyCommand=whoami' -L 8080:localhost:80 host"
-            )
+    }
+
+    func testParsesQuotedUnixSocketPathsWithSpaces() throws {
+        let result = try SSHCommandParser.parse(
+            "ssh -L '/tmp/local socket:/tmp/remote socket' server"
+        )
+
+        XCTAssertEqual(result.rules[0].listen, .unix(path: "/tmp/local socket"))
+        XCTAssertEqual(
+            result.rules[0].destination,
+            .unix(path: "/tmp/remote socket")
         )
     }
 
-    func testRejectsCustomConfigFiles() {
-        XCTAssertThrowsError(try SSHCommandParser.parse("ssh -F /tmp/untrusted -L 8080:localhost:80 host")) { error in
-            XCTAssertEqual(error as? SSHCommandParser.ParseError, .unsupportedOption("-F"))
+    func testPreservesIPv6ListenAndDestinationSyntax() throws {
+        let result = try SSHCommandParser.parse(
+            "ssh -L [::1]:8080:[2001:db8::10]:3000 host"
+        )
+
+        XCTAssertEqual(result.rules[0].listen, .tcp(bindAddress: "::1", port: 8080))
+        XCTAssertEqual(
+            result.rules[0].destination,
+            .tcp(host: "2001:db8::10", port: 3000)
+        )
+        XCTAssertEqual(
+            result.rules[0].specification,
+            "[::1]:8080:[2001:db8::10]:3000"
+        )
+    }
+
+    func testSupportsAutomaticRemotePortsForFixedAndDynamicRules() throws {
+        let result = try SSHCommandParser.parse(
+            "ssh -R 0:localhost:3000 -R 0 server"
+        )
+
+        XCTAssertEqual(result.rules.map(\.kind), [.remote, .remoteDynamic])
+        XCTAssertEqual(result.rules[0].listen.tcp?.port, 0)
+        XCTAssertEqual(result.rules[1].listen.tcp?.port, 0)
+        XCTAssertThrowsError(
+            try SSHCommandParser.parse("ssh -L 0:localhost:3000 server")
+        )
+        XCTAssertThrowsError(
+            try SSHCommandParser.parse("ssh -D 0 server")
+        )
+    }
+
+    func testParsesStructuredUnixAndReverseSOCKSOptions() throws {
+        let result = try SSHCommandParser.parse(
+            """
+            ssh -o 'PermitRemoteOpen=example.com:443 *.internal:8443' \
+            -o StreamLocalBindMask=0077 -o StreamLocalBindUnlink=yes \
+            -R 1081 server
+            """
+        )
+
+        XCTAssertEqual(
+            result.reverseSOCKSPolicy,
+            .allow(["example.com:443", "*.internal:8443"])
+        )
+        XCTAssertEqual(result.streamLocalSettings.bindMask, 0o077)
+        XCTAssertTrue(result.streamLocalSettings.unlinkStaleSocket)
+        XCTAssertTrue(result.additionalArguments.isEmpty)
+    }
+
+    func testPreservesAllowedConnectionOptions() throws {
+        let result = try SSHCommandParser.parse(
+            "ssh -p 2222 -i ~/.ssh/work -J jump -o 'ConnectTimeout=5' -D1080 host"
+        )
+
+        XCTAssertEqual(
+            result.additionalArguments,
+            [
+                "-p", "2222",
+                "-i", "~/.ssh/work",
+                "-J", "jump",
+                "-o", "ConnectTimeout=5"
+            ]
+        )
+    }
+
+    func testRejectsMalformedOrAmbiguousForwardingCommands() {
+        let commands = [
+            "ssh host",
+            "ssh -D server",
+            "ssh -L 8080:localhost server",
+            "ssh -R /tmp/socket server",
+            "ssh -D 1080 host uptime",
+            "ssh -D 1080 host another-host",
+            "ssh -L relative.sock:/tmp/remote.sock host",
+            "ssh -L /tmp/a:colon.sock:/tmp/remote.sock host",
+            "ssh -D [::1:1080 host"
+        ]
+
+        for command in commands {
+            XCTAssertThrowsError(try SSHCommandParser.parse(command), command)
         }
     }
 
-    func testRejectsOptionShapedManualHost() {
+    func testRejectsUnsafeOrConflictingOptions() {
+        let commands = [
+            "ssh -o 'ProxyCommand=sh -c whoami' -D 1080 host",
+            "ssh -F /tmp/untrusted -D 1080 host",
+            "ssh -o StreamLocalBindMask=0888 -D 1080 host",
+            "ssh -o StreamLocalBindUnlink=maybe -D 1080 host",
+            "ssh -o PermitRemoteOpen=bad -R 1080 host",
+            "ssh -o PermitRemoteOpen=any -o PermitRemoteOpen=none -R 1080 host"
+        ]
+
+        for command in commands {
+            XCTAssertThrowsError(try SSHCommandParser.parse(command), command)
+        }
+    }
+
+    func testRejectsControlCharactersAndOptionShapedValues() {
         XCTAssertFalse(SSHArgumentPolicy.isValidHostTarget("-oProxyCommand=whoami"))
         XCTAssertFalse(SSHArgumentPolicy.isValidHostTarget("host with spaces"))
         XCTAssertTrue(SSHArgumentPolicy.isValidHostTarget("user@example.com"))
-    }
-
-    func testRejectsTamperedPersistedArguments() {
-        XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-o", "LocalCommand=whoami"]))
+        XCTAssertFalse(SSHArgumentPolicy.isValidSocketPath("/tmp/bad\u{0000}socket"))
+        XCTAssertFalse(SSHArgumentPolicy.isValidSocketPath("relative/socket"))
         XCTAssertFalse(
             SSHArgumentPolicy.areAdditionalArgumentsSafe([
                 "-o", "User=alice\nProxyCommand=whoami"
             ])
         )
-        XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-i", "/tmp/key\u{0000}name"]))
-        XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-o", "User"]))
         XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["unexpected-host"]))
-        XCTAssertTrue(SSHArgumentPolicy.areAdditionalArgumentsSafe([
-            "-p", "2222",
-            "-i", "~/.ssh/work",
-            "-o", "IdentitiesOnly=yes"
-        ]))
     }
 }
 
 final class TunnelTests: XCTestCase {
-    func testBrowserURLUsesLocalhostByDefault() {
-        let tunnel = makeTunnel(bindAddress: nil)
+    func testLegacyJSONMigratesToOneTypedLocalRule() throws {
+        let legacy = LegacyTunnel(
+            id: UUID(),
+            name: "Database",
+            localPort: 5432,
+            destinationHost: "db.internal",
+            destinationPort: 5432,
+            sshHost: "bastion",
+            bindAddress: "127.0.0.1",
+            additionalArguments: ["-p", "2222"]
+        )
 
-        XCTAssertEqual(tunnel.browserURL.absoluteString, "http://localhost:8080/")
+        let tunnel = try JSONDecoder().decode(
+            Tunnel.self,
+            from: JSONEncoder().encode(legacy)
+        )
+
+        XCTAssertEqual(tunnel.id, legacy.id)
+        XCTAssertEqual(tunnel.name, legacy.name)
+        XCTAssertEqual(tunnel.sshHost, legacy.sshHost)
+        XCTAssertEqual(tunnel.additionalArguments, legacy.additionalArguments)
+        XCTAssertEqual(tunnel.rules.count, 1)
+        XCTAssertEqual(tunnel.rules[0].kind, .local)
+        XCTAssertEqual(tunnel.rules[0].listen, .tcp(bindAddress: "127.0.0.1", port: 5432))
+        XCTAssertEqual(
+            tunnel.rules[0].destination,
+            .tcp(host: "db.internal", port: 5432)
+        )
     }
 
-    func testBrowserURLMapsWildcardBindAddressesToLocalhost() {
-        XCTAssertEqual(makeTunnel(bindAddress: "0.0.0.0").browserURL.host, "localhost")
-        XCTAssertEqual(makeTunnel(bindAddress: "::").browserURL.host, "localhost")
+    func testNewJSONUsesTypedRulesInsteadOfLegacyDestinationFields() throws {
+        let tunnel = makeTunnel(bindAddress: "localhost")
+        let data = try JSONEncoder().encode(tunnel)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertNotNil(object["rules"])
+        XCTAssertNil(object["localPort"])
+        XCTAssertNil(object["destinationHost"])
     }
 
-    func testBrowserURLFormatsIPv6BindAddress() {
-        let tunnel = makeTunnel(bindAddress: "[::1]")
+    func testBrowserURLUsesTypeCorrectLocalTCPRule() {
+        XCTAssertEqual(
+            makeTunnel(bindAddress: nil).browserURL?.absoluteString,
+            "http://localhost:8080/"
+        )
+        XCTAssertEqual(
+            makeTunnel(bindAddress: "0.0.0.0").browserURL?.host,
+            "localhost"
+        )
+        XCTAssertEqual(
+            makeTunnel(bindAddress: "::").browserURL?.host,
+            "localhost"
+        )
+        XCTAssertEqual(
+            makeTunnel(bindAddress: "[::1]").browserURL?.absoluteString,
+            "http://[::1]:8080/"
+        )
 
-        XCTAssertEqual(tunnel.browserURL.absoluteString, "http://[::1]:8080/")
+        let socks = Tunnel(
+            name: "SOCKS",
+            sshHost: "example.com",
+            rules: [
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1080)
+                )
+            ]
+        )
+        XCTAssertNil(socks.browserURL)
+    }
+
+    func testRejectsConflictingListenersAndMissingReversePolicy() {
+        let first = ForwardingRule(
+            kind: .localDynamic,
+            listen: .tcp(bindAddress: "localhost", port: 1080)
+        )
+        let second = ForwardingRule.localTCP(
+            bindAddress: "127.0.0.1",
+            port: 1080,
+            destinationHost: "localhost",
+            destinationPort: 80
+        )
+        XCTAssertFalse(
+            Tunnel(
+                name: "Conflict",
+                sshHost: "host",
+                rules: [first, second]
+            ).isSafeToRun
+        )
+
+        let reverse = ForwardingRule(
+            kind: .remoteDynamic,
+            listen: .tcp(bindAddress: "localhost", port: 1081)
+        )
+        XCTAssertFalse(
+            Tunnel(name: "Reverse", sshHost: "host", rules: [reverse]).isSafeToRun
+        )
+        XCTAssertTrue(
+            Tunnel(
+                name: "Reverse",
+                sshHost: "host",
+                rules: [reverse],
+                reverseSOCKSPolicy: .allow(["example.com:443"])
+            ).isSafeToRun
+        )
+    }
+
+    func testRuntimePortAppearsOnlyInResolvedSummary() {
+        let rule = ForwardingRule(
+            kind: .remote,
+            listen: .tcp(bindAddress: "localhost", port: 0),
+            destination: .tcp(host: "localhost", port: 3000)
+        )
+
+        XCTAssertTrue(rule.displaySummary.contains(":0"))
+        XCTAssertTrue(rule.displaySummary(runtimePort: 47_000).contains(":47000"))
+        XCTAssertNil(rule.copyableListenEndpoint(runtimePort: nil))
+        XCTAssertEqual(
+            rule.copyableListenEndpoint(runtimePort: 47_000),
+            "localhost:47000"
+        )
+    }
+
+    func testMixedProfileRoundTripsWithoutChangingRuleMeaning() throws {
+        let profile = Tunnel(
+            name: "Mixed",
+            sshHost: "user@server",
+            additionalArguments: ["-p", "2222"],
+            rules: [
+                .localTCP(
+                    bindAddress: "localhost",
+                    port: 8_080,
+                    destinationHost: "web.internal",
+                    destinationPort: 80
+                ),
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "::1", port: 1_080)
+                ),
+                ForwardingRule(
+                    kind: .remote,
+                    listen: .unix(path: "/tmp/remote.sock"),
+                    destination: .unix(path: "/tmp/local.sock")
+                ),
+                ForwardingRule(
+                    kind: .remoteDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 0)
+                )
+            ],
+            reverseSOCKSPolicy: .allow(["example.com:443"]),
+            streamLocalSettings: StreamLocalSettings(
+                bindMask: 0o077,
+                unlinkStaleSocket: true
+            )
+        )
+
+        let decoded = try JSONDecoder().decode(
+            Tunnel.self,
+            from: JSONEncoder().encode(profile)
+        )
+
+        XCTAssertEqual(decoded, profile)
+        XCTAssertEqual(decoded.forwardArguments, profile.forwardArguments)
+        XCTAssertTrue(decoded.isSafeToRun)
+    }
+
+    func testRejectsDuplicateRuleIdentityAndTamperedOptions() {
+        let rule = ForwardingRule(
+            kind: .localDynamic,
+            listen: .tcp(bindAddress: "localhost", port: 1_080)
+        )
+        XCTAssertFalse(
+            Tunnel(
+                name: "Duplicate IDs",
+                sshHost: "server",
+                rules: [rule, rule]
+            ).isSafeToRun
+        )
+        XCTAssertFalse(
+            Tunnel(
+                name: "Tampered",
+                sshHost: "server",
+                additionalArguments: ["-o", "ProxyCommand=whoami"],
+                rules: [rule]
+            ).isSafeToRun
+        )
+    }
+
+    func testReverseSOCKSSummaryAlwaysShowsDestinationPolicy() {
+        let rule = ForwardingRule(
+            kind: .remoteDynamic,
+            listen: .tcp(bindAddress: "localhost", port: 1_081)
+        )
+        let profile = Tunnel(
+            name: "Reverse",
+            sshHost: "server",
+            rules: [rule],
+            reverseSOCKSPolicy: .any
+        )
+
+        XCTAssertTrue(profile.displaySummary.contains("Any destination"))
     }
 
     private func makeTunnel(bindAddress: String?) -> Tunnel {
@@ -133,4 +425,15 @@ final class TunnelTests: XCTestCase {
             bindAddress: bindAddress
         )
     }
+}
+
+private struct LegacyTunnel: Codable {
+    let id: UUID
+    let name: String
+    let localPort: Int
+    let destinationHost: String
+    let destinationPort: Int
+    let sshHost: String
+    let bindAddress: String?
+    let additionalArguments: [String]
 }

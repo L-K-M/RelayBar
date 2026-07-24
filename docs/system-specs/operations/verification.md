@@ -2,19 +2,26 @@
 
 ## Required checks
 
-- Run `swift test` for parsing, safety, retry, cancellation, browser URL behavior, Remote Files path/argument handling, listing parsing, navigation state, Markdown compatibility, link policy, and renderer limits.
+- Run `swift test` for the complete forwarding parser matrix, migration, typed-profile validation, control sequencing, rollback and timeout, runtime port mapping, socket refusal, retry, cancellation, browser URL behavior, Remote Files connection deduplication, path/argument handling, listing parsing, navigation state, Markdown compatibility, link policy, and renderer limits.
 - Build the Xcode app target with complete Swift strict-concurrency checking and warnings treated as errors.
+- Run `plutil -lint` against the application property list.
 - Run `git diff --check` before committing.
 
 ## Optional live check
 
 Set `RELAYBAR_LIVE_TEST=1` and `RELAYBAR_LIVE_SSH_HOST` to test a real SSH forward and HTTP response on local port 3000.
 
+Set `RELAYBAR_FLEXIBLE_LIVE_TEST=1` with `RELAYBAR_LIVE_SSH_HOST` to verify that a real RelayBar-managed Local Unix listener reaches Running with the configured mode and is removed on stop.
+
+Flexible-forwarding changes additionally require a live OpenSSH control workflow. Exercise Local SOCKS with client-side hostname delegation, Remote SOCKS with allowed and denied `PermitRemoteOpen` destinations, repeated remote port-`0` allocation, and each server-supported fixed TCP/Unix matrix. Record server-controlled `GatewayPorts` or Unix-socket limitations instead of silently skipping them.
+
 Set `RELAYBAR_REMOTE_FILES_LIVE_TEST=1`, `RELAYBAR_LIVE_SSH_HOST`, and `RELAYBAR_LIVE_REMOTE_PATH` to run the opt-in Remote Files listing test against a real saved-server target. Add `RELAYBAR_LIVE_REMOTE_EXPECT_NONEMPTY=1` when the configured path is known to contain entries so a false empty-folder result fails the test.
 
 Remote Files changes should additionally exercise that server and absolute path manually for nested navigation, refresh, file download, recursive folder download, cancellation, image preview, and representative failures.
 
 Before a live server is available, use the DEBUG-only Remote Files fixture to review light and dark appearance, minimum-window truncation, empty folders, long names, image and Markdown previews, refresh recovery, initial connection errors, and active, completed, failed, and canceled transfers. Fixture downloads must remain inside their private temporary directory and must not open Finder.
+
+Start a DEBUG build with `--preview-window --flexible-forwarding-preview` to review rule-aware profile rows and the editor without reading or changing the user's saved profiles. Review add, type switching, duplicate, reorder, remove, automatic ports, Unix fields, exposure warnings, reverse-SOCKS policy, scrolling, keyboard focus, and accessibility labels in light and dark appearance.
 
 For a native live-transport review without changing the user's saved tunnels, start a DEBUG build with `--remote-files-live-preview <ssh-host>`. This route uses the real SFTP service while keeping review downloads inside the same private temporary directory and suppressing Finder launch.
 

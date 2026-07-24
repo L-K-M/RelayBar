@@ -114,6 +114,43 @@ final class RemoteServerTests: XCTestCase {
     }
 
     @MainActor
+    func testMultiRuleProfilesRemainAvailableAsDeduplicatedSavedServers() {
+        let profile = Tunnel(
+            name: "spark-422e.local · 2 rules",
+            sshHost: "spark-422e.local",
+            additionalArguments: ["-p", "22"],
+            rules: [
+                .localTCP(
+                    bindAddress: "localhost",
+                    port: 4_321,
+                    destinationHost: "localhost",
+                    destinationPort: 4_321
+                ),
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1_080)
+                )
+            ]
+        )
+        let duplicateConnection = Tunnel(
+            name: "SOCKS",
+            sshHost: "spark-422e.local",
+            additionalArguments: ["-p", "22"],
+            rules: [
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1_081)
+                )
+            ]
+        )
+
+        let model = RemoteFilesModel(tunnels: [profile, duplicateConnection])
+
+        XCTAssertEqual(model.servers.count, 1)
+        XCTAssertEqual(model.servers.first?.displayName, "spark-422e.local")
+    }
+
+    @MainActor
     func testKeepsSSHConnectionsWithDifferentAliasesOrArgumentsSeparate() {
         let defaultConnection = Tunnel(
             name: "Dashboard",

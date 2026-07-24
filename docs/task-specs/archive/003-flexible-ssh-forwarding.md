@@ -1,8 +1,10 @@
 # Task 003 — Flexible SSH Forwarding Profiles
 
-Status: Proposed
+Status: Complete
 
 Created: 2026-07-24
+
+Completed: 2026-07-24
 
 ## Outcome
 
@@ -196,4 +198,5 @@ The forwarding semantics in this task follow the OpenSSH [`ssh(1)` forwarding op
 - Updated system specs, security review, README, and user documentation
 - `docs/verification/003-flexible-ssh-forwarding.md`
 
-Do not move this spec to [`archive/`](archive/) until every acceptance criterion has current evidence.
+Completion evidence is recorded in
+[`docs/verification/003-flexible-ssh-forwarding.md`](../../verification/003-flexible-ssh-forwarding.md).

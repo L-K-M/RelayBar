@@ -12,7 +12,7 @@ This review covers command import, tunnel persistence, child-process management,
 
 The initial importer preserved arbitrary `-o` values and custom `-F` configuration files. OpenSSH options such as `ProxyCommand`, `LocalCommand`, and `KnownHostsCommand` can execute local programs even though RelayBar never invokes a shell itself.
 
-Remediation: the importer and runtime now share an allowlist. Command-executing options, custom config files, log files, control sockets, remote commands, remote forwards, and dynamic forwards are rejected. Accepted option values must be nonempty and cannot contain control or newline characters, preventing a persisted or quoted value from smuggling another configuration line. Runtime validation also protects against a tampered preferences payload.
+Remediation: the importer and runtime now share an allowlist. Forwarding-only `-L`, `-D`, and `-R` values are parsed into typed rules rather than preserved as arbitrary arguments. Command-executing options, custom config files, log files, user-selected control sockets, and remote commands remain rejected. Accepted option values must be nonempty and cannot contain control or newline characters, preventing a persisted or quoted value from smuggling another configuration line. `PermitRemoteOpen`, `StreamLocalBindMask`, and `StreamLocalBindUnlink` have dedicated validators. Runtime validation also protects against a tampered preferences payload.
 
 ### SR-02 — A manual SSH host could be interpreted as an option (high)
 
@@ -24,7 +24,13 @@ Remediation: SSH targets must be a single non-control, non-whitespace token and 
 
 An imported `-L 0.0.0.0:...` or wildcard bind can expose a forwarded service to other machines.
 
-Remediation: imported non-loopback binds display an explicit warning before saving. Manual creation remains loopback-only.
+Remediation: newly imported and manually created listeners default to explicit loopback. Every explicit non-loopback listener displays a rule-specific warning naming whether exposure occurs on the Mac or SSH server.
+
+### SR-10 — Flexible forwarding expands network and filesystem authority (high)
+
+Local SOCKS can let other local-network clients request connections from the SSH server; Remote and Remote SOCKS can expose Mac-side services or network reachability to server-side clients. Unix listeners can also overwrite pathnames if OpenSSH's general unlink behavior is enabled without ownership checks.
+
+Remediation: Local and Remote SOCKS are distinct typed rules and are never offered as HTTP URLs. Remote SOCKS requires a visible `PermitRemoteOpen` policy. Remote wildcard binds are explicit and warn that the server controls `GatewayPorts`. Imported omitted binds become `localhost`. The SSH master clears config-defined forwards, then bounded `-F none` control helpers install only visible rules. Private control paths live in random `0700` directories. Local Unix listeners preflight the exact path, refuse every existing entry, and force OpenSSH unlinking off. A requested `StreamLocalBindUnlink=yes` is narrowed to retrying cleanup of a socket whose type, device, and inode RelayBar recorded during the current app run. Remote Unix cleanup remains server-controlled.
 
 ### SR-04 — Unbounded child-process diagnostics (low)
 
@@ -69,7 +75,8 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - Executable paths are fixed to `/usr/bin/ssh` and `/usr/bin/sftp`.
 - Arguments are passed through `Process` as an array; there is no shell expansion.
 - SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives.
-- Standard input and output are closed; diagnostic stderr is bounded.
+- One private master owns each forwarding profile; visible rules are installed with bounded, time-limited control operations and all-or-nothing startup.
+- Standard input and output are closed where unused; master and control diagnostics are bounded.
 - Detached SSH (`-f`) is discarded, and tracked children are terminated on stop and app quit.
 - Tunnel definitions contain no passwords and remain in local application preferences.
 - Remote paths are not persisted. RelayBar does not read or copy private-key contents.
@@ -84,6 +91,10 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 
 - SSH host aliases and imported identity paths can reveal infrastructure metadata to anyone with access to the user's macOS account. RelayBar does not claim encrypted-at-rest storage.
 - A deliberately non-loopback bind exposes the local listener to the selected interface. RelayBar warns but honors an explicitly imported bind.
+- A Local SOCKS client may delegate hostnames to the SSH server or resolve them locally; RelayBar cannot force client DNS behavior and OpenSSH forwarding is not a UDP or general DNS proxy.
+- Remote forwarding exposes Mac-side destinations to clients that can reach the server listener. Non-loopback remote binds depend on server `GatewayPorts`.
+- Remote SOCKS allows server-side clients to request TCP connections from the Mac's network position, subject to the displayed `PermitRemoteOpen` policy. Listener creation does not guarantee later destination connectivity.
+- Remote Unix listener replacement and cleanup are controlled by the SSH server. RelayBar reports configuration and OpenSSH results but cannot prove a remote pathname was removed.
 - RelayBar is intentionally unsandboxed so system SSH can use the same `~/.ssh/config`, `known_hosts`, agent, and identity files as Terminal. Consequently, a trusted SSH configuration may use advanced OpenSSH features—including command-capable directives—that RelayBar's pasted-command importer itself rejects.
 - Authentication security, host-key policy, configured SSH directives, and the remote SSH server remain the user's responsibility.
 - Recursive folder downloads have no preflight total-size guarantee; the user chooses the destination, sees transferred bytes, and can cancel.

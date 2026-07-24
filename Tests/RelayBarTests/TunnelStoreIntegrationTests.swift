@@ -11,19 +11,17 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             let sshHost = environment["RELAYBAR_LIVE_SSH_HOST"],
             !sshHost.isEmpty
         else {
-            throw XCTSkip("Set RELAYBAR_LIVE_TEST=1 and RELAYBAR_LIVE_SSH_HOST to run the live test.")
+            throw XCTSkip(
+                "Set RELAYBAR_LIVE_TEST=1 and RELAYBAR_LIVE_SSH_HOST to run the live test."
+            )
         }
 
-        let suiteName = "RelayBarTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Could not create isolated preferences.")
-            return
-        }
+        let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = TunnelStore(defaults: defaults)
         let tunnel = Tunnel(
-            name: "Spark",
+            name: "Live local forward",
             localPort: 3000,
             destinationHost: "127.0.0.1",
             destinationPort: 3000,
@@ -40,7 +38,9 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             switch store.phase(for: tunnel) {
             case .running:
                 reachedRunningState = true
-                var request = URLRequest(url: URL(string: "http://127.0.0.1:3000/")!)
+                var request = URLRequest(
+                    url: URL(string: "http://127.0.0.1:3000/")!
+                )
                 request.timeoutInterval = 1
                 do {
                     let (data, response) = try await URLSession.shared.data(for: request)
@@ -60,10 +60,349 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         }
 
         if reachedRunningState {
-            XCTFail("Tunnel process ran, but the forwarded endpoint was not reachable: \(lastConnectionError?.localizedDescription ?? "unknown error")")
+            XCTFail(
+                "The forward ran but was unreachable: "
+                    + (lastConnectionError?.localizedDescription ?? "unknown error")
+            )
         } else {
-            XCTFail("Tunnel did not reach the running state.")
+            XCTFail("The forwarding profile did not reach the running state.")
         }
+    }
+
+    func testConfiguredLocalUnixSocketWhenFlexibleLiveTestingIsEnabled() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard
+            environment["RELAYBAR_FLEXIBLE_LIVE_TEST"] == "1",
+            let sshHost = environment["RELAYBAR_LIVE_SSH_HOST"],
+            !sshHost.isEmpty
+        else {
+            throw XCTSkip(
+                "Set RELAYBAR_FLEXIBLE_LIVE_TEST=1 and RELAYBAR_LIVE_SSH_HOST to run the flexible live test."
+            )
+        }
+
+        let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent(
+                "RelayBarLiveUnix-\(UUID().uuidString.prefix(8))",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let socketURL = directory.appendingPathComponent("listener.sock")
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        let profile = Tunnel(
+            name: "Live local Unix",
+            sshHost: sshHost,
+            rules: [
+                ForwardingRule(
+                    kind: .local,
+                    listen: .unix(path: socketURL.path),
+                    destination: .tcp(host: "127.0.0.1", port: 9)
+                )
+            ],
+            streamLocalSettings: StreamLocalSettings(
+                bindMask: 0o077,
+                unlinkStaleSocket: true
+            )
+        )
+
+        store.start(profile)
+        let startupFinished = await waitUntil(timeoutIterations: 2_000) {
+            switch store.phase(for: profile) {
+            case .running, .failed:
+                true
+            case .stopped, .starting, .retrying:
+                false
+            }
+        }
+        guard startupFinished, store.phase(for: profile) == .running else {
+            return XCTFail(
+                "The local Unix profile did not run: \(store.phase(for: profile))"
+            )
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: socketURL.path))
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: socketURL.path
+        )
+        XCTAssertEqual(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue,
+            0o700
+        )
+
+        store.stop(profile)
+
+        XCTAssertEqual(store.phase(for: profile), .stopped)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: socketURL.path))
+    }
+
+    func testMigratesLegacyCollectionTransactionallyToV2() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let legacy = LegacyTunnel(
+            id: UUID(),
+            name: "Legacy",
+            localPort: 8080,
+            destinationHost: "localhost",
+            destinationPort: 3000,
+            sshHost: "server",
+            bindAddress: nil,
+            additionalArguments: ["-p", "2222"]
+        )
+        defaults.set(
+            try JSONEncoder().encode([legacy]),
+            forKey: "savedTunnels.v1"
+        )
+
+        let store = TunnelStore(defaults: defaults)
+
+        XCTAssertEqual(store.tunnels.count, 1)
+        XCTAssertEqual(store.tunnels[0].id, legacy.id)
+        XCTAssertEqual(store.tunnels[0].rules[0].kind, .local)
+        let v2Data = try XCTUnwrap(defaults.data(forKey: "savedTunnels.v2"))
+        XCTAssertEqual(
+            try JSONDecoder().decode([Tunnel].self, from: v2Data),
+            store.tunnels
+        )
+        XCTAssertNotNil(defaults.data(forKey: "savedTunnels.v1"))
+    }
+
+    func testInstallsMixedRulesSeparatelyAndMapsAutomaticPorts() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let firstAutomatic = ForwardingRule(
+            kind: .remote,
+            listen: .tcp(bindAddress: "localhost", port: 0),
+            destination: .tcp(host: "localhost", port: 3000)
+        )
+        let secondAutomatic = ForwardingRule(
+            kind: .remoteDynamic,
+            listen: .tcp(bindAddress: "localhost", port: 0)
+        )
+        let profile = Tunnel(
+            name: "Mixed",
+            sshHost: "server",
+            rules: [
+                .localTCP(
+                    bindAddress: "localhost",
+                    port: 8080,
+                    destinationHost: "web",
+                    destinationPort: 80
+                ),
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1080)
+                ),
+                firstAutomatic,
+                secondAutomatic
+            ],
+            reverseSOCKSPolicy: .allow(["example.com:443"])
+        )
+
+        store.start(profile)
+        defer { store.stop(profile) }
+        let reachedRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+
+        XCTAssertEqual(
+            store.runtimePorts(for: profile),
+            [firstAutomatic.id: 47_000, secondAutomatic.id: 47_001]
+        )
+
+        let log = try String(contentsOf: fixture.logURL)
+        let invocations = parsedInvocations(log)
+        XCTAssertEqual(invocations.count, 5)
+        XCTAssertTrue(invocations[0].contains("-M"))
+        XCTAssertTrue(invocations[0].contains("ClearAllForwardings=yes"))
+        XCTAssertTrue(
+            invocations[0].contains(
+                "PermitRemoteOpen=example.com:443"
+            )
+        )
+        XCTAssertFalse(invocations[0].contains("-L"))
+        XCTAssertTrue(invocations.contains { invocation in
+            invocation.contains("-L")
+                && invocation.contains("localhost:8080:web:80")
+        })
+        XCTAssertTrue(invocations.contains { invocation in
+            invocation.contains("-D") && invocation.contains("localhost:1080")
+        })
+        XCTAssertTrue(invocations.contains { invocation in
+            invocation.contains("-R")
+                && invocation.contains("localhost:0:localhost:3000")
+        })
+        XCTAssertTrue(invocations.contains { invocation in
+            invocation.contains("-R") && invocation.contains("localhost:0")
+        })
+        for helper in invocations.dropFirst() {
+            XCTAssertTrue(helper.starts(with: ["-F", "none"]))
+        }
+    }
+
+    func testRuleFailureRollsBackProfileAndStopsAfterConfiguredRetries() async throws {
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_FAIL_SPEC": "localhost:1080"]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 0
+        )
+        let profile = Tunnel(
+            name: "Failure",
+            sshHost: "server",
+            rules: [
+                .localTCP(
+                    bindAddress: "localhost",
+                    port: 8080,
+                    destinationHost: "web",
+                    destinationPort: 80
+                ),
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1080)
+                )
+            ]
+        )
+
+        store.start(profile)
+
+        let reachedFailure = await waitUntil {
+            if case .failed = store.phase(for: profile) { return true }
+            return false
+        }
+        XCTAssertTrue(reachedFailure)
+        guard case .failed(let message) = store.phase(for: profile) else {
+            return XCTFail("Expected a failed profile.")
+        }
+        XCTAssertTrue(message.contains("fake forwarding failure"))
+        XCTAssertTrue(store.runtimePorts(for: profile).isEmpty)
+        XCTAssertEqual(store.runningCount, 0)
+    }
+
+    func testHungControlOperationTimesOutAndRollsBackProfile() async throws {
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_DELAY_SPEC": "localhost:1080"]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 0,
+            controlOperationTimeout: 0.1
+        )
+        let profile = Tunnel(
+            name: "Hung helper",
+            sshHost: "server",
+            rules: [
+                ForwardingRule(
+                    kind: .localDynamic,
+                    listen: .tcp(bindAddress: "localhost", port: 1080)
+                )
+            ]
+        )
+
+        store.start(profile)
+
+        let reachedFailure = await waitUntil {
+            if case .failed = store.phase(for: profile) { return true }
+            return false
+        }
+        XCTAssertTrue(reachedFailure)
+        guard case .failed(let message) = store.phase(for: profile) else {
+            return XCTFail("Expected a failed profile.")
+        }
+        XCTAssertTrue(message.contains("timed out"))
+        XCTAssertEqual(store.runningCount, 0)
+    }
+
+    func testAutomaticPortsClearOnStopAndChangeAfterRestart() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let rule = ForwardingRule(
+            kind: .remote,
+            listen: .tcp(bindAddress: "localhost", port: 0),
+            destination: .tcp(host: "localhost", port: 3000)
+        )
+        let profile = Tunnel(name: "Automatic", sshHost: "server", rules: [rule])
+
+        store.start(profile)
+        let firstStartRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(firstStartRunning)
+        XCTAssertEqual(store.runtimePorts(for: profile)[rule.id], 47_000)
+
+        store.stop(profile)
+        XCTAssertTrue(store.runtimePorts(for: profile).isEmpty)
+        XCTAssertEqual(store.phase(for: profile), .stopped)
+
+        store.start(profile)
+        defer { store.stop(profile) }
+        let secondStartRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(secondStartRunning)
+        XCTAssertEqual(store.runtimePorts(for: profile)[rule.id], 47_001)
+    }
+
+    func testRefusesToReplaceExistingLocalSocketPath() throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let socketPath = "/tmp/RelayBarTest-\(UUID().uuidString.prefix(8)).sock"
+        defer { try? FileManager.default.removeItem(atPath: socketPath) }
+        try Data("not a socket".utf8).write(
+            to: URL(fileURLWithPath: socketPath)
+        )
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let profile = Tunnel(
+            name: "Socket",
+            sshHost: "server",
+            rules: [
+                ForwardingRule(
+                    kind: .local,
+                    listen: .unix(path: socketPath),
+                    destination: .tcp(host: "localhost", port: 3000)
+                )
+            ],
+            streamLocalSettings: StreamLocalSettings(
+                bindMask: 0o077,
+                unlinkStaleSocket: true
+            )
+        )
+
+        store.start(profile)
+
+        guard case .failed(let message) = store.phase(for: profile) else {
+            return XCTFail("Expected preflight failure.")
+        }
+        XCTAssertTrue(message.contains("will not replace"))
+        XCTAssertEqual(
+            try String(contentsOfFile: socketPath),
+            "not a socket"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.logURL.path))
     }
 
     func testUnexpectedExitRetriesUntilLimit() async throws {
@@ -76,21 +415,21 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             maxRetryAttempts: 2,
             retryDelayProvider: { _ in 0.01 }
         )
-        let tunnel = makeTunnel()
+        let tunnel = makeLocalProfile()
         store.add(tunnel)
 
         store.start(tunnel)
 
-        for _ in 0..<200 {
-            if case .failed(let message) = store.phase(for: tunnel) {
-                XCTAssertTrue(message.contains("Automatic retry stopped after 2 attempts."))
-                XCTAssertEqual(store.runningCount, 0)
-                return
-            }
-            try await Task.sleep(for: .milliseconds(5))
+        let retriesExhausted = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
         }
-
-        XCTFail("Tunnel did not stop retrying after the configured limit.")
+        XCTAssertTrue(retriesExhausted)
+        guard case .failed(let message) = store.phase(for: tunnel) else {
+            return XCTFail("Expected retries to exhaust.")
+        }
+        XCTAssertTrue(message.contains("Automatic retry stopped after 2 attempts."))
+        XCTAssertEqual(store.runningCount, 0)
     }
 
     func testManualStopCancelsPendingRetry() async throws {
@@ -102,21 +441,14 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
             retryDelayProvider: { _ in 0.2 }
         )
-        let tunnel = makeTunnel()
-        store.add(tunnel)
+        let tunnel = makeLocalProfile()
         store.start(tunnel)
 
-        for _ in 0..<100 {
-            if case .retrying = store.phase(for: tunnel) {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(5))
+        let enteredRetry = await waitUntil {
+            if case .retrying = store.phase(for: tunnel) { return true }
+            return false
         }
-
-        guard case .retrying = store.phase(for: tunnel) else {
-            XCTFail("Tunnel did not enter retry backoff.")
-            return
-        }
+        XCTAssertTrue(enteredRetry)
 
         store.stop(tunnel)
         try await Task.sleep(for: .milliseconds(300))
@@ -134,49 +466,36 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(TunnelStore.retryDelay(for: 10), 60)
     }
 
-    func testOpenInBrowserStartsTunnelThenOpensLocalURL() async throws {
+    func testBrowserOpenWaitsUntilAllRulesAreInstalled() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-
         var openedURLs: [URL] = []
-        let store = TunnelStore(
+        let store = makeFakeStore(
             defaults: defaults,
-            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/yes"),
+            fixture: fixture,
             browserOpener: { openedURLs.append($0) }
         )
-        let tunnel = makeTunnel()
-        store.add(tunnel)
-        defer { store.stop(tunnel) }
+        let tunnel = makeLocalProfile()
 
         store.openInBrowser(tunnel)
 
-        for _ in 0..<200 where openedURLs.isEmpty {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-
-        XCTAssertEqual(openedURLs, [tunnel.browserURL])
+        let opened = await waitUntil { !openedURLs.isEmpty }
+        XCTAssertTrue(opened)
+        XCTAssertEqual(openedURLs, [try XCTUnwrap(tunnel.browserURL)])
         XCTAssertEqual(store.phase(for: tunnel), .running)
+        store.stop(tunnel)
     }
 
-    func testStoppingTunnelCancelsPendingBrowserOpen() async throws {
-        let (defaults, suiteName) = makeIsolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        var openedURLs: [URL] = []
-        let store = TunnelStore(
-            defaults: defaults,
-            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/yes"),
-            browserOpener: { openedURLs.append($0) }
+    private func makeLocalProfile() -> Tunnel {
+        Tunnel(
+            name: "Web",
+            localPort: 43_210,
+            destinationHost: "127.0.0.1",
+            destinationPort: 80,
+            sshHost: "example.com"
         )
-        let tunnel = makeTunnel()
-        store.add(tunnel)
-
-        store.openInBrowser(tunnel)
-        store.stop(tunnel)
-        try await Task.sleep(for: .milliseconds(550))
-
-        XCTAssertTrue(openedURLs.isEmpty)
-        XCTAssertEqual(store.phase(for: tunnel), .stopped)
     }
 
     private func makeIsolatedDefaults() -> (UserDefaults, String) {
@@ -184,13 +503,101 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         return (UserDefaults(suiteName: suiteName)!, suiteName)
     }
 
-    private func makeTunnel() -> Tunnel {
-        Tunnel(
-            name: "Retry test",
-            localPort: 43_210,
-            destinationHost: "127.0.0.1",
-            destinationPort: 80,
-            sshHost: "example.com"
+    private func makeFakeStore(
+        defaults: UserDefaults,
+        fixture: FakeSSHFixture,
+        maxRetryAttempts: Int = 1,
+        browserOpener: @escaping (URL) -> Void = { _ in },
+        controlOperationTimeout: TimeInterval = 10
+    ) -> TunnelStore {
+        TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: fakeSSHURL,
+            maxRetryAttempts: maxRetryAttempts,
+            retryDelayProvider: { _ in 0.01 },
+            browserOpener: browserOpener,
+            processEnvironment: fixture.environment,
+            controlOperationTimeout: controlOperationTimeout
         )
     }
+
+    private var fakeSSHURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/fake-ssh.sh")
+    }
+
+    private func makeFakeSSHFixture(
+        overrides: [String: String] = [:]
+    ) throws -> FakeSSHFixture {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarSSHTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let logURL = directory.appendingPathComponent("ssh.log")
+        let counterURL = directory.appendingPathComponent("counter")
+        try Data("47000\n".utf8).write(to: counterURL)
+        var environment = [
+            "RELAYBAR_FAKE_SSH_LOG": logURL.path,
+            "RELAYBAR_FAKE_SSH_COUNTER": counterURL.path
+        ]
+        environment.merge(overrides) { _, replacement in replacement }
+        return FakeSSHFixture(
+            directory: directory,
+            logURL: logURL,
+            environment: environment
+        )
+    }
+
+    private func waitUntil(
+        timeoutIterations: Int = 400,
+        condition: @escaping () -> Bool
+    ) async -> Bool {
+        for _ in 0..<timeoutIterations {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+
+    private func parsedInvocations(_ log: String) -> [[String]] {
+        var invocations: [[String]] = []
+        var current: [String]?
+        for line in log.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line == "BEGIN" {
+                current = []
+            } else if line == "END" {
+                if let current { invocations.append(current) }
+                current = nil
+            } else if line.hasPrefix("ARG:"), current != nil {
+                current?.append(String(line.dropFirst(4)))
+            }
+        }
+        return invocations
+    }
+}
+
+private struct FakeSSHFixture {
+    let directory: URL
+    let logURL: URL
+    let environment: [String: String]
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+private struct LegacyTunnel: Codable {
+    let id: UUID
+    let name: String
+    let localPort: Int
+    let destinationHost: String
+    let destinationPort: Int
+    let sshHost: String
+    let bindAddress: String?
+    let additionalArguments: [String]
 }

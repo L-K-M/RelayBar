@@ -24,7 +24,14 @@ struct RemoteServer: Identifiable, Hashable, Sendable {
         additionalArguments = tunnel.additionalArguments
 
         let savedName = tunnel.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if savedName.isEmpty || savedName == tunnel.destinationEndpoint {
+        let generatedSingleRuleName = tunnel.rules.first?.displaySummary
+        let generatedMultiRuleName = "\(tunnel.sshHost) · \(tunnel.rules.count) rules"
+        if
+            savedName.isEmpty
+                || savedName == tunnel.destinationEndpoint
+                || savedName == generatedSingleRuleName
+                || savedName == generatedMultiRuleName
+        {
             name = tunnel.sshHost
         } else {
             name = savedName

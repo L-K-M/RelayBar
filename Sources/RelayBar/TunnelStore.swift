@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 @MainActor
@@ -7,38 +8,72 @@ final class TunnelStore: ObservableObject {
 
     @Published private(set) var tunnels: [Tunnel]
     @Published private(set) var phases: [UUID: TunnelPhase] = [:]
+    @Published private(set) var runtimePorts: [UUID: [UUID: Int]] = [:]
 
     private let defaults: UserDefaults
     private let sshExecutableURL: URL
     private let maxRetryAttempts: Int
     private let retryDelayProvider: (Int) -> TimeInterval
     private let browserOpener: (URL) -> Void
-    private let storageKey = "savedTunnels.v1"
+    private let processEnvironment: [String: String]?
+    private let controlOperationTimeout: TimeInterval
+    private let storageKey = "savedTunnels.v2"
+    private let legacyStorageKey = "savedTunnels.v1"
+    private let controlOutputLimit = 64 * 1_024
+    private let localSocketPathLimit = 103
+
     private var processes: [UUID: Process] = [:]
     private var errorPipes: [UUID: Pipe] = [:]
     private var errorBuffers: [UUID: Data] = [:]
     private var desiredTunnels: [UUID: Tunnel] = [:]
     private var retryAttempts: [UUID: Int] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
+    private var startupTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingBrowserURLs: [UUID: URL] = [:]
+    private var startupFailureMessages: [UUID: String] = [:]
+    private var controlDirectories: [UUID: URL] = [:]
+    private var controlSocketURLs: [UUID: URL] = [:]
+    private var ownedLocalSockets: [UUID: [OwnedSocket]] = [:]
+
+    private var controlProcesses: [UUID: Process] = [:]
+    private var controlOutputPipes: [UUID: Pipe] = [:]
+    private var controlErrorPipes: [UUID: Pipe] = [:]
+    private var controlOutputBuffers: [UUID: Data] = [:]
+    private var controlErrorBuffers: [UUID: Data] = [:]
+    private var controlTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+    private var controlContinuations: [
+        UUID: CheckedContinuation<ControlResult, Never>
+    ] = [:]
 
     init(
         defaults: UserDefaults = .standard,
         sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
         maxRetryAttempts: Int = 10,
         retryDelayProvider: @escaping (Int) -> TimeInterval = TunnelStore.retryDelay(for:),
-        browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
+        browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
+        processEnvironment: [String: String]? = nil,
+        controlOperationTimeout: TimeInterval = 10
     ) {
         self.defaults = defaults
         self.sshExecutableURL = sshExecutableURL
         self.maxRetryAttempts = max(0, maxRetryAttempts)
         self.retryDelayProvider = retryDelayProvider
         self.browserOpener = browserOpener
+        self.processEnvironment = processEnvironment
+        self.controlOperationTimeout = max(0.1, controlOperationTimeout)
+
         if
             let data = defaults.data(forKey: storageKey),
             let saved = try? JSONDecoder().decode([Tunnel].self, from: data)
         {
             tunnels = saved
+        } else if
+            let data = defaults.data(forKey: legacyStorageKey),
+            let migrated = try? JSONDecoder().decode([Tunnel].self, from: data),
+            let encoded = try? JSONEncoder().encode(migrated)
+        {
+            tunnels = migrated
+            defaults.set(encoded, forKey: storageKey)
         } else {
             tunnels = []
         }
@@ -48,15 +83,19 @@ final class TunnelStore: ObservableObject {
         phases.values.filter {
             switch $0 {
             case .starting, .retrying, .running:
-                return true
+                true
             case .stopped, .failed:
-                return false
+                false
             }
         }.count
     }
 
     func phase(for tunnel: Tunnel) -> TunnelPhase {
         phases[tunnel.id] ?? .stopped
+    }
+
+    func runtimePorts(for tunnel: Tunnel) -> [UUID: Int] {
+        runtimePorts[tunnel.id] ?? [:]
     }
 
     func add(_ tunnel: Tunnel) {
@@ -77,6 +116,7 @@ final class TunnelStore: ObservableObject {
         stop(tunnel)
         tunnels.removeAll { $0.id == tunnel.id }
         phases[tunnel.id] = nil
+        runtimePorts[tunnel.id] = nil
         save()
     }
 
@@ -91,23 +131,45 @@ final class TunnelStore: ObservableObject {
     func start(_ tunnel: Tunnel) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
         guard tunnel.isSafeToRun else {
-            phases[tunnel.id] = .failed("This tunnel contains an invalid host or blocked SSH option.")
+            phases[tunnel.id] = .failed(
+                "This profile contains an invalid endpoint, conflicting listener, or blocked SSH option."
+            )
+            return
+        }
+        if let preflightError = preflightLocalSockets(for: tunnel) {
+            phases[tunnel.id] = .failed(preflightError)
             return
         }
 
         cancelRetry(for: tunnel.id)
         desiredTunnels[tunnel.id] = tunnel
         retryAttempts[tunnel.id] = 0
+        runtimePorts[tunnel.id] = nil
         launchTunnel(id: tunnel.id)
     }
 
     func openInBrowser(_ tunnel: Tunnel) {
-        guard tunnel.isSafeToRun else {
-            phases[tunnel.id] = .failed("This tunnel contains an invalid host or blocked SSH option.")
+        guard let rule = tunnel.rules.first, tunnel.rules.count == 1 else {
+            phases[tunnel.id] = .failed(
+                "Only a profile with one local TCP forward can open as an HTTP URL."
+            )
+            return
+        }
+        openInBrowser(tunnel, ruleID: rule.id)
+    }
+
+    func openInBrowser(_ tunnel: Tunnel, ruleID: UUID) {
+        guard
+            tunnel.isSafeToRun,
+            let browserURL = tunnel.rules.first(where: { $0.id == ruleID })?.localBrowserURL
+        else {
+            phases[tunnel.id] = .failed(
+                "This forwarding rule does not provide a local HTTP endpoint."
+            )
             return
         }
 
-        pendingBrowserURLs[tunnel.id] = tunnel.browserURL
+        pendingBrowserURLs[tunnel.id] = browserURL
         if phase(for: tunnel) == .running, processes[tunnel.id]?.isRunning == true {
             openPendingBrowserURL(for: tunnel.id)
         } else if desiredTunnels[tunnel.id] == nil {
@@ -123,6 +185,8 @@ final class TunnelStore: ObservableObject {
         let activeIDs = Set(desiredTunnels.keys)
             .union(processes.keys)
             .union(retryTasks.keys)
+            .union(startupTasks.keys)
+            .union(controlProcesses.keys)
         for id in activeIDs {
             stop(id: id)
         }
@@ -141,22 +205,32 @@ final class TunnelStore: ObservableObject {
     private func launchTunnel(id: UUID) {
         guard let tunnel = desiredTunnels[id], processes[id] == nil else { return }
 
-        errorBuffers[tunnel.id] = Data()
-        phases[tunnel.id] = .starting
+        runtimePorts[id] = nil
+        startupFailureMessages[id] = nil
+        cleanupControlDirectory(for: id)
+        cleanupOwnedLocalSockets(for: id)
+
+        let controlLocations: (directory: URL, socket: URL)
+        do {
+            controlLocations = try makeControlLocations(for: id)
+        } catch {
+            scheduleRetry(for: id, message: error.localizedDescription)
+            return
+        }
+
+        controlDirectories[id] = controlLocations.directory
+        controlSocketURLs[id] = controlLocations.socket
+        errorBuffers[id] = Data()
+        phases[id] = .starting
 
         let process = Process()
         let errorPipe = Pipe()
         process.executableURL = sshExecutableURL
-        process.arguments = [
-            "-N",
-            "-T",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-L", tunnel.forwardSpec
-        ] + tunnel.additionalArguments + [tunnel.sshHost]
+        process.arguments = masterArguments(
+            tunnel: tunnel,
+            controlSocket: controlLocations.socket
+        )
+        process.environment = mergedEnvironment
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errorPipe
@@ -168,37 +242,395 @@ final class TunnelStore: ObservableObject {
             let data = handle.availableData
             guard !data.isEmpty else { return }
             DispatchQueue.main.async {
-                store.appendError(data, for: tunnelID)
+                store.appendMasterError(data, for: tunnelID)
             }
         }
 
         process.terminationHandler = { finishedProcess in
             let status = finishedProcess.terminationStatus
             DispatchQueue.main.async {
-                store.processDidExit(id: tunnelID, status: status, process: finishedProcess)
+                store.processDidExit(
+                    id: tunnelID,
+                    status: status,
+                    process: finishedProcess
+                )
             }
         }
 
-        processes[tunnel.id] = process
-        errorPipes[tunnel.id] = errorPipe
+        processes[id] = process
+        errorPipes[id] = errorPipe
 
         do {
             try process.run()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self, weak process] in
-                guard
-                    let self,
-                    let process,
-                    self.desiredTunnels[tunnel.id] != nil,
-                    self.processes[tunnel.id] === process,
-                    process.isRunning
-                else { return }
-                self.retryAttempts[tunnel.id] = 0
-                self.phases[tunnel.id] = .running
-                self.openPendingBrowserURL(for: tunnel.id)
-            }
+            waitForControlSocket(
+                id: id,
+                process: process,
+                socketURL: controlLocations.socket
+            )
         } catch {
-            cleanupRuntime(for: tunnel.id, process: process)
-            scheduleRetry(for: tunnel.id, message: error.localizedDescription)
+            cleanupRuntime(for: id, process: process)
+            scheduleRetry(for: id, message: error.localizedDescription)
+        }
+    }
+
+    private func masterArguments(tunnel: Tunnel, controlSocket: URL) -> [String] {
+        var arguments = [
+            "-N",
+            "-T",
+            "-M",
+            "-S", controlSocket.path,
+            "-o", "ControlPersist=no",
+            "-o", "ClearAllForwardings=yes",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=3",
+            "-o", "StreamLocalBindMask=\(tunnel.streamLocalSettings.bindMaskArgument)",
+            // RelayBar removes only sockets whose inode it recorded after creation.
+            "-o", "StreamLocalBindUnlink=no"
+        ]
+
+        if tunnel.hasReverseSOCKS, let policy = tunnel.reverseSOCKSPolicy {
+            arguments.append(contentsOf: ["-o", "PermitRemoteOpen=\(policy.sshValue)"])
+        }
+
+        arguments.append(contentsOf: tunnel.additionalArguments)
+        arguments.append(tunnel.sshHost)
+        return arguments
+    }
+
+    private func waitForControlSocket(
+        id: UUID,
+        process: Process,
+        socketURL: URL
+    ) {
+        startupTasks[id]?.cancel()
+        startupTasks[id] = Task { @MainActor [weak self, weak process] in
+            guard let self, let process else { return }
+            for _ in 0..<240 {
+                guard
+                    !Task.isCancelled,
+                    self.desiredTunnels[id] != nil,
+                    self.processes[id] === process,
+                    process.isRunning
+                else {
+                    return
+                }
+
+                if FileManager.default.fileExists(atPath: socketURL.path) {
+                    await self.installRules(id: id, process: process)
+                    return
+                }
+
+                do {
+                    try await Task.sleep(for: .milliseconds(50))
+                } catch {
+                    return
+                }
+            }
+
+            guard self.processes[id] === process, process.isRunning else { return }
+            self.failStartup(
+                id: id,
+                process: process,
+                message: "SSH connected but its private control socket did not become ready."
+            )
+        }
+    }
+
+    private func installRules(id: UUID, process: Process) async {
+        guard
+            let tunnel = desiredTunnels[id],
+            let socketURL = controlSocketURLs[id],
+            processes[id] === process
+        else {
+            return
+        }
+
+        var allocations: [UUID: Int] = [:]
+        for rule in tunnel.rules {
+            guard
+                !Task.isCancelled,
+                desiredTunnels[id] != nil,
+                processes[id] === process,
+                process.isRunning
+            else {
+                return
+            }
+
+            if let socketError = preflightCreatedSocket(
+                for: rule,
+                tunnel: tunnel,
+                tunnelID: id
+            ) {
+                failStartup(id: id, process: process, message: socketError)
+                return
+            }
+
+            let result = await runControlForward(
+                tunnelID: id,
+                tunnel: tunnel,
+                rule: rule,
+                socketURL: socketURL
+            )
+
+            guard
+                !Task.isCancelled,
+                desiredTunnels[id] != nil,
+                processes[id] === process
+            else {
+                return
+            }
+
+            guard result.status == 0 else {
+                failStartup(
+                    id: id,
+                    process: process,
+                    message: result.actionableMessage
+                )
+                return
+            }
+
+            if rule.kind.listensRemotely, rule.listen.tcp?.port == 0 {
+                guard let allocatedPort = parseAllocatedPort(result.output) else {
+                    failStartup(
+                        id: id,
+                        process: process,
+                        message: "OpenSSH did not report the allocated remote port for \(rule.kind.label)."
+                    )
+                    return
+                }
+                allocations[rule.id] = allocatedPort
+            }
+
+            recordOwnedSocketCreated(by: rule, tunnelID: id)
+        }
+
+        guard
+            desiredTunnels[id] != nil,
+            processes[id] === process,
+            process.isRunning
+        else {
+            return
+        }
+
+        startupTasks[id] = nil
+        runtimePorts[id] = allocations.isEmpty ? nil : allocations
+        retryAttempts[id] = 0
+        phases[id] = .running
+        openPendingBrowserURL(for: id)
+    }
+
+    private func runControlForward(
+        tunnelID: UUID,
+        tunnel: Tunnel,
+        rule: ForwardingRule,
+        socketURL: URL
+    ) async -> ControlResult {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard controlProcesses[tunnelID] == nil else {
+                    continuation.resume(
+                        returning: ControlResult(
+                            status: -1,
+                            output: "",
+                            error: "Another SSH control operation is still running."
+                        )
+                    )
+                    return
+                }
+
+                let process = Process()
+                let outputPipe = Pipe()
+                let errorPipe = Pipe()
+                controlProcesses[tunnelID] = process
+                controlOutputPipes[tunnelID] = outputPipe
+                controlErrorPipes[tunnelID] = errorPipe
+                controlOutputBuffers[tunnelID] = Data()
+                controlErrorBuffers[tunnelID] = Data()
+                controlContinuations[tunnelID] = continuation
+
+                process.executableURL = sshExecutableURL
+                process.arguments = [
+                    "-F", "none",
+                    "-S", socketURL.path,
+                    "-O", "forward"
+                ] + rule.sshArguments + [tunnel.sshHost]
+                process.environment = mergedEnvironment
+                process.standardInput = FileHandle.nullDevice
+                process.standardOutput = outputPipe
+                process.standardError = errorPipe
+
+                outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty else { return }
+                    DispatchQueue.main.async {
+                        self.appendControlOutput(
+                            data,
+                            for: tunnelID,
+                            isError: false
+                        )
+                    }
+                }
+                errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty else { return }
+                    DispatchQueue.main.async {
+                        self.appendControlOutput(
+                            data,
+                            for: tunnelID,
+                            isError: true
+                        )
+                    }
+                }
+
+                process.terminationHandler = { finishedProcess in
+                    let status = finishedProcess.terminationStatus
+                    DispatchQueue.main.async {
+                        self.finishControlOperation(
+                            tunnelID: tunnelID,
+                            process: finishedProcess,
+                            status: status
+                        )
+                    }
+                }
+
+                do {
+                    try process.run()
+                    scheduleControlTimeout(tunnelID: tunnelID, process: process)
+                } catch {
+                    finishControlOperation(
+                        tunnelID: tunnelID,
+                        process: process,
+                        status: -1,
+                        launchError: error.localizedDescription
+                    )
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let process = self?.controlProcesses[tunnelID] else { return }
+                if process.isRunning { process.terminate() }
+            }
+        }
+    }
+
+    private func finishControlOperation(
+        tunnelID: UUID,
+        process: Process,
+        status: Int32,
+        launchError: String? = nil
+    ) {
+        guard controlProcesses[tunnelID] === process else { return }
+
+        controlTimeoutTasks.removeValue(forKey: tunnelID)?.cancel()
+        appendRemainingControlPipeData(for: tunnelID)
+        let output = String(
+            data: controlOutputBuffers[tunnelID] ?? Data(),
+            encoding: .utf8
+        ) ?? ""
+        var error = String(
+            data: controlErrorBuffers[tunnelID] ?? Data(),
+            encoding: .utf8
+        ) ?? ""
+        if let launchError {
+            error = launchError
+        }
+
+        controlOutputPipes[tunnelID]?.fileHandleForReading.readabilityHandler = nil
+        controlErrorPipes[tunnelID]?.fileHandleForReading.readabilityHandler = nil
+        controlProcesses[tunnelID] = nil
+        controlOutputPipes[tunnelID] = nil
+        controlErrorPipes[tunnelID] = nil
+        controlOutputBuffers[tunnelID] = nil
+        controlErrorBuffers[tunnelID] = nil
+        let continuation = controlContinuations.removeValue(forKey: tunnelID)
+        continuation?.resume(
+            returning: ControlResult(
+                status: status,
+                output: output,
+                error: error
+            )
+        )
+    }
+
+    private func scheduleControlTimeout(tunnelID: UUID, process: Process) {
+        controlTimeoutTasks.removeValue(forKey: tunnelID)?.cancel()
+        controlTimeoutTasks[tunnelID] = Task { @MainActor [weak self, weak process] in
+            guard let self, let process else { return }
+            do {
+                try await Task.sleep(for: .seconds(controlOperationTimeout))
+            } catch {
+                return
+            }
+            guard
+                controlProcesses[tunnelID] === process,
+                process.isRunning
+            else {
+                return
+            }
+            appendControlOutput(
+                Data("SSH control operation timed out.\n".utf8),
+                for: tunnelID,
+                isError: true
+            )
+            process.terminate()
+        }
+    }
+
+    private func appendRemainingControlPipeData(for id: UUID) {
+        if let pipe = controlOutputPipes[id] {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            appendControlOutput(data, for: id, isError: false)
+        }
+        if let pipe = controlErrorPipes[id] {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            appendControlOutput(data, for: id, isError: true)
+        }
+    }
+
+    private func appendControlOutput(_ data: Data, for id: UUID, isError: Bool) {
+        guard !data.isEmpty else { return }
+        if isError {
+            var buffer = controlErrorBuffers[id] ?? Data()
+            buffer.append(data)
+            if buffer.count > controlOutputLimit {
+                buffer = buffer.suffix(controlOutputLimit)
+            }
+            controlErrorBuffers[id] = buffer
+        } else {
+            var buffer = controlOutputBuffers[id] ?? Data()
+            buffer.append(data)
+            if buffer.count > controlOutputLimit {
+                buffer = buffer.suffix(controlOutputLimit)
+            }
+            controlOutputBuffers[id] = buffer
+        }
+    }
+
+    private func parseAllocatedPort(_ output: String) -> Int? {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmed.isEmpty,
+            trimmed.allSatisfy(\.isNumber),
+            let port = Int(trimmed),
+            (1...65_535).contains(port)
+        else {
+            return nil
+        }
+        return port
+    }
+
+    private func failStartup(id: UUID, process: Process, message: String) {
+        guard processes[id] === process else { return }
+        startupFailureMessages[id] = message
+        startupTasks[id]?.cancel()
+        startupTasks[id] = nil
+        if process.isRunning {
+            process.terminate()
+        } else {
+            processDidExit(id: id, status: process.terminationStatus, process: process)
         }
     }
 
@@ -206,16 +638,27 @@ final class TunnelStore: ObservableObject {
         desiredTunnels[id] = nil
         retryAttempts[id] = nil
         pendingBrowserURLs[id] = nil
+        runtimePorts[id] = nil
+        startupFailureMessages[id] = nil
         cancelRetry(for: id)
+        startupTasks[id]?.cancel()
+        startupTasks[id] = nil
         phases[id] = .stopped
 
-        guard let process = processes[id] else {
-            return
+        if let controlProcess = controlProcesses[id], controlProcess.isRunning {
+            controlProcess.terminate()
         }
-        if process.isRunning { process.terminate() }
+
+        if let process = processes[id] {
+            if process.isRunning { process.terminate() }
+            cleanupRuntime(for: id, process: process)
+        } else {
+            cleanupOwnedLocalSockets(for: id)
+            cleanupControlDirectory(for: id)
+        }
     }
 
-    private func appendError(_ data: Data, for id: UUID) {
+    private func appendMasterError(_ data: Data, for id: UUID) {
         var buffer = errorBuffers[id] ?? Data()
         buffer.append(data)
         if buffer.count > 16_384 {
@@ -226,7 +669,8 @@ final class TunnelStore: ObservableObject {
 
     private func processDidExit(id: UUID, status: Int32, process: Process) {
         guard processes[id] === process else { return }
-        let message = errorMessage(for: id)
+        let startupMessage = startupFailureMessages.removeValue(forKey: id)
+        let message = startupMessage ?? errorMessage(for: id)
         cleanupRuntime(for: id, process: process)
 
         guard desiredTunnels[id] != nil else {
@@ -245,7 +689,12 @@ final class TunnelStore: ObservableObject {
     }
 
     private func errorMessage(for id: UUID) -> String {
-        guard let data = errorBuffers[id], let output = String(data: data, encoding: .utf8) else { return "" }
+        guard
+            let data = errorBuffers[id],
+            let output = String(data: data, encoding: .utf8)
+        else {
+            return ""
+        }
         return output
             .split(whereSeparator: \Character.isNewline)
             .suffix(2)
@@ -254,6 +703,7 @@ final class TunnelStore: ObservableObject {
     }
 
     private func scheduleRetry(for id: UUID, message: String) {
+        runtimePorts[id] = nil
         guard desiredTunnels[id] != nil else {
             phases[id] = .stopped
             return
@@ -291,7 +741,9 @@ final class TunnelStore: ObservableObject {
                 !Task.isCancelled,
                 let self,
                 self.desiredTunnels[id] != nil
-            else { return }
+            else {
+                return
+            }
 
             self.retryTasks[id] = nil
             self.launchTunnel(id: id)
@@ -312,14 +764,213 @@ final class TunnelStore: ObservableObject {
         if let process, processes[id] !== process {
             return
         }
+        startupTasks[id]?.cancel()
+        startupTasks[id] = nil
         errorPipes[id]?.fileHandleForReading.readabilityHandler = nil
         errorPipes[id] = nil
         errorBuffers[id] = nil
         processes[id] = nil
+        runtimePorts[id] = nil
+        cleanupOwnedLocalSockets(for: id)
+        cleanupControlDirectory(for: id)
+    }
+
+    private func makeControlLocations(
+        for id: UUID
+    ) throws -> (directory: URL, socket: URL) {
+        let profile = id.uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
+        let launch = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBar-SSH-\(profile)\(launch)", isDirectory: true)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let socket = directory.appendingPathComponent("control")
+        guard socket.path.utf8.count <= localSocketPathLimit else {
+            try? FileManager.default.removeItem(at: directory)
+            throw TunnelStoreError.controlPathTooLong
+        }
+        return (directory, socket)
+    }
+
+    private func cleanupControlDirectory(for id: UUID) {
+        controlSocketURLs[id] = nil
+        guard let directory = controlDirectories.removeValue(forKey: id) else { return }
+        guard directory.lastPathComponent.hasPrefix("RelayBar-SSH-") else { return }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private func preflightLocalSockets(for tunnel: Tunnel) -> String? {
+        for path in tunnel.createdLocalSocketPaths {
+            guard path.utf8.count <= localSocketPathLimit else {
+                return "The local Unix socket path is too long for macOS: \(path)"
+            }
+            let parent = URL(fileURLWithPath: path).deletingLastPathComponent()
+            var isDirectory: ObjCBool = false
+            guard
+                FileManager.default.fileExists(
+                    atPath: parent.path,
+                    isDirectory: &isDirectory
+                ),
+                isDirectory.boolValue,
+                FileManager.default.isWritableFile(atPath: parent.path)
+            else {
+                return "The local Unix socket folder is missing or not writable: \(parent.path)"
+            }
+            if let identity = fileIdentity(at: path) {
+                if
+                    tunnel.streamLocalSettings.unlinkStaleSocket,
+                    isOwnedSocket(path: path, identity: identity, tunnelID: tunnel.id)
+                {
+                    cleanupOwnedLocalSockets(for: tunnel.id, matching: path)
+                    if fileIdentity(at: path) == nil {
+                        continue
+                    }
+                }
+                return "RelayBar will not replace an existing filesystem item at \(path)."
+            }
+        }
+        return nil
+    }
+
+    private func preflightCreatedSocket(
+        for rule: ForwardingRule,
+        tunnel: Tunnel,
+        tunnelID: UUID
+    ) -> String? {
+        guard let path = rule.createdLocalSocketPath else { return nil }
+        guard let identity = fileIdentity(at: path) else { return nil }
+        guard isOwnedSocket(path: path, identity: identity, tunnelID: tunnelID) else {
+            return "RelayBar will not replace an existing filesystem item at \(path)."
+        }
+        guard tunnel.streamLocalSettings.unlinkStaleSocket else {
+            return "A RelayBar-owned socket remains at \(path). Enable stale-socket cleanup to retry safely."
+        }
+        cleanupOwnedLocalSockets(for: tunnelID, matching: path)
+        return fileIdentity(at: path) == nil
+            ? nil
+            : "The previous RelayBar-owned socket could not be removed: \(path)"
+    }
+
+    private func isOwnedSocket(
+        path: String,
+        identity: (device: UInt64, inode: UInt64, isSocket: Bool),
+        tunnelID: UUID
+    ) -> Bool {
+        identity.isSocket && ownedLocalSockets[tunnelID]?.contains {
+            $0.path == path
+                && $0.device == identity.device
+                && $0.inode == identity.inode
+        } == true
+    }
+
+    private func recordOwnedSocketCreated(by rule: ForwardingRule, tunnelID: UUID) {
+        guard
+            let path = rule.createdLocalSocketPath,
+            let identity = fileIdentity(at: path),
+            identity.isSocket
+        else {
+            return
+        }
+        var sockets = ownedLocalSockets[tunnelID] ?? []
+        sockets.removeAll { $0.path == path }
+        sockets.append(
+            OwnedSocket(
+                path: path,
+                device: identity.device,
+                inode: identity.inode
+            )
+        )
+        ownedLocalSockets[tunnelID] = sockets
+    }
+
+    private func cleanupOwnedLocalSockets(for id: UUID, matching path: String? = nil) {
+        guard var sockets = ownedLocalSockets[id] else { return }
+        var retained: [OwnedSocket] = []
+        for socket in sockets {
+            if let path, socket.path != path {
+                retained.append(socket)
+                continue
+            }
+            guard
+                let identity = fileIdentity(at: socket.path),
+                identity.isSocket,
+                identity.device == socket.device,
+                identity.inode == socket.inode
+            else {
+                continue
+            }
+            do {
+                try FileManager.default.removeItem(atPath: socket.path)
+            } catch {
+                retained.append(socket)
+            }
+        }
+        sockets = retained
+        ownedLocalSockets[id] = sockets.isEmpty ? nil : sockets
+    }
+
+    private func fileIdentity(
+        at path: String
+    ) -> (device: UInt64, inode: UInt64, isSocket: Bool)? {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return nil }
+        return (
+            device: UInt64(info.st_dev),
+            inode: UInt64(info.st_ino),
+            isSocket: (info.st_mode & S_IFMT) == S_IFSOCK
+        )
+    }
+
+    private var mergedEnvironment: [String: String] {
+        guard let processEnvironment else { return ProcessInfo.processInfo.environment }
+        return ProcessInfo.processInfo.environment.merging(processEnvironment) { _, override in
+            override
+        }
     }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(tunnels) else { return }
         defaults.set(data, forKey: storageKey)
+    }
+}
+
+private struct OwnedSocket {
+    let path: String
+    let device: UInt64
+    let inode: UInt64
+}
+
+private struct ControlResult {
+    let status: Int32
+    let output: String
+    let error: String
+
+    var actionableMessage: String {
+        let lines = error
+            .split(whereSeparator: \Character.isNewline)
+            .suffix(2)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lines.isEmpty { return lines }
+        return status == 0
+            ? "The SSH forwarding request ended without a result."
+            : "SSH could not install a forwarding rule (status \(status))."
+    }
+}
+
+private enum TunnelStoreError: LocalizedError {
+    case controlPathTooLong
+
+    var errorDescription: String? {
+        switch self {
+        case .controlPathTooLong:
+            "The private SSH control path is too long for macOS."
+        }
     }
 }
