@@ -119,8 +119,8 @@
           <span>Built for macOS 13 and newer.</span>
         </div>
         <div>
-          <strong>No dependencies</strong>
-          <span>Calls macOS's built-in <code>/usr/bin/ssh</code>.</span>
+          <strong>System OpenSSH</strong>
+          <span>Calls built-in <code>ssh</code> and <code>sftp</code>.</span>
         </div>
         <div>
           <strong>Stored locally</strong>
@@ -179,7 +179,7 @@
       <section class="roadmap shell" id="roadmap">
         <div class="roadmap-intro">
           <span class="section-kicker">Roadmap</span>
-          <h2>Port forwarding is done. Remote files are next.</h2>
+          <h2>Port forwarding is done. Remote files are in development.</h2>
           <p>
             RelayBar handles the few steps between a remote server and your Mac.
             Use Claude Code, Codex, or a terminal to search and edit on the
@@ -206,10 +206,10 @@
             </ul>
           </article>
 
-          <article class="roadmap-stage planned">
+          <article class="roadmap-stage in-progress">
             <div class="roadmap-stage-header">
               <span class="roadmap-number">2</span>
-              <span class="status planned">Planned</span>
+              <span class="status in-progress">In development</span>
             </div>
             <h3>Remote files</h3>
             <p>
@@ -257,7 +257,10 @@
                 <span>2.6</span>
                 <div>
                   <strong>Render Markdown</strong>
-                  <p>Render remote Markdown in a safe, read-only view.</p>
+                  <p>
+                    Native read-only GFM with safe Obsidian conventions,
+                    syntax highlighting, and math. Final visual verification is pending.
+                  </p>
                 </div>
               </li>
             </ol>

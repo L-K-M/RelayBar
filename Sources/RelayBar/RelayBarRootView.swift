@@ -15,7 +15,10 @@ struct RelayBarRootView: View {
             case .list:
                 TunnelListView(
                     onAdd: { screen = .editor(nil) },
-                    onEdit: { screen = .editor($0) }
+                    onEdit: { screen = .editor($0) },
+                    onRemoteFiles: {
+                        RemoteFilesWindowController.shared.show(tunnels: store.tunnels)
+                    }
                 )
             case .editor(let tunnel):
                 TunnelEditorView(
@@ -41,6 +44,7 @@ private struct TunnelListView: View {
     @EnvironmentObject private var store: TunnelStore
     let onAdd: () -> Void
     let onEdit: (Tunnel) -> Void
+    let onRemoteFiles: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,6 +71,8 @@ private struct TunnelListView: View {
                 }
             }
 
+            Divider()
+            remoteFilesAction
             Divider()
             footer
         }
@@ -152,6 +158,28 @@ private struct TunnelListView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 38)
+    }
+
+    private var remoteFilesAction: some View {
+        Button(action: onRemoteFiles) {
+            HStack(spacing: 9) {
+                Image(systemName: "folder")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                Text("Remote Files…")
+                    .font(.system(size: 11.5, weight: .medium))
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .help("Open a folder on a saved SSH server")
+        .accessibilityHint("Opens the Remote Files window")
     }
 }
 

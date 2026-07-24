@@ -88,15 +88,16 @@ enum SSHCommandParser {
             } else if SSHArgumentPolicy.optionsWithValues.contains(token) {
                 index += 1
                 guard index < tokens.count else { throw ParseError.missingOptionValue(token) }
-                if token == "-o", !SSHArgumentPolicy.isSafeOpenSSHOption(tokens[index]) {
-                    throw ParseError.unsafeOption("-o \(tokens[index])")
+                let value = tokens[index]
+                guard SSHArgumentPolicy.areAdditionalArgumentsSafe([token, value]) else {
+                    throw ParseError.unsafeOption("\(token) \(value)")
                 }
-                extraArguments.append(contentsOf: [token, tokens[index]])
+                extraArguments.append(contentsOf: [token, value])
             } else if token.hasPrefix("-") {
-                if let prefix = SSHArgumentPolicy.attachedOptionPrefixes.first(where: {
+                if SSHArgumentPolicy.attachedOptionPrefixes.contains(where: {
                     token.hasPrefix($0) && token.count > $0.count
                 }) {
-                    if prefix == "-o", !SSHArgumentPolicy.isSafeOpenSSHOption(String(token.dropFirst(2))) {
+                    guard SSHArgumentPolicy.areAdditionalArgumentsSafe([token]) else {
                         throw ParseError.unsafeOption(token)
                     }
                     extraArguments.append(token)

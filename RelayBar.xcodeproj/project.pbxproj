@@ -15,6 +15,18 @@
 		400000000000000000000006 /* TunnelEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000006 /* TunnelEditorView.swift */; };
 		400000000000000000000007 /* TunnelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000007 /* TunnelStore.swift */; };
 		400000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000008 /* Assets.xcassets */; };
+		40000000000000000000000B /* RemoteFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000000B /* RemoteFile.swift */; };
+		40000000000000000000000C /* SFTPRemoteFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000000C /* SFTPRemoteFileService.swift */; };
+		40000000000000000000000D /* RemoteFilesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000000D /* RemoteFilesModel.swift */; };
+		40000000000000000000000E /* RemoteFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000000E /* RemoteFilesView.swift */; };
+		40000000000000000000000F /* RemoteFilesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000000F /* RemoteFilesWindowController.swift */; };
+		400000000000000000000010 /* MarkdownPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000010 /* MarkdownPreview.swift */; };
+		400000000000000000000011 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000001 /* MarkdownUI */; };
+		400000000000000000000012 /* ObsidianMarkdownCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000011 /* ObsidianMarkdownCompatibility.swift */; };
+		400000000000000000000013 /* MarkdownRenderingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000012 /* MarkdownRenderingSupport.swift */; };
+		400000000000000000000014 /* Highlighter in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000002 /* Highlighter */; };
+		400000000000000000000015 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000003 /* SwiftMath */; };
+		400000000000000000000016 /* THIRD_PARTY_NOTICES.txt in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000013 /* THIRD_PARTY_NOTICES.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +40,16 @@
 		300000000000000000000007 /* TunnelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelStore.swift; sourceTree = "<group>"; };
 		300000000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		30000000000000000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		30000000000000000000000B /* RemoteFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteFile.swift; sourceTree = "<group>"; };
+		30000000000000000000000C /* SFTPRemoteFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPRemoteFileService.swift; sourceTree = "<group>"; };
+		30000000000000000000000D /* RemoteFilesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteFilesModel.swift; sourceTree = "<group>"; };
+		30000000000000000000000E /* RemoteFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteFilesView.swift; sourceTree = "<group>"; };
+		30000000000000000000000F /* RemoteFilesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteFilesWindowController.swift; sourceTree = "<group>"; };
+		300000000000000000000010 /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
+		300000000000000000000011 /* ObsidianMarkdownCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianMarkdownCompatibility.swift; sourceTree = "<group>"; };
+		300000000000000000000012 /* MarkdownRenderingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderingSupport.swift; sourceTree = "<group>"; };
+		300000000000000000000013 /* THIRD_PARTY_NOTICES.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/THIRD_PARTY_NOTICES.txt; sourceTree = "<group>"; };
+		300000000000000000000014 /* prune-renderer-resources.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "prune-renderer-resources.sh"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -35,6 +57,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				400000000000000000000014 /* Highlighter in Frameworks */,
+				400000000000000000000011 /* MarkdownUI in Frameworks */,
+				400000000000000000000015 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -46,6 +71,7 @@
 			children = (
 				140000000000000000000000 /* Sources */,
 				160000000000000000000000 /* Packaging */,
+				170000000000000000000000 /* Scripts */,
 				300000000000000000000008 /* Assets.xcassets */,
 				130000000000000000000000 /* Products */,
 			);
@@ -69,6 +95,15 @@
 				300000000000000000000005 /* Tunnel.swift */,
 				300000000000000000000006 /* TunnelEditorView.swift */,
 				300000000000000000000007 /* TunnelStore.swift */,
+				30000000000000000000000B /* RemoteFile.swift */,
+				30000000000000000000000C /* SFTPRemoteFileService.swift */,
+				30000000000000000000000D /* RemoteFilesModel.swift */,
+				30000000000000000000000E /* RemoteFilesView.swift */,
+				30000000000000000000000F /* RemoteFilesWindowController.swift */,
+				300000000000000000000010 /* MarkdownPreview.swift */,
+				300000000000000000000012 /* MarkdownRenderingSupport.swift */,
+				300000000000000000000011 /* ObsidianMarkdownCompatibility.swift */,
+				300000000000000000000013 /* THIRD_PARTY_NOTICES.txt */,
 			);
 			name = Sources;
 			path = Sources/RelayBar;
@@ -83,6 +118,15 @@
 			path = Packaging;
 			sourceTree = "<group>";
 		};
+		170000000000000000000000 /* Scripts */ = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000014 /* prune-renderer-resources.sh */,
+			);
+			name = Scripts;
+			path = scripts;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -93,12 +137,18 @@
 				220000000000000000000001 /* Sources */,
 				220000000000000000000003 /* Frameworks */,
 				220000000000000000000002 /* Resources */,
+				220000000000000000000004 /* Prune unused renderer resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = RelayBar;
+			packageProductDependencies = (
+				700000000000000000000002 /* Highlighter */,
+				700000000000000000000001 /* MarkdownUI */,
+				700000000000000000000003 /* SwiftMath */,
+			);
 			productName = RelayBar;
 			productReference = 300000000000000000000000 /* RelayBar.app */;
 			productType = "com.apple.product-type.application";
@@ -127,6 +177,11 @@
 				Base,
 			);
 			mainGroup = 120000000000000000000000;
+			packageReferences = (
+				800000000000000000000002 /* XCRemoteSwiftPackageReference "HighlighterSwift" */,
+				800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				800000000000000000000003 /* XCRemoteSwiftPackageReference "SwiftMath" */,
+			);
 			productRefGroup = 130000000000000000000000 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -142,10 +197,35 @@
 			buildActionMask = 2147483647;
 			files = (
 				400000000000000000000008 /* Assets.xcassets in Resources */,
+				400000000000000000000016 /* THIRD_PARTY_NOTICES.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		220000000000000000000004 /* Prune unused renderer resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/prune-renderer-resources.sh",
+			);
+			name = "Prune unused renderer resources";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/scripts/prune-renderer-resources.sh\"";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		220000000000000000000001 /* Sources */ = {
@@ -159,10 +239,63 @@
 				400000000000000000000005 /* Tunnel.swift in Sources */,
 				400000000000000000000006 /* TunnelEditorView.swift in Sources */,
 				400000000000000000000007 /* TunnelStore.swift in Sources */,
+				40000000000000000000000B /* RemoteFile.swift in Sources */,
+				40000000000000000000000C /* SFTPRemoteFileService.swift in Sources */,
+				40000000000000000000000D /* RemoteFilesModel.swift in Sources */,
+				40000000000000000000000E /* RemoteFilesView.swift in Sources */,
+				40000000000000000000000F /* RemoteFilesWindowController.swift in Sources */,
+				400000000000000000000010 /* MarkdownPreview.swift in Sources */,
+				400000000000000000000013 /* MarkdownRenderingSupport.swift in Sources */,
+				400000000000000000000012 /* ObsidianMarkdownCompatibility.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.4.1;
+			};
+		};
+		800000000000000000000002 /* XCRemoteSwiftPackageReference "HighlighterSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/smittytone/HighlighterSwift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 3.1.0;
+			};
+		};
+		800000000000000000000003 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		700000000000000000000001 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+		700000000000000000000002 /* Highlighter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 800000000000000000000002 /* XCRemoteSwiftPackageReference "HighlighterSwift" */;
+			productName = Highlighter;
+		};
+		700000000000000000000003 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 800000000000000000000003 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		600000000000000000000001 /* Debug */ = {
@@ -224,7 +357,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -238,6 +371,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
+				DEPLOYMENT_POSTPROCESSING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Packaging/Info.plist;
@@ -247,9 +381,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_STRICT_CONCURRENCY = targeted;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
+				STRIP_INSTALLED_PRODUCT = YES;
+				STRIP_STYLE = "non-global";
 			};
 			name = Release;
 		};

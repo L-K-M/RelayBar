@@ -1,6 +1,6 @@
 # RelayBar System Specs
 
-Concise specifications for the behavior currently implemented by RelayBar. Last reviewed: 2026-07-18.
+Concise specifications for the behavior currently implemented by RelayBar. Last reviewed: 2026-07-24.
 
 ## Modules
 
@@ -9,6 +9,8 @@ Concise specifications for the behavior currently implemented by RelayBar. Last 
 - [SSH command import](modules/ssh-command-import.md)
 - [Process lifecycle](modules/process-lifecycle.md)
 - [Browser launch](modules/browser-launch.md)
+- [Remote files](modules/remote-files.md)
+- [Markdown preview](modules/markdown-preview.md)
 
 ## Shared contracts
 

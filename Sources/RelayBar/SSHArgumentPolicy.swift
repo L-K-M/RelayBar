@@ -43,11 +43,16 @@ enum SSHArgumentPolicy {
     }
 
     static func isSafeOpenSSHOption(_ value: String) -> Bool {
+        guard isSafeOptionValue(value) else { return false }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        let key = trimmed.prefix { character in
-            character != "=" && !character.isWhitespace
+        let keyEnd = trimmed.firstIndex { character in
+            character == "=" || character.isWhitespace
         }
+        guard let keyEnd else { return false }
+        let key = trimmed[..<keyEnd]
+        let optionValue = trimmed[keyEnd...]
+            .drop(while: { $0 == "=" || $0.isWhitespace })
+        guard !optionValue.isEmpty else { return false }
         return allowedOpenSSHOptions.contains(key.lowercased())
     }
 
@@ -65,7 +70,9 @@ enum SSHArgumentPolicy {
             if optionsWithValues.contains(argument) {
                 index += 1
                 guard index < arguments.count else { return false }
-                if argument == "-o", !isSafeOpenSSHOption(arguments[index]) { return false }
+                let value = arguments[index]
+                guard isSafeOptionValue(value) else { return false }
+                if argument == "-o", !isSafeOpenSSHOption(value) { return false }
                 index += 1
                 continue
             }
@@ -75,13 +82,22 @@ enum SSHArgumentPolicy {
                 argument.hasPrefix($0) && argument.count > $0.count
             }) else { return false }
 
+            let value = String(argument.dropFirst(prefix.count))
+            guard isSafeOptionValue(value) else { return false }
             if prefix == "-o" {
-                let option = String(argument.dropFirst(2))
-                guard isSafeOpenSSHOption(option) else { return false }
+                guard isSafeOpenSSHOption(value) else { return false }
             }
             index += 1
         }
 
         return true
+    }
+
+    private static func isSafeOptionValue(_ value: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !value.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0)
+                    || CharacterSet.newlines.contains($0)
+            }
     }
 }

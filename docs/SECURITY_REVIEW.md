@@ -1,10 +1,10 @@
 # RelayBar security review
 
-Review date: July 16, 2026
+Review date: July 24, 2026
 
 ## Scope and threat model
 
-This review covers command import, tunnel persistence, child-process management, diagnostic output, network exposure, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command for a user to paste or tamper with RelayBar's preferences. The user's existing SSH configuration is trusted to the same extent it is when running `/usr/bin/ssh` in Terminal.
+This review covers command import, tunnel persistence, child-process management, Remote Files paths/listings/transfers/image and Markdown previews, diagnostic output, network exposure, rendering dependencies, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command or remote path, tamper with RelayBar's preferences, or control names, metadata, bytes, Markdown, code snippets, formulas, URLs, and diagnostics returned by a remote SSH server. The user's existing SSH configuration is trusted to the same extent it is when running the macOS OpenSSH clients in Terminal.
 
 ## Findings remediated
 
@@ -12,7 +12,7 @@ This review covers command import, tunnel persistence, child-process management,
 
 The initial importer preserved arbitrary `-o` values and custom `-F` configuration files. OpenSSH options such as `ProxyCommand`, `LocalCommand`, and `KnownHostsCommand` can execute local programs even though RelayBar never invokes a shell itself.
 
-Remediation: the importer and runtime now share an allowlist. Command-executing options, custom config files, log files, control sockets, remote commands, remote forwards, and dynamic forwards are rejected. Runtime validation also protects against a tampered preferences payload.
+Remediation: the importer and runtime now share an allowlist. Command-executing options, custom config files, log files, control sockets, remote commands, remote forwards, and dynamic forwards are rejected. Accepted option values must be nonempty and cannot contain control or newline characters, preventing a persisted or quoted value from smuggling another configuration line. Runtime validation also protects against a tampered preferences payload.
 
 ### SR-02 — A manual SSH host could be interpreted as an option (high)
 
@@ -32,15 +32,50 @@ Long-running verbose SSH output could otherwise consume memory.
 
 Remediation: stderr is continuously drained and capped to the most recent 16 KiB. Only the last two lines are displayed.
 
+### SR-05 — SFTP batch-command injection through paths or names (high)
+
+Remote paths and listing names are untrusted. Passing a line break or unescaped quote to SFTP batch input could create another client command.
+
+Remediation: launcher paths must be absolute, contain no control characters, and fit a 32 KiB UTF-8 bound. Batch values apply the same bound, quote values, and escape backslashes and double quotes. Parsed names containing separators or control characters are discarded. `/usr/bin/sftp` is invoked directly and no shell evaluates either paths or connection values.
+
+### SR-06 — Untrusted listings, diagnostics, and images could exhaust resources (medium)
+
+A hostile server could return an extremely large listing, diagnostic stream, or image.
+
+Remediation: parsed listings are capped at 10,000 supported entries, 32 KiB per line, and 4 KiB per entry name; negative sizes are rejected. Captured SFTP standard output is capped at 32 MiB, captured standard error at 1 MiB, and image preview candidates at 100 MiB. ImageIO validates dimensions and pixel count before creating a bounded thumbnail from private temporary storage.
+
+### SR-07 — Partial or canceled transfers could replace local data (medium)
+
+A failed recursive transfer must not leave an existing destination half-replaced.
+
+Remediation: downloads use a hidden staging directory created with mode `0700` in the selected destination directory before SFTP writes its payload. Existing files or folders remain in place until SFTP succeeds, then replacement occurs as one filesystem operation. Cancellation or failure terminates SFTP and removes the complete staging directory. Preview and command-output directories use private permissions and are removed after use.
+
+### SR-08 — Markdown active content could execute code or disclose data (high)
+
+A remote document may contain raw HTML, JavaScript links, external images, embeds, wiki links, Mermaid diagrams, huge code blocks, or formulas crafted to consume resources. A conventional web renderer could execute content or make implicit requests.
+
+Remediation: Markdown preview is capped at 2 MiB, accepts UTF-8 without NULs, parses away from the main UI path with bounded cancellation checks, and publishes results only while its generation is current. Published state does not additionally retain the original and compatibility-transformed strings. RelayBar uses a native Markdown view rather than a web view. HTML-looking spans are escaped before parsing, so active tags such as `script` and `style` remain literal, selectable text and never execute even across lines or inside Markdown link labels; valid web/mail angle autolinks retain their normal link behavior. Normal block and inline image providers never load a URL. Obsidian embeds, wiki links, and inline tags become inert local states. Private wiki, tag, footnote, and math references require a random per-preview capability token, so private-looking URLs authored by the remote document cannot bypass enrichment limits. Mermaid stays selectable source and never executes. Only clicked absolute HTTP, HTTPS, and email links without credentials or raw/percent-decoded control characters reach macOS; file, data, JavaScript, relative, unknown, credential-bearing, and forged private URLs are blocked.
+
+Syntax highlighting receives at most 64 KiB from each explicitly labelled, supported language and is limited to 128 labelled blocks per document. It runs a bundled highlight.js build in JavaScriptCore without a DOM or network bridge and falls back to plain text. Math is syntax-validated and parsed locally with a 4,096-character formula cap, a 256-formula document budget, and bounded output dimensions. Named and inline footnotes, private internal links, and embed placeholders are also count-bounded. Invalid, oversized, and aggregate-overflow content remains selectable source.
+
+### SR-09 — Rendering dependencies add supply-chain and license risk (medium)
+
+Adding a Markdown stack changes the earlier dependency-free application boundary and introduces bundled code and resources.
+
+Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xcode resolution files. The selected versions preserve RelayBar's macOS 13 target. Required license notices are copied into the app bundle. MarkdownUI's default network image providers are replaced. The Xcode build retains Highlighter's formatter and the two selected themes plus SwiftMath's selected Latin Modern resources and licenses, while removing unused renderer resources from the generated app. Release builds are non-globally stripped after dSYM generation, and the executable/dSYM UUID match is verified. Dependency versions and the active-content boundary are recorded in Task 002 verification and must be reviewed before any release.
+
 ## Positive controls verified
 
-- The executable path is fixed to `/usr/bin/ssh`.
+- Executable paths are fixed to `/usr/bin/ssh` and `/usr/bin/sftp`.
 - Arguments are passed through `Process` as an array; there is no shell expansion.
 - SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives.
 - Standard input and output are closed; diagnostic stderr is bounded.
 - Detached SSH (`-f`) is discarded, and tracked children are terminated on stop and app quit.
 - Tunnel definitions contain no passwords and remain in local application preferences.
-- No dependencies, analytics, network SDKs, update frameworks, or downloaded code are present.
+- Remote paths are not persisted. RelayBar does not read or copy private-key contents.
+- Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.
+- There are no analytics, advertising, telemetry, tracking, account, update, or downloaded-code SDKs.
+- Markdown rendering dependencies are exact-pinned and their notices are bundled. None replaces the system SSH/SFTP transport.
 - The only reusable GitHub Actions step is the official checkout action, pinned to an immutable commit.
 - Release builds use the hardened runtime and a Developer ID Application signature.
 - Repository secret scans found no credentials, private keys, tokens, or signing material.
@@ -51,4 +86,10 @@ Remediation: stderr is continuously drained and capped to the most recent 16 KiB
 - A deliberately non-loopback bind exposes the local listener to the selected interface. RelayBar warns but honors an explicitly imported bind.
 - RelayBar is intentionally unsandboxed so system SSH can use the same `~/.ssh/config`, `known_hosts`, agent, and identity files as Terminal. Consequently, a trusted SSH configuration may use advanced OpenSSH features—including command-capable directives—that RelayBar's pasted-command importer itself rejects.
 - Authentication security, host-key policy, configured SSH directives, and the remote SSH server remain the user's responsibility.
+- Recursive folder downloads have no preflight total-size guarantee; the user chooses the destination, sees transferred bytes, and can cancel.
+- SFTP long-list output is parsed from OpenSSH's human-readable format. Unsupported filesystem object types and unsafe names are omitted rather than guessed.
+- The Markdown compatibility layer intentionally does not reproduce every Obsidian vault feature. Wiki links, tags, embeds, and Mermaid are inert, and highlight emphasis is not pixel-identical to Obsidian.
+- HighlighterSwift evaluates its bundled highlight.js formatter locally. The input and language are bounded, but a defect in that third-party parser remains a residual in-process availability risk.
+- Opening a permitted external link hands it to the user's browser or mail app, which may contact the destination and disclose normal request metadata. RelayBar does so only after an explicit click.
+- New rendering dependency releases are not adopted automatically. Each update requires compatibility, license, security, and regression review.
 - Developer ID signing does not replace notarization. A downloaded build must be notarized and stapled before Gatekeeper will accept it without publisher warnings.

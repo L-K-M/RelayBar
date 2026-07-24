@@ -68,6 +68,11 @@ final class SSHCommandParserTests: XCTestCase {
                 .unsafeOption("-o ProxyCommand=sh -c whoami")
             )
         }
+        XCTAssertThrowsError(
+            try SSHCommandParser.parse(
+                "ssh -o 'User=alice\nProxyCommand=whoami' -L 8080:localhost:80 host"
+            )
+        )
     }
 
     func testRejectsCustomConfigFiles() {
@@ -84,6 +89,13 @@ final class SSHCommandParserTests: XCTestCase {
 
     func testRejectsTamperedPersistedArguments() {
         XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-o", "LocalCommand=whoami"]))
+        XCTAssertFalse(
+            SSHArgumentPolicy.areAdditionalArgumentsSafe([
+                "-o", "User=alice\nProxyCommand=whoami"
+            ])
+        )
+        XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-i", "/tmp/key\u{0000}name"]))
+        XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["-o", "User"]))
         XCTAssertFalse(SSHArgumentPolicy.areAdditionalArgumentsSafe(["unexpected-host"]))
         XCTAssertTrue(SSHArgumentPolicy.areAdditionalArgumentsSafe([
             "-p", "2222",

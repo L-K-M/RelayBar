@@ -1,6 +1,6 @@
 # RelayBar
 
-RelayBar is a tiny native macOS menu-bar app for local SSH port forwards. It has no external dependencies and runs macOS's built-in `/usr/bin/ssh` directly.
+RelayBar is a tiny native macOS menu-bar app for local SSH port forwards and exact-path remote file access. It runs macOS's built-in `/usr/bin/ssh` and `/usr/bin/sftp` directly.
 
 [Download the latest release](https://github.com/lx2026/RelayBar/releases/latest)
 
@@ -21,6 +21,10 @@ RelayBar is a tiny native macOS menu-bar app for local SSH port forwards. It has
 - Shows startup failures directly beside the tunnel
 - Stores tunnel definitions in local `UserDefaults`
 - Stops child SSH processes when RelayBar quits
+- Opens an exact remote folder from a pasted absolute path and saved server
+- Downloads remote files or folders with progress, cancellation, and Finder reveal
+- Previews supported remote images without adding editing or gallery features
+- Renders remote Markdown in a safe, read-only view with GFM, callouts, inert tags, syntax highlighting, footnotes, and native math
 
 RelayBar intentionally manages one local (`-L`) forward per item. Safe connection options such as `-p`, `-J`, `-i`, and a restricted set of `-o` values are preserved when importing a command. Options that can execute local commands, select arbitrary configuration files, or write logs are rejected. RelayBar never invokes a shell.
 
@@ -39,15 +43,17 @@ RelayBar handles the few steps between a remote server and your Mac. Use Claude 
    - ~~Retry an unexpected disconnect up to 10 times.~~
    - ~~Show connection errors beside the affected forward.~~
    - ~~Stop managed SSH processes when RelayBar quits.~~
-2. **Remote files** (planned)
+2. **Remote files** (in development; implementation complete, live verification pending)
    1. **Open a pasted path:** paste an absolute path copied from remote `pwd`, choose a saved server, and open that folder.
    2. **Navigate folders:** show the files and subfolders at that path, with basic navigation and refresh. No search or indexing.
    3. **Download a file:** choose a local destination, track progress, cancel, and reveal the result in Finder.
    4. **Download a folder:** transfer a folder recursively, show progress, and allow cancellation.
    5. **Preview images:** preview one supported remote image at a time.
-   6. **Render Markdown:** render remote Markdown in a safe, read-only view.
+   6. **Render Markdown** (ready for product review): render GFM and common Obsidian reading syntax in a bounded, read-only native view. Remote images and embeds are not fetched, raw HTML is inert, and Mermaid remains source-only.
 
 Remote file operations stop at opening, previewing, and downloading.
+
+Markdown rendering uses exactly pinned open-source packages. Required license text is bundled from [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
 
 ## System specs
 

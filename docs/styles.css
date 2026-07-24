@@ -469,6 +469,12 @@ h1 {
     rgba(255, 255, 255, 0.82);
 }
 
+.roadmap-stage.in-progress {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(25, 154, 215, 0.12), transparent 13rem),
+    rgba(255, 255, 255, 0.82);
+}
+
 .roadmap-stage-header {
   display: flex;
   align-items: center;
@@ -505,6 +511,11 @@ h1 {
 .status.planned {
   color: #49677f;
   background: #edf2f6;
+}
+
+.status.in-progress {
+  color: #176b99;
+  background: rgba(25, 154, 215, 0.12);
 }
 
 .roadmap-stage h3 {
