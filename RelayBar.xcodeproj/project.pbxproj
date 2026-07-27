@@ -28,6 +28,8 @@
 		400000000000000000000015 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000003 /* SwiftMath */; };
 		400000000000000000000016 /* THIRD_PARTY_NOTICES.txt in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000013 /* THIRD_PARTY_NOTICES.txt */; };
 		400000000000000000000017 /* RemoteServerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000015 /* RemoteServerCatalog.swift */; };
+		400000000000000000000018 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000016 /* LaunchAtLogin.swift */; };
+		400000000000000000000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000017 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +54,8 @@
 		300000000000000000000013 /* THIRD_PARTY_NOTICES.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/THIRD_PARTY_NOTICES.txt; sourceTree = "<group>"; };
 		300000000000000000000014 /* prune-renderer-resources.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "prune-renderer-resources.sh"; sourceTree = "<group>"; };
 		300000000000000000000015 /* RemoteServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteServerCatalog.swift; sourceTree = "<group>"; };
+		300000000000000000000016 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
+		300000000000000000000017 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +94,8 @@
 		140000000000000000000000 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				300000000000000000000016 /* LaunchAtLogin.swift */,
+				300000000000000000000017 /* SettingsView.swift */,
 				300000000000000000000001 /* RelayBarApp.swift */,
 				300000000000000000000002 /* RelayBarRootView.swift */,
 				300000000000000000000003 /* SSHArgumentPolicy.swift */,
@@ -237,6 +243,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				400000000000000000000018 /* LaunchAtLogin.swift in Sources */,
+				400000000000000000000019 /* SettingsView.swift in Sources */,
 				400000000000000000000001 /* RelayBarApp.swift in Sources */,
 				400000000000000000000002 /* RelayBarRootView.swift in Sources */,
 				400000000000000000000003 /* SSHArgumentPolicy.swift in Sources */,
@@ -350,7 +358,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -359,7 +367,7 @@
 				INFOPLIST_FILE = Packaging/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -375,7 +383,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				DEPLOYMENT_POSTPROCESSING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -383,7 +391,7 @@
 				INFOPLIST_FILE = Packaging/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
