@@ -5,6 +5,24 @@ RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profi
 [Download v1.2.1](https://github.com/lx2026/RelayBar/releases/download/v1.2.1/RelayBar.zip)
 · [Changelog](CHANGELOG.md)
 
+## Install
+
+Install the current stable release with Homebrew:
+
+```bash
+brew install --cask lx2026/tap/relaybar
+```
+
+Later releases can be installed with:
+
+```bash
+brew upgrade --cask lx2026/tap/relaybar
+```
+
+If RelayBar was previously installed manually, quit it and remove the existing
+`/Applications/RelayBar.app` before the first Homebrew installation. Homebrew
+will not overwrite an application that it does not manage.
+
 ## Screenshots
 
 <p align="center">
