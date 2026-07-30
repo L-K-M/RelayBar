@@ -284,12 +284,38 @@ h1 {
 }
 
 .release-note {
-  margin-bottom: 28px;
+  margin-bottom: 12px;
   color: var(--faint);
   font-family: var(--mono);
   font-size: 9px;
   line-height: 1.6;
   letter-spacing: 0.01em;
+}
+
+.brew-install {
+  max-width: 530px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.brew-install span {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.brew-install code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .terminal {
@@ -830,6 +856,7 @@ h1 {
 
   .release-pill,
   .hero-lede,
+  .brew-install,
   .terminal {
     margin-inline: auto;
   }
