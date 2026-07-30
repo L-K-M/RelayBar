@@ -29,6 +29,8 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 
 ## Active tasks
 
+No active tasks.
+
 ## Backlog
 
 - [Task 028 — Update Experience](backlog/028-update-experience.md)
