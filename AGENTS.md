@@ -29,14 +29,15 @@ Do not commit or push merely because a task is complete; follow the Git workflow
 
 ## Git workflow
 
-- Work on the currently checked-out branch.
-- Do not create or switch branches unless the user explicitly requests it.
+- Do implementation work on a feature branch, not directly on `main`.
+- Create or switch to a feature branch before editing. Codex-created branches use the `codex/` prefix unless the user requests another name.
 - Do not open pull requests unless the user explicitly requests one.
-- When asked to commit and push, commit directly to the current branch.
+- When asked to commit and push, commit directly to the current feature branch.
 - If the current branch is protected or cannot be pushed, stop and report the blocker.
-- Before editing, verify that the local branch is synchronized with its remote.
+- Before editing, fetch remotes. If the current branch has an upstream, verify that it is synchronized; if it is new, record its base and any divergence from that base's remote.
 - After a pull request is merged, switch to `main` and update it with `git pull --ff-only`.
-- Never force-push `main`.
+- Never commit directly to or force-push `main`.
+- Never add agent self-attribution to commits, pull requests, or code comments. No `Co-Authored-By` trailers naming an agent, no "Generated with" or "Created by" lines, and no tool or model names in commit messages or PR bodies.
 
 ## Deployment approval
 
