@@ -22,8 +22,12 @@ Remote Files opens an exact folder on an SSH server without adding search, index
 - The top bar contains **Back**, the exact current path, and **Refresh**.
 - The list shows supported folders, regular files, and symbolic links with modified text and size.
 - Folders sort before other items; each group uses localized name ordering.
-- Opening a folder navigates into it. Back follows navigation history, reselects the folder that was left, and returns to the launcher from the initial folder.
-- Supported images and Markdown documents open the preview state. Other files begin destination selection for download.
+- Activating a folder presents its target path immediately. An uncached folder shows a content-local **Opening folder…** state; rows and Refresh are disabled, while Back remains available to cancel the open and restore the exact prior folder and selection.
+- Successful listings enter a session-only LRU cache keyed by exact SSH connection identity and normalized absolute path. The cache retains at most 20,000 aggregate entry units, charges an empty snapshot one unit, and evicts whole least-recently-used snapshots.
+- Cached Back and revisit navigation publish rows synchronously, then revalidate them in place. Revalidation keeps the rows visible, preserves selection when possible, and reports failure through the existing nonblocking error and retry affordance.
+- Explicit Refresh bypasses the cache. Duplicate loads for the same presented path coalesce, and generation checks prevent a superseded listing or revalidation from changing the current folder.
+- Back follows navigation history, reselects the folder that was left, and returns to the launcher from the initial folder.
+- Supported images and Markdown documents open a split preview workspace. Other files begin destination selection for download.
 - Search, filters, indexing, workspace discovery, rename, move, delete, upload, and remote editing are absent.
 
 ## Downloads
@@ -41,26 +45,39 @@ Remote Files opens an exact folder on an SSH server without adding search, index
 - Single-file progress polls every 250 ms. Recursive progress re-walks the partial tree, so its interval scales with the entry count from 1 second up to a bounded 8 seconds. The completion report is exact regardless of interval.
 - A cancelled SFTP operation receives `SIGTERM` once. After two seconds, RelayBar reaps the child first and sends `SIGKILL` at most once only while it still owns that child. Reaping and signal delivery are serialized, so the PID cannot be recycled between the decision and the signal.
 
+## Preview workspace
+
+- Preview keeps a draggable leading sidebar beside the detail. It contains only previewable image and Markdown siblings from the current in-memory folder snapshot; opening preview performs no additional listing, recursive discovery, search, or eager sibling download.
+- The active file stays selected. Clicking a sibling or pressing Left or Right starts that preview through the active server and SSH master. Superseded retrieval and decoding work is cancelled, generation-guarded, and cleaned before stale content can publish.
+- The leading sidebar control hides or restores the pane with Control-Command-S. Left and Right continue switching siblings while it is hidden; vertical arrows remain available to scroll Markdown. The sidebar uses adaptive system material, file-type symbols, modified time, size, and explicit selected and accessibility state.
+- **All Files**, Escape, and Command-Left-Bracket return to the complete browser with the active preview row selected. Download remains the only trailing toolbar action.
+- Loading, error, retry, and transfer feedback stays in the detail pane so the sibling list remains stable.
+
 ## Image preview
 
 - PNG, JPEG, GIF, HEIC/HEIF, TIFF, and BMP files are previewable.
 - Preview retrieval is limited to 100 MiB.
 - Bounded native ImageIO thumbnail decoding runs off the main actor from private temporary storage; only the completed immutable image is published back to the UI.
 - Leaving the preview or closing the window removes preview content, including when cancellation happens after retrieval but during decoding.
-- Preview has no gallery, metadata inspector, markup, or editing behavior.
+- The detail uses an adaptive quiet canvas, keeps intrinsic aspect ratio, and never enlarges an image beyond its decoded dimensions.
+- Preview has no thumbnails, metadata inspector, markup, or editing behavior.
 
 Empty folders show a single focused empty state with an explicit accessibility description.
 
 ## Markdown preview
 
-- `.md`, `.markdown`, `.mdown`, and `.mkd` files use the same focused preview state.
+- `.md`, `.markdown`, `.mdown`, and `.mkd` files use the same split preview workspace.
 - Preview retrieval is limited to 2 MiB and accepts UTF-8 without NULs.
 - The reader is selectable and read-only; it does not fetch document images, resolve remote embeds, execute HTML or Mermaid, or write remote content.
 - Detailed behavior and limits live in [Markdown preview](markdown-preview.md).
 
 ## Transport and lifecycle
 
-- RelayBar invokes `/usr/bin/sftp` directly and never invokes a shell.
+- RelayBar starts one foreground `/usr/bin/ssh` multiplexing master for the active Remote Files connection, then invokes `/usr/bin/sftp` directly for each listing, preview, and download. It never invokes a shell.
+- The master uses `-N`, `-T`, `-M`, `ControlPersist=no`, `ClearAllForwardings=yes`, `BatchMode=yes`, a 10-second connect timeout, forward-failure exit, and server keepalives. Its input and output are discarded and its last 16 KiB of standard error is retained for a normalized failure.
+- A one-character control socket lives below a short app-owned directory that `mkdtemp(3)` creates atomically with `0700` permissions under the user's private macOS temporary directory. Its UTF-8 path budget reserves the terminating NUL and OpenSSH's 17-byte temporary mux-listener suffix instead of checking only the final socket name. SFTP children receive that exact `ControlPath` with `ControlMaster=no`; RelayBar neither discovers nor attaches to a user-managed socket or a forwarding profile's master.
+- Concurrent first operations serialize behind one master startup. Readiness is detected at 50-millisecond intervals with a bounded 120-second ceiling for high-latency and jump-host handshakes. Cancelling a startup waiter resumes it immediately without stopping the master, and cancelling an SFTP child leaves the healthy master running. An unexpected master exit cleans its socket and does not reconnect in the background; the next explicit operation creates a new master.
+- The session and directory cache end on connection change, launcher return, window close, or app quit. Delayed callbacks cannot revive the retired session.
 - Remote and local batch paths are limited to 32 KiB of UTF-8 before quoting.
 - Batch paths are quoted with `\` and `"` escaped. sftp's own quoting suppresses `glob(3)` expansion, so `*`, `?`, and `[` in a remote path resolve literally and need no further escaping. Verified against OpenSSH 10.2 with `star*dir`, `report[2026]`, `bra[ck]et.md`, and `draft?.md`, all of which list and open correctly.
 - Captured standard output is capped at 32 MiB and standard error at 1 MiB.
@@ -69,9 +86,9 @@ Empty folders show a single focused empty state with an explicit accessibility d
 - Parsed listing lines are limited to 32 KiB, entry names to 4 KiB, entry sizes must be nonnegative, and supported entries remain capped at 10,000.
 - Listing rows may contain either basenames or absolute paths. An absolute entry is accepted only when it is a direct child of the requested folder, then reduced to its basename; out-of-folder absolute entries fail closed.
 - RelayBar does not add SFTP quiet mode implicitly, so bounded diagnostics retain actionable host-key, resolution, timeout, refusal, and connection-loss details for normalization. A user-saved `-q` option is still preserved.
-- Safe connection options are translated for SFTP, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
+- The master receives validated SSH-native connection arguments. SFTP children receive the same validated connection behavior with SFTP-specific translation, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
 - The user's normal OpenSSH config, identities, agent, jump host, and host-key behavior remain in effect.
 - Browsing is independent of the local-forward process state.
-- Closing the Remote Files window or quitting RelayBar cancels listing, preview, and transfer work.
+- Closing the Remote Files window or quitting RelayBar cancels listing, preview, and transfer work, stops the owned master, clears the cache, and removes owned temporary state.
 
 See [Security boundaries](../shared/security-boundaries.md).

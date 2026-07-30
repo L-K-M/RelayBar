@@ -10,6 +10,11 @@ protocol RemoteFileServing: AnyObject, Sendable {
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL
+    func shutdown()
+}
+
+extension RemoteFileServing {
+    func shutdown() {}
 }
 
 /// Configuration is immutable after initialization. Each command owns separate
@@ -206,6 +211,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private let standardErrorLimit: Int64
     private let forceStopDelay: TimeInterval
     private let signalProcess: @Sendable (pid_t, Int32) -> Int32
+    private let connectionSession: RemoteFileSSHSession?
 
     init(
         executableURL: URL = URL(fileURLWithPath: "/usr/bin/sftp"),
@@ -215,6 +221,10 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         standardOutputLimit: Int64 = 32 * 1_024 * 1_024,
         standardErrorLimit: Int64 = 1 * 1_024 * 1_024,
         forceStopDelay: TimeInterval = 2,
+        connectionSharing: Bool = true,
+        sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
+        sessionTemporaryDirectory: URL? = nil,
+        processEnvironment: [String: String]? = nil,
         signalProcess: @escaping @Sendable (pid_t, Int32) -> Int32 = {
             Darwin.kill($0, $1)
         }
@@ -227,6 +237,20 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         self.standardErrorLimit = standardErrorLimit
         self.forceStopDelay = forceStopDelay
         self.signalProcess = signalProcess
+        connectionSession = connectionSharing
+            ? RemoteFileSSHSession(
+                executableURL: sshExecutableURL,
+                fileManager: fileManager,
+                temporaryDirectory: sessionTemporaryDirectory,
+                processEnvironment: processEnvironment,
+                forceStopDelay: forceStopDelay,
+                signalProcess: signalProcess
+            )
+            : nil
+    }
+
+    func shutdown() {
+        connectionSession?.shutdown()
     }
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
@@ -408,7 +432,23 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     private func run(server: RemoteServer, batchInput: String) async throws -> CommandResult {
-        let arguments = try SFTPCommandBuilder.processArguments(for: server)
+        let controlSocket: URL?
+        if let connectionSession {
+            controlSocket = try await connectionSession.controlSocket(for: server)
+        } else {
+            controlSocket = nil
+        }
+        try Task.checkCancellation()
+        if
+            let controlSocket,
+            !fileManager.fileExists(atPath: controlSocket.path)
+        {
+            throw RemoteFileError.connectionSessionUnavailable
+        }
+        let arguments = try SFTPCommandBuilder.processArguments(
+            for: server,
+            controlSocket: controlSocket
+        )
         let processBox = ProcessBox(
             forceStopDelay: forceStopDelay,
             signalProcess: signalProcess
@@ -496,6 +536,12 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                         outputMonitor.resume()
                         guard processBox.shouldStart else {
                             throw CancellationError()
+                        }
+                        if
+                            let controlSocket,
+                            !fileManager.fileExists(atPath: controlSocket.path)
+                        {
+                            throw RemoteFileError.connectionSessionUnavailable
                         }
                         let processIdentifier = try Self.spawnProcess(
                             executableURL: executableURL,
@@ -695,7 +741,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             throw RemoteFileError.responseTooLarge
         }
         guard result.status == 0 else {
-            throw RemoteFileError.commandFailed(friendlyMessage(from: result.error))
+            throw RemoteFileError.commandFailed(Self.friendlyMessage(from: result.error))
         }
     }
 
@@ -711,7 +757,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         (["connection closed", "connection reset"], "The connection was lost.")
     ]
 
-    private func friendlyMessage(from errorOutput: String) -> String {
+    static func friendlyMessage(from errorOutput: String) -> String {
         let lines = errorOutput
             .split(whereSeparator: \.isNewline)
             .map(String.init)

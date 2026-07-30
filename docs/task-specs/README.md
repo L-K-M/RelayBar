@@ -1,6 +1,6 @@
 # Task Specifications
 
-Task specs are executable delivery contracts. Active specs live directly in this directory. Accepted specs move to [`archive/`](archive/).
+Task specs are executable delivery contracts. Active specs live directly in this directory. Deferred proposals live under [`backlog/`](backlog/), and accepted specs move to [`archive/`](archive/).
 
 ## Required structure
 
@@ -28,3 +28,7 @@ A task may be marked `Complete` only after:
 Completion does not authorize a commit, push, release, or deployment. Follow [`AGENTS.md`](../../AGENTS.md) and obtain explicit deployment approval.
 
 ## Active tasks
+
+## Backlog
+
+- [Task 028 — Update Experience](backlog/028-update-experience.md)

@@ -97,6 +97,7 @@ final class LiveLoopbackTests: XCTestCase {
     func testListsAndOpensRealGlobNamedEntries() async throws {
         let directory = try fixtureDirectory
         let service = SFTPRemoteFileService()
+        defer { service.shutdown() }
         let server = RemoteServer(
             id: UUID(),
             name: "loopback",

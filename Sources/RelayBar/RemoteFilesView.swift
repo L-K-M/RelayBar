@@ -25,6 +25,12 @@ struct RemoteFilesView: View {
     @FocusState private var isPathFocused: Bool
     @State private var isAddingServer = false
     @State private var isConfirmingServerRemoval = false
+    @State private var isPreviewSidebarVisible = true
+
+    init(model: RemoteFilesModel, previewSidebarVisible: Bool = true) {
+        self.model = model
+        _isPreviewSidebarVisible = State(initialValue: previewSidebarVisible)
+    }
 
     var body: some View {
         Group {
@@ -246,16 +252,16 @@ struct RemoteFilesView: View {
             }
             .keyboardShortcut("[", modifiers: .command)
             .disabled(!model.canGoBack)
-            .help(model.canGoBack ? "Go back" : "Cancel the transfer before closing this folder")
+            .help(model.backHelp)
 
             Spacer()
 
-            Text(model.currentPath)
+            Text(model.presentedPath)
                 .font(.system(size: 12.5, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .help(model.currentPath)
-                .accessibilityLabel("Current path \(model.currentPath)")
+                .help(model.presentedPath)
+                .accessibilityLabel("Current path \(model.presentedPath)")
 
             Spacer()
 
@@ -301,38 +307,159 @@ struct RemoteFilesView: View {
 
     private var preview: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button {
-                    model.closePreview()
-                } label: {
-                    Label("Back", systemImage: "chevron.left")
-                }
-                .keyboardShortcut("[", modifiers: .command)
-                .frame(width: 110, alignment: .leading)
+            previewToolbar
+            Divider()
 
-                Text(model.previewEntry?.name ?? "Image")
+            if isPreviewSidebarVisible {
+                HSplitView {
+                    previewSidebar
+                        .frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
+                    previewDetail
+                        .frame(minWidth: 430)
+                        .layoutPriority(1)
+                }
+            } else {
+                previewDetail
+            }
+        }
+        .background(
+            RemotePreviewKeyboardMonitor(
+                onMovePrevious: { model.movePreviewSelection(by: -1) },
+                onMoveNext: { model.movePreviewSelection(by: 1) },
+                isEnabled: model.screen == .preview
+            )
+            .frame(width: 0, height: 0)
+        )
+        .onExitCommand {
+            model.closePreview()
+        }
+    }
+
+    private var previewToolbar: some View {
+        HStack(spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isPreviewSidebarVisible.toggle()
+                }
+            } label: {
+                Image(systemName: "sidebar.leading")
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("s", modifiers: [.control, .command])
+            .help(isPreviewSidebarVisible ? "Hide preview sidebar" : "Show preview sidebar")
+            .accessibilityLabel(
+                isPreviewSidebarVisible ? "Hide preview sidebar" : "Show preview sidebar"
+            )
+
+            Button {
+                model.closePreview()
+            } label: {
+                Label("All Files", systemImage: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut("[", modifiers: .command)
+            .help("Back to folder")
+
+            Divider()
+                .frame(height: 18)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.previewEntry?.name ?? "Preview")
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: .infinity)
 
-                Button("Download") {
-                    if let entry = model.previewEntry {
-                        model.download(entry)
-                    }
+                if let entry = model.previewEntry {
+                    Text(previewDescription(for: entry))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    model.transfer?.phase == .active
-                        || model.transfer?.phase == .cancelling
-                )
-                .frame(width: 110, alignment: .trailing)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 48)
+            .accessibilityElement(children: .combine)
+
+            Spacer(minLength: 12)
+
+            Button {
+                if let entry = model.previewEntry {
+                    model.download(entry)
+                }
+            } label: {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+            .buttonStyle(.bordered)
+            .disabled(
+                model.transfer?.phase == .active
+                    || model.transfer?.phase == .cancelling
+            )
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 52)
+    }
+
+    private var previewSidebar: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("IN THIS FOLDER")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .tracking(0.5)
+
+                    Text(model.currentPath)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(model.currentPath)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("\(model.previewableEntries.count)")
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel(
+                        "\(model.previewableEntries.count) previewable files"
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
 
             Divider()
 
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(model.previewableEntries) { entry in
+                            Button {
+                                model.selectPreviewEntry(id: entry.id)
+                            } label: {
+                                PreviewSidebarRow(
+                                    entry: entry,
+                                    isSelected: model.previewEntry?.id == entry.id
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .id(entry.id)
+                        }
+                    }
+                    .padding(8)
+                }
+                .onChange(of: model.previewEntry?.id) { selectedID in
+                    guard let selectedID else { return }
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo(selectedID, anchor: .center)
+                    }
+                }
+            }
+        }
+        .background(.ultraThinMaterial)
+        .accessibilityLabel("Preview files in \(model.currentPath)")
+    }
+
+    private var previewDetail: some View {
+        VStack(spacing: 0) {
             if let transfer = model.transfer {
                 TransferStrip(model: model, transfer: transfer)
                 Divider()
@@ -350,29 +477,38 @@ struct RemoteFilesView: View {
                 errorState(message: errorMessage, retry: model.retryPreview)
             } else if let image = model.previewImage {
                 GeometryReader { geometry in
-                    let maximumWidth = max(0, geometry.size.width - 40)
-                    let maximumHeight = max(0, geometry.size.height - 40)
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            width: min(image.size.width, maximumWidth),
-                            height: min(image.size.height, maximumHeight)
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(20)
-                        .accessibilityLabel(
-                            "Image preview of \(model.previewEntry?.name ?? "remote file")"
-                        )
+                    let maximumWidth = max(0, geometry.size.width - 64)
+                    let maximumHeight = max(0, geometry.size.height - 64)
+                    ZStack {
+                        Color(nsColor: .underPageBackgroundColor)
+
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(
+                                width: min(image.size.width, maximumWidth),
+                                height: min(image.size.height, maximumHeight)
+                            )
+                            .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                            .padding(32)
+                            .accessibilityLabel(
+                                "Image preview of "
+                                    + "\(model.previewEntry?.name ?? "remote file")"
+                            )
+                    }
                 }
             } else if let markdown = model.previewMarkdown {
                 SafeRemoteMarkdownView(document: markdown)
             }
         }
-        .onExitCommand {
-            model.closePreview()
-        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func previewDescription(for entry: RemoteFileEntry) -> String {
+        let kind = entry.isPreviewableImage ? "Image" : "Markdown"
+        guard let size = entry.size else { return kind }
+        return "\(kind) · \(RemoteByteCount.string(size))"
     }
 
     private func errorState(message: String, retry: @escaping () -> Void) -> some View {
@@ -389,6 +525,63 @@ struct RemoteFilesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
+    }
+}
+
+private struct PreviewSidebarRow: View {
+    let entry: RemoteFileEntry
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: entry.isPreviewableImage ? "photo" : "doc.richtext")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.system(size: 11.5))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(metadata)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .frame(minHeight: 38)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+        )
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.20), lineWidth: 0.5)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("Select to preview this file")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var metadata: String {
+        guard let size = entry.size else { return entry.modificationText }
+        return "\(entry.modificationText) · \(RemoteByteCount.string(size))"
+    }
+
+    private var accessibilityLabel: String {
+        let kind = entry.isPreviewableImage ? "image" : "Markdown document"
+        return "\(entry.name), \(kind), \(metadata)"
     }
 }
 
@@ -740,7 +933,7 @@ private struct ErrorMessage: View {
 enum RemoteFilesKeyboardShortcut {
     static func isUnmodified(_ flags: NSEvent.ModifierFlags) -> Bool {
         flags.intersection(.deviceIndependentFlagsMask)
-            .subtracting([.numericPad]) == []
+            .subtracting([.numericPad, .function]) == []
     }
 
     static func isCommandDown(_ flags: NSEvent.ModifierFlags) -> Bool {
@@ -854,6 +1047,107 @@ private struct RemoteFilesKeyboardMonitor: NSViewRepresentable {
                 currentView = candidate.superview
             }
             return false
+        }
+
+        func uninstall() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+    }
+}
+
+private struct RemotePreviewKeyboardMonitor: NSViewRepresentable {
+    let onMovePrevious: () -> Bool
+    let onMoveNext: () -> Bool
+    let isEnabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onMovePrevious: onMovePrevious,
+            onMoveNext: onMoveNext,
+            isEnabled: isEnabled
+        )
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.view = nsView
+        context.coordinator.onMovePrevious = onMovePrevious
+        context.coordinator.onMoveNext = onMoveNext
+        context.coordinator.isEnabled = isEnabled
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        var onMovePrevious: () -> Bool
+        var onMoveNext: () -> Bool
+        var isEnabled: Bool
+        private var monitor: Any?
+
+        init(
+            onMovePrevious: @escaping () -> Bool,
+            onMoveNext: @escaping () -> Bool,
+            isEnabled: Bool
+        ) {
+            self.onMovePrevious = onMovePrevious
+            self.onMoveNext = onMoveNext
+            self.isEnabled = isEnabled
+        }
+
+        func install() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let mainThreadEvent = MainThreadNSEvent(value: event)
+                let result = MainActor.assumeIsolated { () -> MainThreadNSEvent? in
+                    guard let self else { return mainThreadEvent }
+                    return self.handle(mainThreadEvent.value)
+                        .map(MainThreadNSEvent.init(value:))
+                }
+                return result?.value
+            }
+        }
+
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            guard let window = view?.window else {
+                return event
+            }
+            guard
+                isEnabled,
+                event.window === window || NSApplication.shared.keyWindow === window,
+                !hasActiveDocumentTextResponder(in: window),
+                RemoteFilesKeyboardShortcut.isUnmodified(event.modifierFlags)
+            else {
+                return event
+            }
+
+            switch event.keyCode {
+            case 123:
+                return onMovePrevious() ? nil : event
+            case 124:
+                return onMoveNext() ? nil : event
+            default:
+                return event
+            }
+        }
+
+        private func hasActiveDocumentTextResponder(in window: NSWindow) -> Bool {
+            guard let textView = window.firstResponder as? NSTextView else {
+                return false
+            }
+            return !textView.isFieldEditor
         }
 
         func uninstall() {

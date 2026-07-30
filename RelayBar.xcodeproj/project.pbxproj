@@ -30,6 +30,7 @@
 		400000000000000000000017 /* RemoteServerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000015 /* RemoteServerCatalog.swift */; };
 		400000000000000000000018 /* LaunchAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000016 /* LaunchAtLogin.swift */; };
 		400000000000000000000019 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000017 /* SettingsView.swift */; };
+		40000000000000000000001A /* RemoteFileSSHSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000018 /* RemoteFileSSHSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +57,7 @@
 		300000000000000000000015 /* RemoteServerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteServerCatalog.swift; sourceTree = "<group>"; };
 		300000000000000000000016 /* LaunchAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLogin.swift; sourceTree = "<group>"; };
 		300000000000000000000017 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		300000000000000000000018 /* RemoteFileSSHSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteFileSSHSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +106,7 @@
 				300000000000000000000006 /* TunnelEditorView.swift */,
 				300000000000000000000007 /* TunnelStore.swift */,
 				30000000000000000000000B /* RemoteFile.swift */,
+				300000000000000000000018 /* RemoteFileSSHSession.swift */,
 				30000000000000000000000C /* SFTPRemoteFileService.swift */,
 				30000000000000000000000D /* RemoteFilesModel.swift */,
 				30000000000000000000000E /* RemoteFilesView.swift */,
@@ -253,6 +256,7 @@
 				400000000000000000000006 /* TunnelEditorView.swift in Sources */,
 				400000000000000000000007 /* TunnelStore.swift in Sources */,
 				40000000000000000000000B /* RemoteFile.swift in Sources */,
+				40000000000000000000001A /* RemoteFileSSHSession.swift in Sources */,
 				40000000000000000000000C /* SFTPRemoteFileService.swift in Sources */,
 				40000000000000000000000D /* RemoteFilesModel.swift in Sources */,
 				40000000000000000000000E /* RemoteFilesView.swift in Sources */,

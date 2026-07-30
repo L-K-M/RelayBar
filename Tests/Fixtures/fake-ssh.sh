@@ -3,6 +3,8 @@
 set -eu
 
 log_file="${RELAYBAR_FAKE_SSH_LOG:-}"
+pid_file="${RELAYBAR_FAKE_SSH_PID:-}"
+ready_file="${RELAYBAR_FAKE_SSH_READY_FILE:-}"
 counter_file="${RELAYBAR_FAKE_SSH_COUNTER:-}"
 fail_spec="${RELAYBAR_FAKE_SSH_FAIL_SPEC:-}"
 delay_spec="${RELAYBAR_FAKE_SSH_DELAY_SPEC:-}"
@@ -50,8 +52,16 @@ if [ "$is_master" -eq 1 ]; then
         printf 'missing fake control socket\n' >&2
         exit 2
     fi
+    if [ -n "$pid_file" ]; then
+        printf '%s\n' "$$" > "$pid_file"
+    fi
+    trap 'rm -f "$control_socket" "$pid_file"; exit 0' TERM INT EXIT
+    if [ -n "$ready_file" ]; then
+        while [ ! -f "$ready_file" ]; do
+            :
+        done
+    fi
     : > "$control_socket"
-    trap 'rm -f "$control_socket"; exit 0' TERM INT EXIT
     while :; do
         sleep 1
     done

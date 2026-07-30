@@ -19,6 +19,28 @@ Release builds generate a dSYM and then apply non-global symbol stripping to the
 
 The app is distributed outside the Mac App Store, uses the hardened runtime, and is intentionally not sandboxed.
 
+## Homebrew cask
+
+The maintainer-owned `lx2026/homebrew-tap` repository publishes
+`Casks/relaybar.rb`. The cask installs the same immutable, versioned
+`RelayBar.zip` attached to the stable GitHub release and pins its SHA-256. It
+uses only the standard `app "RelayBar.app"` artifact, declares the real macOS
+minimum, and does not bypass quarantine, re-sign the bundle, run postflight
+scripts, or remove RelayBar user data.
+
+After publishing and independently verifying a stable release:
+
+1. update the cask version and SHA-256 to that exact release archive;
+2. confirm its URL, homepage, macOS requirement, and app artifact;
+3. run Homebrew style plus strict online and signing audits;
+4. test install, launch, version, Gatekeeper, and uninstall behavior; and
+5. confirm the extracted archive and cask installation contain the same signed
+   application.
+
+RelayBar does not update itself, so the cask must not declare
+`auto_updates true`. Users update with
+`brew upgrade --cask lx2026/tap/relaybar`.
+
 ## Project Website
 
 The GitHub Pages site is a build-free static site under `docs/`. Its

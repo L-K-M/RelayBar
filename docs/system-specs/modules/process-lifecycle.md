@@ -27,3 +27,12 @@
 - Exhaustion changes the profile to failed and requires another user start.
 
 Phases are `stopped`, `starting`, `retrying`, `running`, and `failed`.
+
+## Remote Files session
+
+- Each Remote Files window owns at most one foreground `/usr/bin/ssh` multiplexing master for its active exact connection identity. This process is separate from every forwarding-profile master and has no forwarding rules.
+- Its one-character control socket lives in a short, atomically created `0700` directory below the user's private macOS temporary directory. The path budget reserves both Darwin's terminating NUL and OpenSSH's 17-byte temporary mux-listener suffix.
+- Concurrent initial SFTP operations wait on one serialized startup. The private control socket is considered ready only after it appears while the owned process is still running, with a 120-second bounded readiness ceiling. Cancelling one waiter resumes it immediately without disrupting the shared startup for other or later work.
+- Listings, previews, and downloads remain independent, bounded `/usr/bin/sftp` children. Cancelling or reaping one child does not signal the master.
+- Master exit removes its socket and temporary directory. There is no retry timer or background reconnect; a later explicit operation starts a replacement master.
+- Server change, launcher return, Remote Files window close, and app quit synchronously retire the session so it cannot accept another channel. Process termination, reaping, and directory cleanup finish asynchronously without blocking the main actor.
