@@ -28,3 +28,5 @@ A task may be marked `Complete` only after:
 Completion does not authorize a commit, push, release, or deployment. Follow [`AGENTS.md`](../../AGENTS.md) and obtain explicit deployment approval.
 
 ## Active tasks
+
+- [Task 028 — Secure Automatic Updates](028-secure-automatic-updates.md)
