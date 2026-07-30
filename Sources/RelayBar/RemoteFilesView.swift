@@ -246,16 +246,16 @@ struct RemoteFilesView: View {
             }
             .keyboardShortcut("[", modifiers: .command)
             .disabled(!model.canGoBack)
-            .help(model.canGoBack ? "Go back" : "Cancel the transfer before closing this folder")
+            .help(model.backHelp)
 
             Spacer()
 
-            Text(model.currentPath)
+            Text(model.presentedPath)
                 .font(.system(size: 12.5, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .help(model.currentPath)
-                .accessibilityLabel("Current path \(model.currentPath)")
+                .help(model.presentedPath)
+                .accessibilityLabel("Current path \(model.presentedPath)")
 
             Spacer()
 

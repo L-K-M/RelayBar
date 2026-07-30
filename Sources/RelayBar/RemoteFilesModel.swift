@@ -112,6 +112,88 @@ private struct DecodedRemoteImage: @unchecked Sendable {
     let value: CGImage
 }
 
+struct RemoteDirectoryCache {
+    struct Key: Hashable {
+        let connection: RemoteServer.ConnectionIdentity
+        let path: String
+    }
+
+    private struct Snapshot {
+        let entries: [RemoteFileEntry]
+        let cost: Int
+        var lastAccess: UInt64
+    }
+
+    let maximumEntryCount: Int
+    private var snapshots: [Key: Snapshot] = [:]
+    private(set) var entryCount = 0
+    private var accessSequence: UInt64 = 0
+
+    init(maximumEntryCount: Int = 20_000) {
+        self.maximumEntryCount = maximumEntryCount
+    }
+
+    mutating func entries(
+        for connection: RemoteServer.ConnectionIdentity,
+        path: String
+    ) -> [RemoteFileEntry]? {
+        let key = Key(connection: connection, path: RemotePath.normalized(path))
+        guard var snapshot = snapshots[key] else { return nil }
+        accessSequence &+= 1
+        snapshot.lastAccess = accessSequence
+        snapshots[key] = snapshot
+        return snapshot.entries
+    }
+
+    mutating func insert(
+        _ entries: [RemoteFileEntry],
+        for connection: RemoteServer.ConnectionIdentity,
+        path: String
+    ) {
+        let key = Key(connection: connection, path: RemotePath.normalized(path))
+        if let existing = snapshots.removeValue(forKey: key) {
+            entryCount -= existing.cost
+        }
+        // Empty folders still consume cache metadata, so charge one unit and
+        // keep the cache bounded even when every snapshot is empty.
+        let cost = max(entries.count, 1)
+        guard cost <= maximumEntryCount else { return }
+
+        accessSequence &+= 1
+        snapshots[key] = Snapshot(
+            entries: entries,
+            cost: cost,
+            lastAccess: accessSequence
+        )
+        entryCount += cost
+
+        while entryCount > maximumEntryCount {
+            guard
+                let oldest = snapshots.min(by: {
+                    $0.value.lastAccess < $1.value.lastAccess
+                })
+            else {
+                break
+            }
+            snapshots.removeValue(forKey: oldest.key)
+            entryCount -= oldest.value.cost
+        }
+    }
+
+    func contains(
+        connection: RemoteServer.ConnectionIdentity,
+        path: String
+    ) -> Bool {
+        snapshots[Key(connection: connection, path: RemotePath.normalized(path))] != nil
+    }
+
+    mutating func removeAll() {
+        snapshots.removeAll()
+        entryCount = 0
+        accessSequence = 0
+    }
+}
+
 @MainActor
 final class RemoteFilesModel: ObservableObject {
     enum Screen: Equatable {
@@ -148,6 +230,7 @@ final class RemoteFilesModel: ObservableObject {
     @Published var selectedServerID: UUID?
     @Published var remotePath = ""
     @Published private(set) var currentPath = ""
+    @Published private(set) var pendingPath: String?
     @Published private(set) var entries: [RemoteFileEntry] = []
     @Published var selectedEntryID: String?
     @Published private(set) var isLoading = false
@@ -167,6 +250,7 @@ final class RemoteFilesModel: ObservableObject {
     private var tunnels: [Tunnel]
     private var activeServer: RemoteServer?
     private var navigationHistory: [String] = []
+    private var directoryCache = RemoteDirectoryCache()
     private var loadTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var transferTask: Task<Void, Never>?
@@ -213,12 +297,26 @@ final class RemoteFilesModel: ObservableObject {
         selectedServer != nil && pathValidationMessage == nil && !isLoading
     }
 
+    var presentedPath: String {
+        pendingPath ?? currentPath
+    }
+
     var canGoBack: Bool {
         if screen == .preview {
             return true
         }
-        guard screen == .browser, !isLoading else { return false }
-        return !isTransferRunning
+        guard screen == .browser, !isTransferRunning else { return false }
+        return !isLoading || pendingPath != nil
+    }
+
+    var backHelp: String {
+        if isLoading, pendingPath != nil {
+            return "Cancel opening this folder"
+        }
+        if isTransferRunning {
+            return "Cancel the transfer before closing this folder"
+        }
+        return "Go back"
     }
 
     var selectedEntry: RemoteFileEntry? {
@@ -278,6 +376,13 @@ final class RemoteFilesModel: ObservableObject {
             return
         }
 
+        if
+            let activeServer,
+            activeServer.connectionIdentity != server.connectionIdentity
+        {
+            service.shutdown()
+            directoryCache.removeAll()
+        }
         navigationHistory = []
         activeServer = server
         load(path: RemotePath.normalized(remotePath), server: server, previousPath: nil)
@@ -316,10 +421,27 @@ final class RemoteFilesModel: ObservableObject {
         }
 
         guard screen == .browser, canGoBack else { return }
+        if isLoading, pendingPath != nil {
+            loadTask?.cancel()
+            loadGeneration = UUID()
+            loadTask = nil
+            pendingPath = nil
+            isLoading = false
+            errorMessage = nil
+            retryLoadRequest = nil
+            return
+        }
         guard let previousPath = navigationHistory.last, let server = activeServer else {
             loadTask?.cancel()
+            loadGeneration = UUID()
+            loadTask = nil
+            service.shutdown()
+            directoryCache.removeAll()
             entries = []
             selectedEntryID = nil
+            pendingPath = nil
+            isLoading = false
+            isRefreshing = false
             errorMessage = nil
             retryLoadRequest = nil
             activeServer = nil
@@ -349,6 +471,7 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     func activate(_ entry: RemoteFileEntry) {
+        guard !isLoading else { return }
         select(entry)
         if entry.isDirectory {
             guard let server = activeServer else { return }
@@ -477,6 +600,11 @@ final class RemoteFilesModel: ObservableObject {
         loadTask = nil
         previewTask = nil
         transferTask = nil
+        pendingPath = nil
+        isLoading = false
+        isRefreshing = false
+        directoryCache.removeAll()
+        service.shutdown()
         cleanupPreview()
     }
 
@@ -488,20 +616,60 @@ final class RemoteFilesModel: ObservableObject {
         popsHistory: Bool = false,
         selectionAfterLoad: String? = nil
     ) {
+        let path = RemotePath.normalized(path)
+        if isLoading, pendingPath == path {
+            return
+        }
+        if isRefreshing, currentPath == path {
+            return
+        }
+
         loadTask?.cancel()
         let generation = UUID()
         loadGeneration = generation
-        retryLoadRequest = (
-            path,
-            server,
-            previousPath,
-            isRefresh,
-            popsHistory,
-            selectionAfterLoad
-        )
-        isLoading = !isRefresh
-        isRefreshing = isRefresh
         errorMessage = nil
+        let cachedEntries = isRefresh
+            ? nil
+            : directoryCache.entries(
+                for: server.connectionIdentity,
+                path: path
+            )
+        let committedFromCache = cachedEntries != nil
+
+        if let cachedEntries {
+            commitLoadedFolder(
+                path: path,
+                entries: cachedEntries,
+                previousPath: previousPath,
+                isRefresh: false,
+                popsHistory: popsHistory,
+                selectionAfterLoad: selectionAfterLoad
+            )
+            pendingPath = nil
+            isLoading = false
+            isRefreshing = true
+            retryLoadRequest = (
+                path,
+                server,
+                nil,
+                true,
+                false,
+                nil
+            )
+            screen = .browser
+        } else {
+            retryLoadRequest = (
+                path,
+                server,
+                previousPath,
+                isRefresh,
+                popsHistory,
+                selectionAfterLoad
+            )
+            isLoading = !isRefresh
+            isRefreshing = isRefresh
+            pendingPath = !isRefresh && screen == .browser ? path : nil
+        }
 
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -509,25 +677,20 @@ final class RemoteFilesModel: ObservableObject {
                 let loadedEntries = try await service.list(server: server, path: path)
                 try Task.checkCancellation()
                 guard loadGeneration == generation else { return }
-                if let previousPath {
-                    navigationHistory.append(previousPath)
-                } else if popsHistory, !navigationHistory.isEmpty {
-                    navigationHistory.removeLast()
-                }
-                currentPath = path
-                remotePath = path
-                entries = loadedEntries
-                if
-                    let selectionAfterLoad,
-                    loadedEntries.contains(where: { $0.id == selectionAfterLoad })
-                {
-                    selectedEntryID = selectionAfterLoad
-                } else if
-                    !isRefresh
-                        || !loadedEntries.contains(where: { $0.id == self.selectedEntryID })
-                {
-                    selectedEntryID = nil
-                }
+                directoryCache.insert(
+                    loadedEntries,
+                    for: server.connectionIdentity,
+                    path: path
+                )
+                commitLoadedFolder(
+                    path: path,
+                    entries: loadedEntries,
+                    previousPath: committedFromCache ? nil : previousPath,
+                    isRefresh: committedFromCache || isRefresh,
+                    popsHistory: committedFromCache ? false : popsHistory,
+                    selectionAfterLoad: committedFromCache ? nil : selectionAfterLoad
+                )
+                pendingPath = nil
                 isLoading = false
                 isRefreshing = false
                 retryLoadRequest = nil
@@ -536,16 +699,47 @@ final class RemoteFilesModel: ObservableObject {
                 refreshServers(preferredConnection: server.connectionIdentity)
             } catch is CancellationError {
                 if loadGeneration == generation {
+                    pendingPath = nil
                     isLoading = false
                     isRefreshing = false
                 }
             } catch {
                 if loadGeneration == generation {
+                    pendingPath = nil
                     isLoading = false
                     isRefreshing = false
                     errorMessage = error.localizedDescription
                 }
             }
+        }
+    }
+
+    private func commitLoadedFolder(
+        path: String,
+        entries loadedEntries: [RemoteFileEntry],
+        previousPath: String?,
+        isRefresh: Bool,
+        popsHistory: Bool,
+        selectionAfterLoad: String?
+    ) {
+        if let previousPath {
+            navigationHistory.append(previousPath)
+        } else if popsHistory, !navigationHistory.isEmpty {
+            navigationHistory.removeLast()
+        }
+        currentPath = path
+        remotePath = path
+        entries = loadedEntries
+        if
+            let selectionAfterLoad,
+            loadedEntries.contains(where: { $0.id == selectionAfterLoad })
+        {
+            selectedEntryID = selectionAfterLoad
+        } else if
+            !isRefresh
+                || !loadedEntries.contains(where: { $0.id == selectedEntryID })
+        {
+            selectedEntryID = nil
         }
     }
 

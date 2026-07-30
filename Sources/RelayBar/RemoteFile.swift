@@ -197,6 +197,7 @@ enum RemotePath {
 enum RemoteFileError: LocalizedError, Equatable {
     case invalidConnection
     case invalidPath
+    case connectionSessionUnavailable
     case tooManyEntries
     case responseTooLarge
     case previewTooLarge
@@ -214,6 +215,8 @@ enum RemoteFileError: LocalizedError, Equatable {
             return "This saved server contains an invalid host or blocked SSH option."
         case .invalidPath:
             return "The remote path is not valid."
+        case .connectionSessionUnavailable:
+            return "RelayBar could not create a private SSH session."
         case .tooManyEntries:
             return "This folder contains too many items to show safely."
         case .responseTooLarge:
@@ -239,7 +242,10 @@ enum RemoteFileError: LocalizedError, Equatable {
 }
 
 enum SFTPCommandBuilder {
-    static func processArguments(for server: RemoteServer) throws -> [String] {
+    static func processArguments(
+        for server: RemoteServer,
+        controlSocket: URL? = nil
+    ) throws -> [String] {
         guard
             SSHArgumentPolicy.isValidHostTarget(server.sshHost),
             SSHArgumentPolicy.areAdditionalArgumentsSafe(server.additionalArguments)
@@ -252,6 +258,12 @@ enum SFTPCommandBuilder {
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=10"
         ]
+        if let controlSocket {
+            result += [
+                "-o", "ControlPath=\(controlSocket.path)",
+                "-o", "ControlMaster=no"
+            ]
+        }
         var index = 0
 
         while index < server.additionalArguments.count {

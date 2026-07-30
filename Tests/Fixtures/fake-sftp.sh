@@ -9,6 +9,35 @@ IFS= read -r command
 local_path=$(printf '%s\n' "$command" | sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/')
 
 case "$host" in
+    listing|shared)
+        case "$command" in
+        get*)
+            mkdir -p "$(dirname "$local_path")"
+            printf 'downloaded' > "$local_path"
+            ;;
+        *)
+            printf '%s\n' '-rw-r--r-- 1 alice staff 12 Jul 29 12:00 report.txt'
+            printf '%s\n' 'drwxr-xr-x 2 alice staff 64 Jul 29 12:01 output'
+            ;;
+        esac
+        ;;
+    sharedslow)
+        case "$command" in
+        get*)
+            mkdir -p "$(dirname "$local_path")"
+            printf 'partial' > "$local_path"
+            exec /bin/sleep 60
+            ;;
+        *)
+            printf '%s\n' '-rw-r--r-- 1 alice staff 12 Jul 29 12:00 report.txt'
+            printf '%s\n' 'drwxr-xr-x 2 alice staff 64 Jul 29 12:01 output'
+            ;;
+        esac
+        ;;
+    RelayBarCancelledSFTP-*)
+        : > "/tmp/$host"
+        printf '%s\n' '-rw-r--r-- 1 alice staff 12 Jul 29 12:00 report.txt'
+        ;;
     success)
         mkdir -p "$(dirname "$local_path")"
         printf 'downloaded' > "$local_path"

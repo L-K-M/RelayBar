@@ -1680,6 +1680,31 @@ final class SFTPCommandBuilderTests: XCTestCase {
         XCTAssertTrue(arguments.containsSubsequence(["-o", "User=alice"]))
     }
 
+    func testRoutesSFTPChildrenThroughTheExactOwnedControlSocket() throws {
+        let server = RemoteServer(
+            id: UUID(),
+            name: "Production",
+            sshHost: "host.example.com",
+            additionalArguments: ["-p", "2222", "-l", "alice"]
+        )
+        let socket = URL(fileURLWithPath: "/tmp/relaybar-private/control")
+
+        let arguments = try SFTPCommandBuilder.processArguments(
+            for: server,
+            controlSocket: socket
+        )
+
+        XCTAssertTrue(
+            arguments.containsSubsequence([
+                "-o", "ControlPath=/tmp/relaybar-private/control"
+            ])
+        )
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "ControlMaster=no"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-P", "2222"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "User=alice"]))
+        XCTAssertEqual(arguments.last, "host.example.com")
+    }
+
     func testRejectsTamperedServerArguments() {
         let commandServer = RemoteServer(
             id: UUID(),
@@ -1723,6 +1748,282 @@ final class SFTPCommandBuilderTests: XCTestCase {
             ),
             "get -R \"/srv/folder\" \"/tmp/folder\"\n"
         )
+    }
+}
+
+final class RemoteFileSSHSessionTests: XCTestCase {
+    func testBuildsForegroundMasterArgumentsWithoutSFTPTranslation() throws {
+        let server = RemoteServer(
+            id: UUID(),
+            name: "Production",
+            sshHost: "host.example.com",
+            additionalArguments: [
+                "-p", "2222",
+                "-l", "alice",
+                "-J", "jump.example.com",
+                "-i", "~/.ssh/work"
+            ]
+        )
+        let socket = URL(fileURLWithPath: "/tmp/relaybar-private/control")
+
+        let arguments = try RemoteFileSSHSession.masterArguments(
+            for: server,
+            controlSocket: socket
+        )
+
+        XCTAssertTrue(arguments.containsSubsequence(["-N", "-T", "-M", "-S", socket.path]))
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "ControlPersist=no"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "BatchMode=yes"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-o", "ExitOnForwardFailure=yes"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-p", "2222"]))
+        XCTAssertTrue(arguments.containsSubsequence(["-l", "alice"]))
+        XCTAssertFalse(arguments.contains("-P"))
+        XCTAssertFalse(arguments.contains("User=alice"))
+        XCTAssertEqual(arguments.last, "host.example.com")
+    }
+
+    func testRejectsUnsafeMasterArgumentsBeforeLaunching() {
+        let server = RemoteServer(
+            id: UUID(),
+            name: "Unsafe",
+            sshHost: "host.example.com",
+            additionalArguments: ["-o", "ControlMaster=yes"]
+        )
+
+        XCTAssertThrowsError(
+            try RemoteFileSSHSession.masterArguments(
+                for: server,
+                controlSocket: URL(fileURLWithPath: "/tmp/control")
+            )
+        ) { error in
+            XCTAssertEqual(error as? RemoteFileError, .invalidConnection)
+        }
+    }
+
+    func testEarlyMasterExitFailsWaitersAndCleansItsDirectory() async throws {
+        let root = try shortTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = RemoteFileSSHSession(
+            executableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            temporaryDirectory: root,
+            startupPollCount: 20,
+            startupPollInterval: 0.01,
+            forceStopDelay: 0.05
+        )
+        defer { session.shutdown() }
+
+        do {
+            _ = try await session.controlSocket(for: server())
+            XCTFail("Expected the master to exit before readiness.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .commandFailed("The remote operation failed."))
+        }
+        try await waitUntil {
+            (try? self.privateSessionDirectories(in: root).isEmpty) == true
+        }
+    }
+
+    func testAcceptsTheExactOpenSSHBindPathBudget() async throws {
+        let root = try boundaryTemporaryDirectory(
+            finalSocketPathByteCount:
+                RemoteFileSSHSession.maximumControlSocketPathByteCount
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = RemoteFileSSHSession(
+            executableURL: fakeSSHExecutableURL,
+            temporaryDirectory: root,
+            startupPollCount: 100,
+            startupPollInterval: 0.01,
+            forceStopDelay: 0.05
+        )
+        defer { session.shutdown() }
+
+        let socket = try await session.controlSocket(for: server())
+        XCTAssertEqual(
+            socket.path.utf8.count,
+            RemoteFileSSHSession.maximumControlSocketPathByteCount
+        )
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: socket.deletingLastPathComponent().path
+        )
+        XCTAssertEqual(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue,
+            0o700
+        )
+        XCTAssertEqual(
+            (attributes[.ownerAccountID] as? NSNumber)?.uint32Value,
+            getuid()
+        )
+    }
+
+    func testRejectsTheFirstPathThatCannotFitOpenSSHBindSuffix() async throws {
+        let root = try boundaryTemporaryDirectory(
+            finalSocketPathByteCount:
+                RemoteFileSSHSession.maximumControlSocketPathByteCount + 1
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = RemoteFileSSHSession(
+            executableURL: fakeSSHExecutableURL,
+            temporaryDirectory: root
+        )
+        defer { session.shutdown() }
+
+        do {
+            _ = try await session.controlSocket(for: server())
+            XCTFail("Expected OpenSSH bind-suffix headroom to be enforced.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .connectionSessionUnavailable)
+        }
+        XCTAssertTrue(try privateSessionDirectories(in: root).isEmpty)
+    }
+
+    func testDefaultLocationFitsTheRealMacOSTemporaryDirectory() async throws {
+        let session = RemoteFileSSHSession(
+            executableURL: fakeSSHExecutableURL,
+            startupPollCount: 100,
+            startupPollInterval: 0.01,
+            forceStopDelay: 0.05
+        )
+        defer { session.shutdown() }
+
+        let socket = try await session.controlSocket(for: server())
+
+        XCTAssertTrue(
+            socket.path.hasPrefix(
+                FileManager.default.temporaryDirectory.path
+                    + "/"
+                    + RemoteFileSSHSession.privateDirectoryPrefix
+            )
+        )
+        XCTAssertLessThan(
+            socket.path.utf8.count
+                + RemoteFileSSHSession.openSSHBindTemporarySuffixByteCount,
+            RemoteFileSSHSession.unixSocketPathByteCapacity
+        )
+    }
+
+    func testRejectsAnOverlongControlSocketPathAndRemovesTheDirectory() async throws {
+        let root = URL(
+            fileURLWithPath: "/tmp/\(String(repeating: "x", count: 80))",
+            isDirectory: true
+        )
+        try? FileManager.default.removeItem(at: root)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = RemoteFileSSHSession(temporaryDirectory: root)
+        defer { session.shutdown() }
+
+        do {
+            _ = try await session.controlSocket(for: server())
+            XCTFail("Expected the control socket path limit to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .connectionSessionUnavailable)
+        }
+        XCTAssertTrue(try privateSessionDirectories(in: root).isEmpty)
+    }
+
+    func testReadinessTimeoutStopsTheHungMasterAndCleansItsDirectory() async throws {
+        let root = try shortTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let readyURL = root.appendingPathComponent("never-ready")
+        let session = RemoteFileSSHSession(
+            executableURL: fakeSSHExecutableURL,
+            temporaryDirectory: root,
+            processEnvironment: [
+                "RELAYBAR_FAKE_SSH_READY_FILE": readyURL.path
+            ],
+            startupPollCount: 2,
+            startupPollInterval: 0.01,
+            forceStopDelay: 0.05
+        )
+        defer { session.shutdown() }
+
+        do {
+            _ = try await session.controlSocket(for: server())
+            XCTFail("Expected the readiness deadline to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .connectionSessionUnavailable)
+        }
+        try await waitUntil {
+            (try? self.privateSessionDirectories(in: root).isEmpty) == true
+        }
+    }
+
+    private func server() -> RemoteServer {
+        RemoteServer(
+            id: UUID(),
+            name: "Test",
+            sshHost: "example.com",
+            additionalArguments: []
+        )
+    }
+
+    private func shortTemporaryDirectory() throws -> URL {
+        let root = URL(
+            fileURLWithPath: "/tmp/RelayBarSession-\(UUID().uuidString.prefix(8))",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        return root
+    }
+
+    private func boundaryTemporaryDirectory(
+        finalSocketPathByteCount: Int
+    ) throws -> URL {
+        let fixedByteCount =
+            "/tmp/".utf8.count
+            + 1 // slash between the injected root and private directory
+            + RemoteFileSSHSession.privateDirectoryPrefix.utf8.count
+            + 8 // mkdtemp template characters
+            + "/s".utf8.count
+        let repeatedByteCount = finalSocketPathByteCount - fixedByteCount
+        XCTAssertGreaterThan(repeatedByteCount, 0)
+        let root = URL(
+            fileURLWithPath:
+                "/tmp/" + String(repeating: "x", count: repeatedByteCount),
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        return root
+    }
+
+    private func privateSessionDirectories(in directory: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter {
+            $0.lastPathComponent.hasPrefix(
+                RemoteFileSSHSession.privateDirectoryPrefix
+            )
+        }
+    }
+
+    private var fakeSSHExecutableURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/fake-ssh.sh")
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: @escaping () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(condition())
     }
 }
 
@@ -1944,6 +2245,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
 
         let service = SFTPRemoteFileService()
+        defer { service.shutdown() }
         let server = RemoteServer(
             id: UUID(),
             name: "Live",
@@ -1962,7 +2264,8 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
 
     func testReportsACommandFailureWithoutInvokingAShell() async {
         let service = SFTPRemoteFileService(
-            executableURL: URL(fileURLWithPath: "/usr/bin/false")
+            executableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            connectionSharing: false
         )
         let server = RemoteServer(
             id: UUID(),
@@ -1979,6 +2282,303 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testSerializesConcurrentStartupAndReusesOnePrivateMaster() async throws {
+        let suffix = UUID().uuidString.prefix(8)
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(suffix)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let logURL = sessionRoot.appendingPathComponent("ssh.log")
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.2,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: ["RELAYBAR_FAKE_SSH_LOG": logURL.path]
+        )
+        defer { service.shutdown() }
+        let server = makeFixtureServer(host: "shared")
+
+        async let first = service.list(server: server, path: "/srv/app")
+        async let second = service.list(server: server, path: "/srv/app/output")
+        let (firstEntries, secondEntries) = try await (first, second)
+
+        XCTAssertEqual(firstEntries.map(\.name), ["output", "report.txt"])
+        XCTAssertEqual(secondEntries.map(\.name), ["output", "report.txt"])
+        for depth in 2...5 {
+            _ = try await service.list(
+                server: server,
+                path: "/srv/app/output/\(depth)"
+            )
+        }
+        let image = RemoteFileEntry(
+            name: "dashboard.png",
+            path: "/srv/app/dashboard.png",
+            kind: .file,
+            size: 10,
+            modificationText: "Jul 29 12:02"
+        )
+        let imagePreviewURL = try await service.preparePreview(
+            server: server,
+            entry: image
+        )
+        XCTAssertEqual(
+            try String(contentsOf: imagePreviewURL, encoding: .utf8),
+            "downloaded"
+        )
+        try? FileManager.default.removeItem(
+            at: imagePreviewURL.deletingLastPathComponent()
+        )
+        let markdown = RemoteFileEntry(
+            name: "README.md",
+            path: "/srv/app/README.md",
+            kind: .file,
+            size: 10,
+            modificationText: "Jul 29 12:02"
+        )
+        let previewURL = try await service.preparePreview(
+            server: server,
+            entry: markdown
+        )
+        XCTAssertEqual(
+            try String(contentsOf: previewURL, encoding: .utf8),
+            "downloaded"
+        )
+        try? FileManager.default.removeItem(
+            at: previewURL.deletingLastPathComponent()
+        )
+        let destination = sessionRoot.appendingPathComponent("download.txt")
+        try await service.download(
+            server: server,
+            entry: markdown,
+            to: destination
+        ) { _ in }
+        XCTAssertEqual(
+            try String(contentsOf: destination, encoding: .utf8),
+            "downloaded"
+        )
+        var log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            1
+        )
+        XCTAssertTrue(log.contains("ARG:-M"))
+        XCTAssertTrue(log.contains("ARG:-S"))
+        XCTAssertTrue(log.contains("ARG:ControlPersist=no"))
+        XCTAssertTrue(log.contains("ARG:ClearAllForwardings=yes"))
+
+        let sessionDirectories = try privateSessionDirectories(in: sessionRoot)
+        XCTAssertEqual(sessionDirectories.count, 1)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: try XCTUnwrap(sessionDirectories.first).path
+        )
+        XCTAssertEqual(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue,
+            0o700
+        )
+
+        service.shutdown()
+        try await waitUntil(timeout: 2) {
+            (try? self.privateSessionDirectories(in: sessionRoot).isEmpty) == true
+        }
+
+        _ = try await service.list(server: server, path: "/srv/app")
+        log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            2,
+            "Only a later explicit operation may recreate a stopped master."
+        )
+        service.shutdown()
+        try await waitUntil(timeout: 2) {
+            (try? self.privateSessionDirectories(in: sessionRoot).isEmpty) == true
+        }
+    }
+
+    func testCancellingOneSFTPChildLeavesTheMasterReusable() async throws {
+        let suffix = UUID().uuidString.prefix(8)
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(suffix)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let logURL = sessionRoot.appendingPathComponent("ssh.log")
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: ["RELAYBAR_FAKE_SSH_LOG": logURL.path]
+        )
+        defer { service.shutdown() }
+        let server = makeFixtureServer(host: "sharedslow")
+        let entry = makeFileEntry()
+        let destination = sessionRoot.appendingPathComponent("result.txt")
+        let task = Task {
+            try await service.download(
+                server: server,
+                entry: entry,
+                to: destination
+            ) { _ in }
+        }
+        try await waitUntil(timeout: 2) {
+            !self.partialItems(in: sessionRoot).isEmpty
+        }
+
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let entries = try await service.list(server: server, path: "/srv/app")
+        XCTAssertEqual(entries.map(\.name), ["output", "report.txt"])
+        let log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            1
+        )
+        XCTAssertTrue(partialItems(in: sessionRoot).isEmpty)
+    }
+
+    func testMasterLossWaitsForTheNextExplicitOperationToReconnect() async throws {
+        let suffix = UUID().uuidString.prefix(8)
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(suffix)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let logURL = sessionRoot.appendingPathComponent("ssh.log")
+        let pidURL = sessionRoot.appendingPathComponent("ssh.pid")
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: [
+                "RELAYBAR_FAKE_SSH_LOG": logURL.path,
+                "RELAYBAR_FAKE_SSH_PID": pidURL.path
+            ]
+        )
+        defer { service.shutdown() }
+        let server = makeFixtureServer(host: "shared")
+        _ = try await service.list(server: server, path: "/srv/app")
+        let pidText = try String(contentsOf: pidURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let processIdentifier = try XCTUnwrap(pid_t(pidText))
+
+        XCTAssertEqual(Darwin.kill(processIdentifier, SIGTERM), 0)
+        try await waitUntil(timeout: 2) {
+            !FileManager.default.fileExists(atPath: pidURL.path)
+                && (try? self.privateSessionDirectories(in: sessionRoot).isEmpty) == true
+        }
+        var log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            1,
+            "Master exit must not start a background reconnect."
+        )
+
+        _ = try await service.list(server: server, path: "/srv/app")
+        log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            2
+        )
+    }
+
+    func testCancellationDuringMasterStartupReturnsPromptlyAndStartsNoSFTPChild() async throws {
+        let suffix = UUID().uuidString.prefix(8)
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(suffix)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let readyURL = sessionRoot.appendingPathComponent("ready")
+        let logURL = sessionRoot.appendingPathComponent("ssh.log")
+        let host = "RelayBarCancelledSFTP-\(suffix)"
+        let childMarkerURL = URL(fileURLWithPath: "/tmp/\(host)")
+        try? FileManager.default.removeItem(at: childMarkerURL)
+        defer { try? FileManager.default.removeItem(at: childMarkerURL) }
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: [
+                "RELAYBAR_FAKE_SSH_LOG": logURL.path,
+                "RELAYBAR_FAKE_SSH_READY_FILE": readyURL.path
+            ]
+        )
+        defer { service.shutdown() }
+        let server = makeFixtureServer(host: host)
+        let task = Task {
+            try await service.list(server: server, path: "/srv/app")
+        }
+        try await waitUntil(timeout: 1) {
+            (try? self.privateSessionDirectories(in: sessionRoot).count) == 1
+        }
+        let delayedRelease = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            try? Data().write(to: readyURL)
+        }
+        let cancellationStarted = Date()
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {
+            // Expected.
+        }
+        delayedRelease.cancel()
+        XCTAssertLessThan(
+            Date().timeIntervalSince(cancellationStarted),
+            0.3,
+            "A cancelled startup waiter must not remain parked until readiness."
+        )
+
+        try Data().write(to: readyURL)
+        try await waitUntil(timeout: 1) {
+            (try? self.privateSessionDirectories(in: sessionRoot).first)
+                .map {
+                    FileManager.default.fileExists(
+                        atPath: $0.appendingPathComponent(
+                            RemoteFileSSHSession.controlSocketName
+                        ).path
+                    )
+                } == true
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: childMarkerURL.path))
+
+        _ = try await service.list(server: server, path: "/srv/app")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: childMarkerURL.path))
+        let log = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(
+            log.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            1
+        )
     }
 
     func testNormalizesSFTPNotFoundErrors() async {
@@ -2022,7 +2622,8 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     func testRejectsProcessOutputBeyondTheConfiguredLimit() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/bin/echo"),
-            standardOutputLimit: 1
+            standardOutputLimit: 1,
+            connectionSharing: false
         )
         let server = RemoteServer(
             id: UUID(),
@@ -2110,7 +2711,8 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     func testRejectsAnOversizedPreviewBeforeStartingSFTP() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/path/that/does/not/exist"),
-            previewSizeLimit: 1
+            previewSizeLimit: 1,
+            connectionSharing: false
         )
         let entry = RemoteFileEntry(
             name: "large.png",
@@ -2139,7 +2741,8 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     func testRejectsOversizedMarkdownWithItsSpecificLimit() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/path/that/does/not/exist"),
-            markdownPreviewSizeLimit: 1
+            markdownPreviewSizeLimit: 1,
+            connectionSharing: false
         )
         let entry = RemoteFileEntry(
             name: "README.md",
@@ -2238,6 +2841,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         let service = SFTPRemoteFileService(
             executableURL: fixtureExecutableURL,
             forceStopDelay: 0.2,
+            connectionSharing: false,
             signalProcess: { processIdentifier, signal in
                 signals.send(processIdentifier: processIdentifier, signal: signal)
             }
@@ -2290,6 +2894,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         let service = SFTPRemoteFileService(
             executableURL: fixtureExecutableURL,
             forceStopDelay: 0.05,
+            connectionSharing: false,
             signalProcess: { processIdentifier, signal in
                 signals.send(processIdentifier: processIdentifier, signal: signal)
             }
@@ -2368,7 +2973,10 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     }
 
     private func makeFixtureService() -> SFTPRemoteFileService {
-        SFTPRemoteFileService(executableURL: fixtureExecutableURL)
+        SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            connectionSharing: false
+        )
     }
 
     private func makeFixtureServer(host: String) -> RemoteServer {
@@ -2398,6 +3006,17 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         return items.filter { $0.lastPathComponent.hasPrefix(".relaybar-") }
     }
 
+    private func privateSessionDirectories(in directory: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter {
+            $0.lastPathComponent.hasPrefix(
+                RemoteFileSSHSession.privateDirectoryPrefix
+            )
+        }
+    }
+
     private func waitUntil(
         timeout: TimeInterval,
         condition: @escaping () -> Bool
@@ -2414,6 +3033,81 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures/fake-sftp.sh")
+    }
+
+    private var fakeSSHExecutableURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/fake-ssh.sh")
+    }
+}
+
+final class RemoteDirectoryCacheTests: XCTestCase {
+    func testDefaultsToTwentyThousandUnitsAndEvictsWholeLRUSnapshots() {
+        XCTAssertEqual(RemoteDirectoryCache().maximumEntryCount, 20_000)
+        var cache = RemoteDirectoryCache(maximumEntryCount: 3)
+        let connection = identity(host: "alpha")
+
+        cache.insert(entries(count: 2, parent: "/a"), for: connection, path: "/a/")
+        cache.insert(entries(count: 1, parent: "/b"), for: connection, path: "/b")
+        XCTAssertNotNil(cache.entries(for: connection, path: "/a"))
+        cache.insert(entries(count: 1, parent: "/c"), for: connection, path: "/c")
+
+        XCTAssertEqual(cache.entryCount, 3)
+        XCTAssertTrue(cache.contains(connection: connection, path: "/a"))
+        XCTAssertFalse(cache.contains(connection: connection, path: "/b"))
+        XCTAssertTrue(cache.contains(connection: connection, path: "/c"))
+    }
+
+    func testIsolatesExactConnectionsAndInvalidatesEverySnapshot() {
+        var cache = RemoteDirectoryCache(maximumEntryCount: 4)
+        let first = identity(host: "devbox", arguments: ["-p", "22"])
+        let second = identity(host: "devbox", arguments: ["-p", "2222"])
+        cache.insert(entries(count: 1, parent: "/srv"), for: first, path: "/srv")
+
+        XCTAssertNotNil(cache.entries(for: first, path: "/srv/"))
+        XCTAssertNil(cache.entries(for: second, path: "/srv"))
+
+        cache.removeAll()
+        XCTAssertEqual(cache.entryCount, 0)
+        XCTAssertFalse(cache.contains(connection: first, path: "/srv"))
+    }
+
+    func testEmptyFoldersStillConsumeBoundedCacheUnits() {
+        var cache = RemoteDirectoryCache(maximumEntryCount: 2)
+        let connection = identity(host: "devbox")
+
+        cache.insert([], for: connection, path: "/one")
+        cache.insert([], for: connection, path: "/two")
+        cache.insert([], for: connection, path: "/three")
+
+        XCTAssertEqual(cache.entryCount, 2)
+        XCTAssertFalse(cache.contains(connection: connection, path: "/one"))
+        XCTAssertTrue(cache.contains(connection: connection, path: "/two"))
+        XCTAssertTrue(cache.contains(connection: connection, path: "/three"))
+    }
+
+    private func identity(
+        host: String,
+        arguments: [String] = []
+    ) -> RemoteServer.ConnectionIdentity {
+        RemoteServer.ConnectionIdentity(
+            sshHost: host,
+            additionalArguments: arguments
+        )
+    }
+
+    private func entries(count: Int, parent: String) -> [RemoteFileEntry] {
+        (0..<count).map { index in
+            RemoteFileEntry(
+                name: "item-\(index)",
+                path: "\(parent)/item-\(index)",
+                kind: .file,
+                size: 1,
+                modificationText: "Jul 29 12:00"
+            )
+        }
     }
 }
 
@@ -2455,6 +3149,36 @@ final class RemoteFilesModelTests: XCTestCase {
         try await waitUntil { model.errorMessage == "Not found." && !model.isLoading }
 
         XCTAssertEqual(model.servers.map(\.source), [.saved])
+    }
+
+    func testChangingConnectionAfterFailedInitialOpenShutsDownTheOldSession() async throws {
+        let first = makeTunnel(name: "First", host: "first.example.com")
+        let second = makeTunnel(name: "Second", host: "second.example.com")
+        let service = StubRemoteFileService()
+        service.errors["/missing"] = RemoteFileError.commandFailed("Not found.")
+        let model = RemoteFilesModel(
+            tunnels: [first, second],
+            service: service
+        )
+        model.remotePath = "/missing"
+        model.openRemotePath()
+        try await waitUntil {
+            model.errorMessage == "Not found." && !model.isLoading
+        }
+
+        service.errors["/missing"] = nil
+        model.selectedServerID = second.id
+        model.openRemotePath()
+        try await waitUntil {
+            model.screen == .browser && !model.isLoading
+        }
+
+        XCTAssertEqual(service.shutdownCount, 1)
+        XCTAssertEqual(
+            service.listRequests.map(\.server.sshHost),
+            ["first.example.com", "second.example.com"]
+        )
+        model.cancelAll()
     }
 
     func testRemovingStandaloneHostLeavesForwardingProfilesAvailable() throws {
@@ -2536,6 +3260,102 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
         XCTAssertEqual(model.remotePath, "/srv/app")
+        XCTAssertEqual(service.shutdownCount, 1)
+    }
+
+    func testCachedBackPublishesRowsSynchronouslyThenRevalidatesInPlace() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let output = makeDirectoryEntry(name: "output")
+        service.listings["/srv/app"] = [output]
+        service.listings[output.path] = []
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.activate(output)
+        try await waitUntil { model.currentPath == output.path && !model.isLoading }
+        service.suspendedListPaths.insert("/srv/app")
+
+        model.goBack()
+
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertEqual(model.presentedPath, "/srv/app")
+        XCTAssertEqual(model.entries, [output])
+        XCTAssertEqual(model.selectedEntryID, output.id)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertTrue(model.isRefreshing)
+        model.cancelAll()
+    }
+
+    func testBackCancelsAnUncachedOpenAndRestoresThePriorFolder() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let output = makeDirectoryEntry(name: "output")
+        service.listings["/srv/app"] = [output]
+        service.suspendedListPaths.insert(output.path)
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.activate(output)
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertEqual(model.presentedPath, output.path)
+        XCTAssertEqual(model.entries, [output])
+        XCTAssertTrue(model.isLoading)
+        XCTAssertTrue(model.canGoBack)
+        XCTAssertEqual(model.backHelp, "Cancel opening this folder")
+        try await waitUntil {
+            service.listRequests.filter { $0.path == output.path }.count == 1
+        }
+        model.activate(output)
+        await Task.yield()
+        XCTAssertEqual(
+            service.listRequests.filter { $0.path == output.path }.count,
+            1,
+            "Duplicate activation must coalesce with the pending open."
+        )
+
+        model.goBack()
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertEqual(model.presentedPath, "/srv/app")
+        XCTAssertEqual(model.entries, [output])
+        XCTAssertEqual(model.selectedEntryID, output.id)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertNil(model.pendingPath)
+        model.cancelAll()
+    }
+
+    func testCachedRevisitSupersedesAnOlderRevalidation() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let output = makeDirectoryEntry(name: "output")
+        let report = makeFileEntry(name: "report.txt", parentPath: output.path)
+        service.listings["/srv/app"] = [output]
+        service.listings[output.path] = [report]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.activate(output)
+        try await waitUntil { model.currentPath == output.path && !model.isLoading }
+        service.suspendedListPaths = ["/srv/app", output.path]
+
+        model.goBack()
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertTrue(model.isRefreshing)
+        model.activate(output)
+
+        XCTAssertEqual(model.currentPath, output.path)
+        XCTAssertEqual(model.presentedPath, output.path)
+        XCTAssertEqual(model.entries, [report])
+        XCTAssertTrue(model.isRefreshing)
+        try await waitUntil {
+            service.listRequests.filter { $0.path == output.path }.count == 2
+        }
+        XCTAssertEqual(model.currentPath, output.path)
+        model.cancelAll()
     }
 
     func testRetriesTheFolderThatFailedToOpen() async throws {
@@ -2603,7 +3423,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.selectedEntryID, report.id)
     }
 
-    func testFailedBackNavigationKeepsHistoryForRetry() async throws {
+    func testFailedCachedBackRevalidationKeepsRowsAndUsesNonblockingRetry() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
         let output = RemoteFileEntry(
@@ -2624,12 +3444,15 @@ final class RemoteFilesModelTests: XCTestCase {
 
         service.errors["/srv/app"] = RemoteFileError.commandFailed("Connection lost.")
         model.goBack()
-        try await waitUntil { model.errorMessage == "Connection lost." && !model.isLoading }
-        XCTAssertEqual(model.currentPath, "/srv/app/output")
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertEqual(model.entries, [output])
+        try await waitUntil { model.errorMessage == "Connection lost." && !model.isRefreshing }
+        XCTAssertEqual(model.currentPath, "/srv/app")
+        XCTAssertEqual(model.entries, [output])
 
         service.errors["/srv/app"] = nil
         model.retryLastLoad()
-        try await waitUntil { model.currentPath == "/srv/app" && !model.isLoading }
+        try await waitUntil { model.errorMessage == nil && !model.isRefreshing }
         model.goBack()
 
         XCTAssertEqual(model.screen, .launcher)
@@ -2955,7 +3778,9 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
 
     var listings: [String: [RemoteFileEntry]] = [:]
     var errors: [String: Error] = [:]
+    var suspendedListPaths: Set<String> = []
     var listRequests: [ListRequest] = []
+    var shutdownCount = 0
     var downloadError: Error?
     var waitsForDownloadCancellation = false
     var downloadDestinations: [URL] = []
@@ -2964,10 +3789,19 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
         listRequests.append(ListRequest(server: server, path: path))
+        if suspendedListPaths.contains(path) {
+            while true {
+                try await Task.sleep(for: .seconds(60))
+            }
+        }
         if let error = errors[path] {
             throw error
         }
         return listings[path] ?? []
+    }
+
+    func shutdown() {
+        shutdownCount += 1
     }
 
     func download(

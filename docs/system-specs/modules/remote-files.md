@@ -22,8 +22,12 @@ Remote Files opens an exact folder on an SSH server without adding search, index
 - The top bar contains **Back**, the exact current path, and **Refresh**.
 - The list shows supported folders, regular files, and symbolic links with modified text and size.
 - Folders sort before other items; each group uses localized name ordering.
-- Opening a folder navigates into it. Back follows navigation history, reselects the folder that was left, and returns to the launcher from the initial folder.
-- Supported images and Markdown documents open the preview state. Other files begin destination selection for download.
+- Activating a folder presents its target path immediately. An uncached folder shows a content-local **Opening folder…** state; rows and Refresh are disabled, while Back remains available to cancel the open and restore the exact prior folder and selection.
+- Successful listings enter a session-only LRU cache keyed by exact SSH connection identity and normalized absolute path. The cache retains at most 20,000 aggregate entry units, charges an empty snapshot one unit, and evicts whole least-recently-used snapshots.
+- Cached Back and revisit navigation publish rows synchronously, then revalidate them in place. Revalidation keeps the rows visible, preserves selection when possible, and reports failure through the existing nonblocking error and retry affordance.
+- Explicit Refresh bypasses the cache. Duplicate loads for the same presented path coalesce, and generation checks prevent a superseded listing or revalidation from changing the current folder.
+- Back follows navigation history, reselects the folder that was left, and returns to the launcher from the initial folder.
+- Supported images and Markdown documents open a split preview workspace. Other files begin destination selection for download.
 - Search, filters, indexing, workspace discovery, rename, move, delete, upload, and remote editing are absent.
 
 ## Downloads
@@ -69,9 +73,9 @@ Empty folders show a single focused empty state with an explicit accessibility d
 - Parsed listing lines are limited to 32 KiB, entry names to 4 KiB, entry sizes must be nonnegative, and supported entries remain capped at 10,000.
 - Listing rows may contain either basenames or absolute paths. An absolute entry is accepted only when it is a direct child of the requested folder, then reduced to its basename; out-of-folder absolute entries fail closed.
 - RelayBar does not add SFTP quiet mode implicitly, so bounded diagnostics retain actionable host-key, resolution, timeout, refusal, and connection-loss details for normalization. A user-saved `-q` option is still preserved.
-- Safe connection options are translated for SFTP, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
+- The master receives validated SSH-native connection arguments. SFTP children receive the same validated connection behavior with SFTP-specific translation, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
 - The user's normal OpenSSH config, identities, agent, jump host, and host-key behavior remain in effect.
 - Browsing is independent of the local-forward process state.
-- Closing the Remote Files window or quitting RelayBar cancels listing, preview, and transfer work.
+- Closing the Remote Files window or quitting RelayBar cancels listing, preview, and transfer work, stops the owned master, clears the cache, and removes owned temporary state.
 
 See [Security boundaries](../shared/security-boundaries.md).
