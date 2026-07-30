@@ -16,7 +16,12 @@ Markdown preview is a safe, read-only state inside the Remote Files window.
 ## Rendering
 
 - MarkdownUI 2.4.1 parses CommonMark plus GFM autolinks, strikethrough, tasks, and tables through swift-cmark 0.8.0's cmark-gfm products.
-- Text is selectable in a centered reading column.
+- Text is selectable in a centered reading column capped at 680 points with
+  32-point side padding and additional bottom breathing room.
+- The inherited GitHub theme's fixed light and dark text-run backgrounds are
+  removed so normal prose uses the native adaptive text background without
+  horizontal bands. Purposeful callout, inline-code, and code-block surfaces
+  retain their own adaptive treatments.
 - The theme adds quiet callout/blockquote containers and code blocks with language, intrinsic-width horizontal overflow instead of line wrapping, and a local **Copy** action.
 - Wide tables scroll horizontally inside the reading column. Headings carry accessibility header traits and task markers announce completion state.
 - HighlighterSwift 3.1.0 highlights only explicit, supported languages, only when a code block is at most 64 KiB, and for at most 128 labelled code blocks per document. Overflow code remains plain and readable; Mermaid keeps its source-only safety label independently of that budget.

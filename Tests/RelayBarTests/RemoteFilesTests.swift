@@ -1615,8 +1615,12 @@ final class RemoteFilesKeyboardShortcutTests: XCTestCase {
         XCTAssertFalse(RemoteFilesKeyboardShortcut.isCommandDown([.function]))
     }
 
-    func testTreatsNumericPadReturnAsUnmodified() {
+    func testTreatsSystemNavigationFlagsAsUnmodified() {
         XCTAssertTrue(RemoteFilesKeyboardShortcut.isUnmodified([.numericPad]))
+        XCTAssertTrue(RemoteFilesKeyboardShortcut.isUnmodified([.function]))
+        XCTAssertTrue(
+            RemoteFilesKeyboardShortcut.isUnmodified([.numericPad, .function])
+        )
         XCTAssertFalse(RemoteFilesKeyboardShortcut.isUnmodified([.shift]))
     }
 }
@@ -3687,6 +3691,69 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: previewDirectory.path))
     }
 
+    func testPreviewSidebarSwitchesSiblingWithoutRelistingAndCleansSupersededContent()
+        async throws
+    {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let first = makeFileEntry(name: "FIRST.md")
+        let second = makeFileEntry(name: "SECOND.md")
+        let plainText = makeFileEntry(name: "notes.txt")
+        let folder = makeDirectoryEntry(name: "archive")
+        service.listings["/srv/app"] = [folder, first, second, plainText]
+
+        let firstDirectory = try makeTemporaryDirectory()
+        let firstURL = firstDirectory.appendingPathComponent(first.name)
+        try Data("# First".utf8).write(to: firstURL)
+        let secondDirectory = try makeTemporaryDirectory()
+        let secondURL = secondDirectory.appendingPathComponent(second.name)
+        try Data("# Second\n\nCurrent preview.".utf8).write(to: secondURL)
+        service.previewURLs[first.id] = firstURL
+        service.previewURLs[second.id] = secondURL
+        defer {
+            try? FileManager.default.removeItem(at: firstDirectory)
+            try? FileManager.default.removeItem(at: secondDirectory)
+        }
+
+        let firstDecoder = BlockingMarkdownDecoder()
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            markdownDecoder: { url in
+                if url == firstURL {
+                    return try await firstDecoder.load(contentsOf: url)
+                }
+                return try await RemoteMarkdownDecoder.load(contentsOf: url)
+            }
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        XCTAssertEqual(model.previewableEntries, [first, second])
+        model.preview(first)
+        try await waitUntil { firstDecoder.hasStarted }
+
+        XCTAssertTrue(model.movePreviewSelection(by: 1))
+        try await waitUntil {
+            model.previewEntry == second
+                && model.previewMarkdown?.plainText.contains("Current preview") == true
+                && !model.isLoadingPreview
+        }
+        try await waitUntil {
+            !FileManager.default.fileExists(atPath: firstDirectory.path)
+        }
+
+        XCTAssertEqual(model.selectedEntryID, second.id)
+        XCTAssertEqual(service.listRequests.map(\.path), ["/srv/app"])
+        XCTAssertEqual(service.previewRequests, [first.id, second.id])
+
+        model.closePreview()
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.selectedEntryID, second.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondDirectory.path))
+    }
+
     func testCancelDuringMarkdownDecodeRemovesTemporaryContent() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
@@ -3770,6 +3837,23 @@ final class RemoteFilesModelTests: XCTestCase {
     }
 }
 
+final class RemoteFilesWindowSizingTests: XCTestCase {
+    func testPreviewGrowsTheDefaultBrowserWindow() {
+        XCTAssertEqual(
+            RemoteFilesWindowSizing.previewSize(from: RemoteFilesWindowSizing.browser),
+            RemoteFilesWindowSizing.previewPreferred
+        )
+    }
+
+    func testPreviewNeverShrinksAUserResizedWindow() {
+        let enlarged = NSSize(width: 1_180, height: 760)
+        XCTAssertEqual(
+            RemoteFilesWindowSizing.previewSize(from: enlarged),
+            enlarged
+        )
+    }
+}
+
 private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendable {
     struct ListRequest {
         let server: RemoteServer
@@ -3786,6 +3870,8 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     var downloadDestinations: [URL] = []
     let downloadProgressCallbacks = LockedDownloadProgressCallbacks()
     var previewURL: URL?
+    var previewURLs: [String: URL] = [:]
+    var previewRequests: [String] = []
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
         listRequests.append(ListRequest(server: server, path: path))
@@ -3824,7 +3910,8 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     }
 
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL {
-        guard let previewURL else {
+        previewRequests.append(entry.id)
+        guard let previewURL = previewURLs[entry.id] ?? previewURL else {
             throw RemoteFileError.commandFailed("Preview was not expected.")
         }
         return previewURL

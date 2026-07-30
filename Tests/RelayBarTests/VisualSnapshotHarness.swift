@@ -164,6 +164,356 @@ final class VisualSnapshotHarness: XCTestCase {
         }
     }
 
+    func testCaptureTask026Snapshots() async throws {
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] == nil,
+            "Set RELAYBAR_SNAPSHOT_DIR to capture snapshots."
+        )
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let label = appearanceName == .aqua ? "light" : "dark"
+            let service = Task026SnapshotService()
+            let output = RemoteFileEntry(
+                name: "output",
+                path: "/srv/app/output",
+                kind: .directory,
+                size: nil,
+                modificationText: "Jul 29 12:00"
+            )
+            let report = RemoteFileEntry(
+                name: "report.md",
+                path: "/srv/app/output/report.md",
+                kind: .file,
+                size: 8_420,
+                modificationText: "Jul 29 12:01"
+            )
+            service.setListing([output], for: "/srv/app")
+            service.setListing([report], for: output.path)
+            let tunnel = Tunnel(
+                name: "Development",
+                localPort: 8_080,
+                destinationHost: "localhost",
+                destinationPort: 3_000,
+                sshHost: "devbox.local"
+            )
+            let model = RemoteFilesModel(
+                tunnels: [tunnel],
+                service: service,
+                serverCatalog: RemoteServerCatalog()
+            )
+            model.remotePath = "/srv/app"
+            model.openRemotePath()
+            try await waitUntil {
+                model.screen == .browser && !model.isLoading
+            }
+
+            service.setSuspended(true, for: output.path)
+            model.activate(output)
+            XCTAssertTrue(model.isLoading)
+            try capture(
+                view: RemoteFilesView(model: model),
+                appearance: appearanceName,
+                size: NSSize(width: 780, height: 520),
+                to: outputDirectory.appendingPathComponent(
+                    "task-026-opening-\(label).png"
+                )
+            )
+
+            model.goBack()
+            service.setSuspended(false, for: output.path)
+            model.activate(output)
+            try await waitUntil {
+                model.currentPath == output.path && !model.isLoading
+            }
+
+            service.setSuspended(true, for: "/srv/app")
+            model.goBack()
+            XCTAssertTrue(model.isRefreshing)
+            try capture(
+                view: RemoteFilesView(model: model),
+                appearance: appearanceName,
+                size: NSSize(width: 780, height: 520),
+                to: outputDirectory.appendingPathComponent(
+                    "task-026-cached-refresh-\(label).png"
+                )
+            )
+
+            service.setError(
+                RemoteFileError.commandFailed("The connection was lost."),
+                for: "/srv/app"
+            )
+            service.setSuspended(false, for: "/srv/app")
+            try await waitUntil {
+                model.errorMessage == "The connection was lost."
+                    && !model.isRefreshing
+            }
+            try capture(
+                view: RemoteFilesView(model: model),
+                appearance: appearanceName,
+                size: NSSize(width: 780, height: 520),
+                to: outputDirectory.appendingPathComponent(
+                    "task-026-revalidation-failure-\(label).png"
+                )
+            )
+            model.cancelAll()
+        }
+    }
+
+    func testCaptureTask027Snapshots() async throws {
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] == nil,
+            "Set RELAYBAR_SNAPSHOT_DIR to capture snapshots."
+        )
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let label = appearanceName == .aqua ? "light" : "dark"
+            let imageEntry = RemoteFileEntry(
+                name: "launch-concept.png",
+                path: "/srv/app/design/launch-concept.png",
+                kind: .file,
+                size: 84_120,
+                modificationText: "Jul 30 09:42"
+            )
+            let readmeEntry = RemoteFileEntry(
+                name: "README.md",
+                path: "/srv/app/design/README.md",
+                kind: .file,
+                size: 4_862,
+                modificationText: "Jul 30 10:18"
+            )
+            let architectureEntry = RemoteFileEntry(
+                name: "preview-architecture.md",
+                path: "/srv/app/design/preview-architecture.md",
+                kind: .file,
+                size: 12_540,
+                modificationText: "Jul 29 18:05"
+            )
+            let alternateImageEntry = RemoteFileEntry(
+                name: "navigation-study.jpg",
+                path: "/srv/app/design/navigation-study.jpg",
+                kind: .file,
+                size: 118_300,
+                modificationText: "Jul 29 16:32"
+            )
+            let notesEntry = RemoteFileEntry(
+                name: "notes.txt",
+                path: "/srv/app/design/notes.txt",
+                kind: .file,
+                size: 930,
+                modificationText: "Jul 28 11:04"
+            )
+            let entries = [
+                imageEntry,
+                readmeEntry,
+                architectureEntry,
+                alternateImageEntry,
+                notesEntry
+            ]
+
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "RelayBarTask027-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+            let imageDirectory = fixtureRoot.appendingPathComponent(
+                "image-preview",
+                isDirectory: true
+            )
+            let markdownDirectory = fixtureRoot.appendingPathComponent(
+                "markdown-preview",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: imageDirectory,
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.createDirectory(
+                at: markdownDirectory,
+                withIntermediateDirectories: true
+            )
+            defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+            let imageURL = imageDirectory.appendingPathComponent(imageEntry.name)
+            try task027ImageData().write(to: imageURL)
+            let markdownURL = markdownDirectory.appendingPathComponent(readmeEntry.name)
+            try Data(
+                """
+                # Remote Preview
+
+                A focused workspace keeps nearby files in reach while the current
+                document remains calm and readable.
+
+                ## Release checklist
+
+                - Reuse the active SSH connection
+                - Preserve keyboard navigation
+                - Keep temporary preview data private
+                - Verify Aqua and Dark Aqua
+
+                > The best interaction is the one that feels obvious after the
+                > first click.
+
+                ## Keyboard
+
+                Use the left and right arrow keys to move between previewable files.
+                Press Escape to return to the complete folder.
+                """.utf8
+            ).write(to: markdownURL)
+
+            let service = Task027SnapshotService(
+                entries: entries,
+                previewURLs: [
+                    imageEntry.id: imageURL,
+                    readmeEntry.id: markdownURL
+                ]
+            )
+            let tunnel = Tunnel(
+                name: "Design server",
+                localPort: 8_080,
+                destinationHost: "localhost",
+                destinationPort: 3_000,
+                sshHost: "studio.local"
+            )
+            let model = RemoteFilesModel(
+                tunnels: [tunnel],
+                service: service,
+                serverCatalog: RemoteServerCatalog()
+            )
+            model.remotePath = "/srv/app/design"
+            model.openRemotePath()
+            try await waitUntil {
+                model.screen == .browser && !model.isLoading
+            }
+
+            model.preview(imageEntry)
+            try await waitUntil {
+                model.previewImage != nil && !model.isLoadingPreview
+            }
+            try capture(
+                view: RemoteFilesView(model: model),
+                appearance: appearanceName,
+                size: RemoteFilesWindowSizing.previewPreferred,
+                to: outputDirectory.appendingPathComponent(
+                    "task-027-image-sidebar-\(label).png"
+                )
+            )
+
+            model.selectPreviewEntry(id: readmeEntry.id)
+            try await waitUntil {
+                model.previewMarkdown != nil && !model.isLoadingPreview
+            }
+            try capture(
+                view: RemoteFilesView(model: model),
+                appearance: appearanceName,
+                size: RemoteFilesWindowSizing.previewPreferred,
+                to: outputDirectory.appendingPathComponent(
+                    "task-027-markdown-sidebar-\(label).png"
+                )
+            )
+            try capture(
+                view: RemoteFilesView(
+                    model: model,
+                    previewSidebarVisible: false
+                ),
+                appearance: appearanceName,
+                size: NSSize(width: 780, height: 520),
+                to: outputDirectory.appendingPathComponent(
+                    "task-027-focused-\(label).png"
+                )
+            )
+            model.cancelAll()
+        }
+    }
+
+    private func task027ImageData() throws -> Data {
+        let size = NSSize(width: 720, height: 480)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        let context = try XCTUnwrap(NSGraphicsContext.current?.cgContext)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let gradient = try XCTUnwrap(
+            CGGradient(
+                colorsSpace: colorSpace,
+                colors: [
+                    CGColor(red: 0.08, green: 0.12, blue: 0.24, alpha: 1),
+                    CGColor(red: 0.24, green: 0.20, blue: 0.48, alpha: 1)
+                ] as CFArray,
+                locations: [0, 1]
+            )
+        )
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: 0, y: size.height),
+            end: CGPoint(x: size.width, y: 0),
+            options: []
+        )
+
+        context.setFillColor(
+            CGColor(red: 0.40, green: 0.82, blue: 0.96, alpha: 0.72)
+        )
+        context.fillEllipse(in: CGRect(x: 420, y: 170, width: 250, height: 250))
+
+        context.addPath(
+            CGPath(
+                roundedRect: CGRect(x: 72, y: 72, width: 400, height: 310),
+                cornerWidth: 28,
+                cornerHeight: 28,
+                transform: nil
+            )
+        )
+        context.setFillColor(
+            CGColor(red: 0.96, green: 0.97, blue: 0.99, alpha: 0.93)
+        )
+        context.fillPath()
+
+        context.addPath(
+            CGPath(
+                roundedRect: CGRect(x: 112, y: 280, width: 190, height: 22),
+                cornerWidth: 11,
+                cornerHeight: 11,
+                transform: nil
+            )
+        )
+        context.setFillColor(
+            CGColor(red: 0.24, green: 0.36, blue: 0.94, alpha: 1)
+        )
+        context.fillPath()
+
+        for index in 0..<3 {
+            context.addPath(
+                CGPath(
+                    roundedRect: CGRect(
+                        x: 112,
+                        y: 222 - CGFloat(index * 50),
+                        width: index == 2 ? 210 : 310,
+                        height: 12
+                    ),
+                    cornerWidth: 6,
+                    cornerHeight: 6,
+                    transform: nil
+                )
+            )
+            let brightness = 0.76 + CGFloat(index) * 0.04
+            context.setFillColor(
+                CGColor(
+                    red: brightness,
+                    green: brightness,
+                    blue: brightness,
+                    alpha: 1
+                )
+            )
+            context.fillPath()
+        }
+
+        image.unlockFocus()
+        let representation = try XCTUnwrap(
+            NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation))
+        )
+        return try XCTUnwrap(
+            representation.representation(using: .png, properties: [:])
+        )
+    }
+
     private func capture(
         view: some View,
         appearance: NSAppearance.Name,
@@ -239,5 +589,117 @@ final class VisualSnapshotHarness: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(condition())
+    }
+}
+
+private final class Task027SnapshotService: RemoteFileServing, @unchecked Sendable {
+    let entries: [RemoteFileEntry]
+    let previewURLs: [String: URL]
+
+    init(entries: [RemoteFileEntry], previewURLs: [String: URL]) {
+        self.entries = entries
+        self.previewURLs = previewURLs
+    }
+
+    func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
+        entries
+    }
+
+    func download(
+        server: RemoteServer,
+        entry: RemoteFileEntry,
+        to destination: URL,
+        progress: @escaping @Sendable (Int64) -> Void
+    ) async throws {
+        throw RemoteFileError.commandFailed("Download was not expected.")
+    }
+
+    func preparePreview(
+        server: RemoteServer,
+        entry: RemoteFileEntry
+    ) async throws -> URL {
+        guard let url = previewURLs[entry.id] else {
+            throw RemoteFileError.commandFailed("Preview fixture was not found.")
+        }
+        return url
+    }
+}
+
+private final class Task026SnapshotService: RemoteFileServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var listings: [String: [RemoteFileEntry]] = [:]
+    private var suspendedPaths: Set<String> = []
+    private var errors: [String: Error] = [:]
+
+    func setListing(_ entries: [RemoteFileEntry], for path: String) {
+        lock.lock()
+        listings[path] = entries
+        lock.unlock()
+    }
+
+    func setSuspended(_ suspended: Bool, for path: String) {
+        lock.lock()
+        if suspended {
+            suspendedPaths.insert(path)
+        } else {
+            suspendedPaths.remove(path)
+        }
+        lock.unlock()
+    }
+
+    func setError(_ error: Error, for path: String) {
+        lock.lock()
+        errors[path] = error
+        lock.unlock()
+    }
+
+    func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
+        while state(for: path).isSuspended {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let state = state(for: path)
+        if let error = state.error {
+            throw error
+        }
+        return state.entries
+    }
+
+    func download(
+        server: RemoteServer,
+        entry: RemoteFileEntry,
+        to destination: URL,
+        progress: @escaping @Sendable (Int64) -> Void
+    ) async throws {
+        throw RemoteFileError.commandFailed("Download was not expected.")
+    }
+
+    func preparePreview(
+        server: RemoteServer,
+        entry: RemoteFileEntry
+    ) async throws -> URL {
+        throw RemoteFileError.commandFailed("Preview was not expected.")
+    }
+
+    private func state(
+        for path: String
+    ) -> (isSuspended: Bool, error: Error?, entries: [RemoteFileEntry]) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (
+            suspendedPaths.contains(path),
+            errors[path],
+            listings[path] ?? []
+        )
     }
 }

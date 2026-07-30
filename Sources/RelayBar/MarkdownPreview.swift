@@ -235,10 +235,11 @@ struct SafeRemoteMarkdownView: View {
                     }
                 )
                 .textSelection(.enabled)
-                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: 680, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .padding(.horizontal, 32)
-                .padding(.vertical, 28)
+                .padding(.top, 28)
+                .padding(.bottom, 40)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .alert(item: $linkAlert) { alert in
@@ -254,6 +255,11 @@ struct SafeRemoteMarkdownView: View {
 private extension Theme {
     static var relayBar: Theme {
         Theme.gitHub
+            .text {
+                ForegroundColor(.primary)
+                BackgroundColor(nil)
+                FontSize(16)
+            }
             .heading1 { configuration in
                 let mainThreadConfiguration = MainThreadValue(value: configuration)
                 MainActor.assumeIsolated {

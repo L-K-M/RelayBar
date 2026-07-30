@@ -323,6 +323,10 @@ final class RemoteFilesModel: ObservableObject {
         entries.first { $0.id == selectedEntryID }
     }
 
+    var previewableEntries: [RemoteFileEntry] {
+        entries.filter(\.isPreviewable)
+    }
+
     var selectedServer: RemoteServer? {
         guard let selectedServerID else { return nil }
         return servers.first { $0.id == selectedServerID }
@@ -485,6 +489,7 @@ final class RemoteFilesModel: ObservableObject {
 
     func preview(_ entry: RemoteFileEntry) {
         guard entry.isPreviewable, let server = activeServer else { return }
+        select(entry)
         cleanupPreview()
         previewTask?.cancel()
         let generation = UUID()
@@ -538,6 +543,38 @@ final class RemoteFilesModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func selectPreviewEntry(id: String?) {
+        guard
+            let id,
+            id != previewEntry?.id,
+            let entry = previewableEntries.first(where: { $0.id == id })
+        else {
+            return
+        }
+        preview(entry)
+    }
+
+    @discardableResult
+    func movePreviewSelection(by offset: Int) -> Bool {
+        let previewableEntries = previewableEntries
+        guard
+            !previewableEntries.isEmpty,
+            let currentID = previewEntry?.id,
+            let currentIndex = previewableEntries.firstIndex(where: {
+                $0.id == currentID
+            })
+        else {
+            return false
+        }
+        let targetIndex = min(
+            max(currentIndex + offset, previewableEntries.startIndex),
+            previewableEntries.index(before: previewableEntries.endIndex)
+        )
+        guard targetIndex != currentIndex else { return false }
+        preview(previewableEntries[targetIndex])
+        return true
     }
 
     func retryPreview() {
