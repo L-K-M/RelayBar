@@ -25,3 +25,4 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 018 — Remove Dead Compatibility Accessors](018-remove-dead-compatibility-accessors.md)
 - [Task 019 — Count Running Phases Without an Intermediate Array](019-count-running-phases-without-array.md)
 - [Task 023 — Homebrew Cask](023-homebrew-cask.md)
+- [Task 029 — Formal Notarized 1.3.0 Release](029-formal-notarized-1.3.0-release.md)

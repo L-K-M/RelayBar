@@ -1,10 +1,12 @@
 # Task 029 — Formal Notarized 1.3.0 Release
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-07-30
 
 Started: 2026-07-30
+
+Accepted: 2026-07-30
 
 ## Outcome
 
@@ -97,3 +99,6 @@ one immutable archive through GitHub and the Homebrew cask.
 - The task moves to `docs/task-specs/archive/` only after the GitHub release,
   documentation, and Homebrew cask are publicly reachable and independently
   verified.
+
+Completion evidence is recorded in
+[Task 029 verification](../../verification/029-formal-notarized-1.3.0-release.md).

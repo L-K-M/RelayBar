@@ -19,6 +19,32 @@ Release builds generate a dSYM and then apply non-global symbol stripping to the
 
 The app is distributed outside the Mac App Store, uses the hardened runtime, and is intentionally not sandboxed.
 
+## Stable GitHub release
+
+A stable release starts from a clean commit with consistent marketing version,
+monotonic build number, bundle identifier, and deployment target. Any
+post-freeze application change requires a new build number and a complete
+rebuild and notarization.
+
+Before tagging, run the complete tests, warnings-as-errors universal Release
+build, property-list and license checks, resource-pruning checks, executable
+and dSYM UUID comparison, and `git diff --check`.
+
+`./scripts/notarize-release.sh` submits the pre-staple archive, waits for Apple,
+staples and validates the app, then replaces the submitted ZIP with a final
+archive containing the stapled app. Compute the published SHA-256 only after
+that final rebuild. Verify the final ZIP through clean extraction, both
+architectures, version and build, timestamped hardened-runtime signature,
+stapled ticket, Gatekeeper, bundled notices and resources, and launch.
+
+Create an annotated version tag on the verified release commit. A stable GitHub
+release contains one immutable `RelayBar.zip`, is neither a draft nor a
+prerelease, and must not have its asset replaced in place. Independently
+download the public asset without repository credentials, compare its SHA-256
+and bytes with the verified local archive, and repeat signature, ticket,
+Gatekeeper, metadata, and architecture checks before updating public links or
+the Homebrew cask.
+
 ## Homebrew cask
 
 The maintainer-owned `lx2026/homebrew-tap` repository publishes
