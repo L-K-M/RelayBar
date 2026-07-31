@@ -3860,34 +3860,100 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         let path: String
     }
 
-    var listings: [String: [RemoteFileEntry]] = [:]
-    var errors: [String: Error] = [:]
-    var suspendedListPaths: Set<String> = []
-    var listRequests: [ListRequest] = []
-    var shutdownCount = 0
-    var downloadError: Error?
-    var waitsForDownloadCancellation = false
-    var downloadDestinations: [URL] = []
+    private struct State {
+        var listings: [String: [RemoteFileEntry]] = [:]
+        var errors: [String: Error] = [:]
+        var suspendedListPaths: Set<String> = []
+        var listRequests: [ListRequest] = []
+        var shutdownCount = 0
+        var downloadError: Error?
+        var waitsForDownloadCancellation = false
+        var downloadDestinations: [URL] = []
+        var previewURL: URL?
+        var previewURLs: [String: URL] = [:]
+        var previewRequests: [String] = []
+    }
+
+    private let lock = NSLock()
+    private var state = State()
+
+    var listings: [String: [RemoteFileEntry]] {
+        get { withLock { state.listings } }
+        set { withLock { state.listings = newValue } }
+    }
+
+    var errors: [String: Error] {
+        get { withLock { state.errors } }
+        set { withLock { state.errors = newValue } }
+    }
+
+    var suspendedListPaths: Set<String> {
+        get { withLock { state.suspendedListPaths } }
+        set { withLock { state.suspendedListPaths = newValue } }
+    }
+
+    var listRequests: [ListRequest] {
+        withLock { state.listRequests }
+    }
+
+    var shutdownCount: Int {
+        withLock { state.shutdownCount }
+    }
+
+    var downloadError: Error? {
+        get { withLock { state.downloadError } }
+        set { withLock { state.downloadError = newValue } }
+    }
+
+    var waitsForDownloadCancellation: Bool {
+        get { withLock { state.waitsForDownloadCancellation } }
+        set { withLock { state.waitsForDownloadCancellation = newValue } }
+    }
+
+    var downloadDestinations: [URL] {
+        withLock { state.downloadDestinations }
+    }
+
     let downloadProgressCallbacks = LockedDownloadProgressCallbacks()
-    var previewURL: URL?
-    var previewURLs: [String: URL] = [:]
-    var previewRequests: [String] = []
+
+    var previewURL: URL? {
+        get { withLock { state.previewURL } }
+        set { withLock { state.previewURL = newValue } }
+    }
+
+    var previewURLs: [String: URL] {
+        get { withLock { state.previewURLs } }
+        set { withLock { state.previewURLs = newValue } }
+    }
+
+    var previewRequests: [String] {
+        withLock { state.previewRequests }
+    }
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
-        listRequests.append(ListRequest(server: server, path: path))
-        if suspendedListPaths.contains(path) {
+        let result = withLock {
+            state.listRequests.append(ListRequest(server: server, path: path))
+            return (
+                isSuspended: state.suspendedListPaths.contains(path),
+                error: state.errors[path],
+                listing: state.listings[path] ?? []
+            )
+        }
+        if result.isSuspended {
             while true {
                 try await Task.sleep(for: .seconds(60))
             }
         }
-        if let error = errors[path] {
+        if let error = result.error {
             throw error
         }
-        return listings[path] ?? []
+        return result.listing
     }
 
     func shutdown() {
-        shutdownCount += 1
+        withLock {
+            state.shutdownCount += 1
+        }
     }
 
     func download(
@@ -3896,25 +3962,40 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         to destination: URL,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
-        downloadDestinations.append(destination)
+        let result = withLock {
+            state.downloadDestinations.append(destination)
+            return (
+                waitsForCancellation: state.waitsForDownloadCancellation,
+                error: state.downloadError
+            )
+        }
         downloadProgressCallbacks.append(progress)
         progress(64)
-        if waitsForDownloadCancellation {
+        if result.waitsForCancellation {
             while true {
                 try await Task.sleep(for: .seconds(10))
             }
         }
-        if let downloadError {
-            throw downloadError
+        if let error = result.error {
+            throw error
         }
     }
 
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL {
-        previewRequests.append(entry.id)
-        guard let previewURL = previewURLs[entry.id] ?? previewURL else {
+        let previewURL = withLock {
+            state.previewRequests.append(entry.id)
+            return state.previewURLs[entry.id] ?? state.previewURL
+        }
+        guard let previewURL else {
             throw RemoteFileError.commandFailed("Preview was not expected.")
         }
         return previewURL
+    }
+
+    private func withLock<Result>(_ body: () throws -> Result) rethrows -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
 }
 

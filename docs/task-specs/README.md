@@ -29,7 +29,7 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 
 ## Active tasks
 
-No active tasks.
+- [Task 029 — Formal Notarized 1.3.0 Release](029-formal-notarized-1.3.0-release.md)
 
 ## Backlog
 

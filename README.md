@@ -2,7 +2,7 @@
 
 RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profiles and exact-path remote file access. It runs macOS's built-in `/usr/bin/ssh` and `/usr/bin/sftp` directly.
 
-[Download v1.2.1](https://github.com/lx2026/RelayBar/releases/download/v1.2.1/RelayBar.zip)
+[Download v1.3.0](https://github.com/lx2026/RelayBar/releases/download/v1.3.0/RelayBar.zip)
 · [Changelog](CHANGELOG.md)
 
 ## Install

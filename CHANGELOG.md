@@ -2,6 +2,46 @@
 
 Notable RelayBar changes are recorded here.
 
+## [1.3.0] - 2026-07-30
+
+### Added
+
+- A native in-popover setting can register RelayBar to launch when the current
+  user logs in while leaving every saved forwarding profile stopped.
+- Named group menus can start inactive members, stop active members, or restart
+  only the members that were active when the command began.
+- Image and Markdown previews retain the current folder's previewable files in
+  a resizable, hideable sidebar with fast mouse and keyboard switching.
+
+### Changed
+
+- Remote Files reuses one private SSH master for folder listings, previews, and
+  downloads. Bounded session caching makes Back and revisits immediate while
+  stale folders revalidate without blanking their contents.
+- Folder opens now show their target path immediately, remain cancellable, and
+  preserve the prior folder and selection when an uncached open fails.
+- Image previews use a quieter adaptive canvas, and Markdown uses a focused
+  reading width with a calmer toolbar and grow-only preview window sizing.
+
+### Fixed
+
+- Remote Files control sockets account for OpenSSH's temporary bind suffix and
+  stay within macOS's Unix-socket path limit.
+- Superseded navigation and preview work can no longer publish stale content or
+  leave its temporary preview directory behind.
+- Login-item failures preserve the system-reported state, and the forwarding
+  rule type control no longer squeezes its redundant label into a narrow
+  column.
+
+### Security
+
+- The universal stable ZIP is signed with a timestamped hardened-runtime
+  Developer ID, notarized by Apple, and stapled for offline Gatekeeper
+  verification.
+- Remote Files owns and removes its private SSH control socket and continues to
+  run bounded, separately cancellable SFTP children without adding a new
+  network protocol dependency.
+
 ## [1.3.0-beta.1] - 2026-07-26
 
 ### Added
@@ -96,6 +136,7 @@ Notable RelayBar changes are recorded here.
 - Remote Markdown remains inert: raw HTML is not activated, remote embeds are not fetched, and unsafe links are blocked.
 - Release builds retain the hardened runtime, Developer ID signing, notarization, and Gatekeeper verification workflow.
 
+[1.3.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0
 [1.3.0-beta.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0-beta.1
 [1.2.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.2.1
 [1.2.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.2.0
