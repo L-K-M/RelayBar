@@ -12,6 +12,7 @@ final class TunnelStore: ObservableObject {
     private var cachedGrouping: TunnelGrouping?
     @Published private(set) var phases: [UUID: TunnelPhase] = [:]
     @Published private(set) var runtimePorts: [UUID: [UUID: Int]] = [:]
+    @Published private(set) var terminatingSSHProcessCount = 0
 
     private let defaults: UserDefaults
     private let sshExecutableURL: URL
@@ -20,6 +21,7 @@ final class TunnelStore: ObservableObject {
     private let browserOpener: (URL) -> Void
     private let processEnvironment: [String: String]?
     private let controlOperationTimeout: TimeInterval
+    private let processTerminationGracePeriod: TimeInterval
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
     private let controlOutputLimit = 64 * 1_024
@@ -27,6 +29,8 @@ final class TunnelStore: ObservableObject {
     private let localSocketPathLimit = 103
 
     private var processes: [UUID: Process] = [:]
+    private var terminatingSSHProcesses: Set<ObjectIdentifier> = []
+    private var forceTerminationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var errorPipes: [UUID: Pipe] = [:]
     private var errorBuffers: [UUID: Data] = [:]
     private var desiredTunnels: [UUID: Tunnel] = [:]
@@ -52,7 +56,8 @@ final class TunnelStore: ObservableObject {
         retryDelayProvider: @escaping (Int) -> TimeInterval = TunnelStore.retryDelay(for:),
         browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
         processEnvironment: [String: String]? = nil,
-        controlOperationTimeout: TimeInterval = 10
+        controlOperationTimeout: TimeInterval = 10,
+        processTerminationGracePeriod: TimeInterval = 5
     ) {
         self.defaults = defaults
         self.sshExecutableURL = sshExecutableURL
@@ -61,6 +66,7 @@ final class TunnelStore: ObservableObject {
         self.browserOpener = browserOpener
         self.processEnvironment = processEnvironment
         self.controlOperationTimeout = max(0.1, controlOperationTimeout)
+        self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
 
         if
             let data = defaults.data(forKey: storageKey),
@@ -364,6 +370,7 @@ final class TunnelStore: ObservableObject {
         process.terminationHandler = { finishedProcess in
             let status = finishedProcess.terminationStatus
             DispatchQueue.main.async {
+                store.recordSSHProcessTermination(finishedProcess)
                 store.processDidExit(
                     id: tunnelID,
                     status: status,
@@ -613,6 +620,7 @@ final class TunnelStore: ObservableObject {
                             process: finishedProcess,
                             status: status
                         )
+                        self.recordSSHProcessTermination(finishedProcess)
                     }
                 }
 
@@ -777,16 +785,51 @@ final class TunnelStore: ObservableObject {
 
         launchGenerations[id] = nil
         for operation in controlOperations.values where operation.tunnelID == id {
-            if operation.process.isRunning { operation.process.terminate() }
+            stopManagedSSHProcess(operation.process)
         }
 
         if let process = processes[id] {
-            if process.isRunning { process.terminate() }
+            stopManagedSSHProcess(process)
             cleanupRuntime(for: id, process: process)
         } else {
             cleanupOwnedLocalSockets(for: id)
             cleanupControlDirectory(for: id)
         }
+    }
+
+    private func stopManagedSSHProcess(_ process: Process) {
+        guard process.isRunning else { return }
+        let identifier = ObjectIdentifier(process)
+        let processIdentifier = process.processIdentifier
+        if terminatingSSHProcesses.insert(identifier).inserted {
+            terminatingSSHProcessCount = terminatingSSHProcesses.count
+        }
+        forceTerminationTasks[identifier]?.cancel()
+        forceTerminationTasks[identifier] = Task {
+            @MainActor [weak self, weak process] in
+            guard let self, let process else { return }
+            do {
+                try await Task.sleep(for: .seconds(processTerminationGracePeriod))
+            } catch {
+                return
+            }
+            guard
+                terminatingSSHProcesses.contains(identifier),
+                process.isRunning,
+                process.processIdentifier == processIdentifier
+            else {
+                return
+            }
+            _ = Darwin.kill(processIdentifier, SIGKILL)
+        }
+        process.terminate()
+    }
+
+    private func recordSSHProcessTermination(_ process: Process) {
+        let identifier = ObjectIdentifier(process)
+        forceTerminationTasks.removeValue(forKey: identifier)?.cancel()
+        guard terminatingSSHProcesses.remove(identifier) != nil else { return }
+        terminatingSSHProcessCount = terminatingSSHProcesses.count
     }
 
     private func appendMasterError(_ data: Data, for id: UUID) {

@@ -875,6 +875,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         // Still in flight: stop and restart before it can be reaped.
         store.stop(profile)
         XCTAssertEqual(store.phase(for: profile), .stopped)
+        XCTAssertEqual(store.terminatingSSHProcessCount, 2)
         store.start(profile)
         defer { store.stop(profile) }
 
@@ -979,6 +980,57 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.runningCount, 0)
     }
 
+    func testStopTracksMasterUntilItsTerminationCallbackArrives() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let tunnel = makeLocalProfile()
+
+        store.start(tunnel)
+        let reachedRunning = await waitUntil {
+            store.phase(for: tunnel) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+
+        store.stop(tunnel)
+        XCTAssertEqual(store.phase(for: tunnel), .stopped)
+        XCTAssertEqual(store.terminatingSSHProcessCount, 1)
+        let processExited = await waitUntil {
+            store.terminatingSSHProcessCount == 0
+        }
+        XCTAssertTrue(processExited)
+    }
+
+    func testStopForceKillsMasterThatIgnoresSIGTERM() async throws {
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_IGNORE_MASTER_TERM": "1"]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            processTerminationGracePeriod: 0.1
+        )
+        let tunnel = makeLocalProfile()
+
+        store.start(tunnel)
+        let reachedRunning = await waitUntil {
+            store.phase(for: tunnel) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+
+        store.stop(tunnel)
+        XCTAssertEqual(store.terminatingSSHProcessCount, 1)
+        let processExited = await waitUntil {
+            store.terminatingSSHProcessCount == 0
+        }
+        XCTAssertTrue(processExited)
+    }
+
     func testRetryDelayUsesExponentialBackoffWithCap() {
         XCTAssertEqual(TunnelStore.retryDelay(for: 1), 1)
         XCTAssertEqual(TunnelStore.retryDelay(for: 2), 2)
@@ -1031,7 +1083,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         maxRetryAttempts: Int = 1,
         retryDelay: TimeInterval = 0.01,
         browserOpener: @escaping (URL) -> Void = { _ in },
-        controlOperationTimeout: TimeInterval = 10
+        controlOperationTimeout: TimeInterval = 10,
+        processTerminationGracePeriod: TimeInterval = 5
     ) -> TunnelStore {
         TunnelStore(
             defaults: defaults,
@@ -1040,7 +1093,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             retryDelayProvider: { _ in retryDelay },
             browserOpener: browserOpener,
             processEnvironment: fixture.environment,
-            controlOperationTimeout: controlOperationTimeout
+            controlOperationTimeout: controlOperationTimeout,
+            processTerminationGracePeriod: processTerminationGracePeriod
         )
     }
 

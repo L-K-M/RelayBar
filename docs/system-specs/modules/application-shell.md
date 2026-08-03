@@ -6,15 +6,44 @@ RelayBar is a native SwiftUI `MenuBarExtra` application for macOS 13 or newer.
 
 - The app runs as a menu-bar accessory with no Dock icon (`LSUIElement`).
 - The popover is a 380 × 440 point window containing the tunnel list, the profile editor, or the settings screen.
-- The profile editor keeps its scroll content inside that width with 16-point horizontal padding. Field labels appear once; native picker labels are hidden where a custom field label is present.
+- The profile editor and Settings use one viewport-constrained vertical-scroll
+  container. Its document width is the viewport minus balanced 16-point
+  insets, so focus rings and intrinsically wide controls cannot create a
+  horizontal scroll range or shift content against an edge. Field labels
+  appear once; native picker labels are hidden where a custom field label is
+  present.
 - The menu-bar icon indicates whether any tunnel is starting, retrying, or running.
 - The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.
 - The settings screen's Launch at Login toggle registers or unregisters the main app as the current user's login item through `SMAppService.mainApp` — no helper executable, launch daemon, elevated privilege, or separate settings window.
+- The General card's second row is **Automatic Updates**. It controls
+  Sparkle's own persisted scheduled-check preference, defaults off, checks at
+  a seven-day interval when enabled, and cannot enable automatic download or
+  installation. Settings and application activation do not initiate checks.
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
 - A login launch opens the same menu-bar-only app; saved forwarding profiles stay stopped until the user starts them.
+- A quiet Settings footer reads version and build from the running bundle,
+  offers a non-shifting copy confirmation, and opens the canonical website and
+  GitHub repository. Its **Check for Updates…** action exposes only transient
+  checking/current/error text and starts one user-initiated Sparkle check; a
+  found update continues in that same check's standard Sparkle window. Closing
+  Settings clears inline claims.
+- Updater state never changes the menu-bar icon, tunnel-list header, Settings
+  button, or list content. Before an update-driven relaunch, active tunnels
+  produce a modal decision naming their count: stop them and install, or keep
+  them running and defer installation until they are stopped. A deferred
+  install remains visible in Settings with its current tunnel count, and the
+  installer is resumed only after termination callbacks confirm every managed
+  SSH master and control helper has exited. Stop sends SIGTERM, then escalates
+  a surviving child to SIGKILL after a bounded grace period so update relaunch,
+  quit, logout, and shutdown cannot wait indefinitely.
+- A maintainer-only `--maintainer-update-feed` launch argument can override the
+  bundled production feed only for an explicit-port, plain-HTTP loopback URL
+  on `127.0.0.1`, `localhost`, or `::1`. The override is process-scoped and is
+  not persisted. An invalid requested override prevents the updater from
+  starting; an ordinary launch uses the signed HTTPS production feed.
 - Quit stops all managed SSH processes before terminating the app.
 
 ## Ownership
@@ -23,4 +52,9 @@ RelayBar is a native SwiftUI `MenuBarExtra` application for macOS 13 or newer.
 - `RelayBarRootView` owns navigation and presentation.
 - `TunnelStore.shared` owns tunnel and process state.
 - `LaunchAtLoginModel` owns login-item state behind the injected `LoginItemServicing` boundary.
+- `UpdateModel` owns the Settings-facing state behind one app-lifetime
+  `UpdateServicing` boundary. The Xcode app supplies Sparkle; SwiftPM tests
+  supply an inert or injected service and cannot contact the update feed.
+- `ApplicationAboutModel` owns bundle metadata, version copying, and canonical
+  project-link routing.
 - `RemoteFilesWindowController.shared` owns the Remote Files window.

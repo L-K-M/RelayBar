@@ -7,10 +7,13 @@ import UniformTypeIdentifiers
 struct RelayBarApp: App {
     @NSApplicationDelegateAdaptor(RelayBarAppDelegate.self) private var appDelegate
     @StateObject private var store = TunnelStore.shared
+    @StateObject private var updates = UpdateModel(
+        service: UpdateServiceFactory.shared
+    )
 
     var body: some Scene {
         MenuBarExtra {
-            RelayBarRootView()
+            RelayBarRootView(updateModel: updates)
                 .environmentObject(store)
         } label: {
             Label("RelayBar", systemImage: store.runningCount > 0
@@ -23,13 +26,26 @@ struct RelayBarApp: App {
 
 @MainActor
 final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UpdateServiceFactory.shared.start()
+        configureDebugPreviewIfNeeded()
+    }
+
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        UpdateServiceFactory.shared.prepareForApplicationTermination()
+            ? .terminateCancel
+            : .terminateNow
+    }
+
     #if DEBUG
     private var previewWindow: NSWindow?
     private var tunnelPreviewStore: TunnelStore?
     private var tunnelPreviewDefaultsSuite: String?
     private var remoteFilesPreviewPresenter: RemoteFilesPreviewPresenter?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    private func configureDebugPreviewIfNeeded() {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--preview-dark") {
             NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
@@ -250,7 +266,9 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
             previewStore = TunnelStore.shared
         }
 
-        let rootView = RelayBarRootView()
+        let rootView = RelayBarRootView(
+            updateModel: UpdateModel(service: UnavailableUpdateService())
+        )
             .environmentObject(previewStore)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 440),
@@ -265,6 +283,8 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
         previewWindow = window
     }
+    #else
+    private func configureDebugPreviewIfNeeded() {}
     #endif
 
     func applicationWillTerminate(_ notification: Notification) {

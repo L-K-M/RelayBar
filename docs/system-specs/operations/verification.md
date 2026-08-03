@@ -2,7 +2,15 @@
 
 ## Required checks
 
-- Run `swift test` for the complete forwarding parser matrix, migration, typed-profile and group-tag validation, grouping and metadata-only mutation behavior, group lifecycle batching (mixed phases, partial failure, canonical matching, group isolation, and membership snapshots), control sequencing, rollback and timeout, runtime port mapping, socket refusal, retry, cancellation, browser URL behavior, login-item state mapping through the injected service boundary, Remote Files connection deduplication, private-master reuse and cleanup, child cancellation, master loss, directory-cache eviction and isolation, immediate and superseding navigation state, path/argument handling, listing parsing, Markdown compatibility, link policy, and renderer limits. Login-item tests never read or change the developer machine's real registration.
+- Run `swift test` for the complete forwarding parser matrix, migration,
+  typed-profile and group-tag validation, grouping and metadata-only mutation
+  behavior, group lifecycle batching, control sequencing, rollback and
+  timeout, runtime port mapping, socket refusal, retry, cancellation, browser
+  URL behavior, login-item state mapping, bundle-about behavior, update-state
+  mapping through the injected no-network boundary, Remote Files connection
+  reuse and cleanup, navigation, path/argument handling, listing parsing,
+  Markdown compatibility, link policy, and renderer limits. Tests never read
+  or change the real login-item registration and never start Sparkle.
 - Build the Xcode app target with complete Swift strict-concurrency checking and warnings treated as errors.
 - Run `plutil -lint` against the application property list.
 - Run `git diff --check` before committing.
@@ -34,3 +42,17 @@ Markdown changes should exercise a local fixture in light and dark appearance fo
 Changes to bundled renderer resources should build the Xcode app in Debug and Release, verify that Highlighter retains only its formatter and the `github`/`github-dark` themes, verify that SwiftMath retains only Latin Modern metrics/font and licenses, record the Release app and executable sizes, match the stripped executable to its dSYM UUID, and exercise the affected renderer in the native fixture.
 
 Release changes should additionally verify the code signature and notarized app with the scripts in [Build and release](build-and-release.md).
+
+Updater changes additionally require `scripts/verify-update-feed.sh`, nested
+Sparkle signature inspection, and a staged prior-to-newer production-equivalent
+flow. Exercise manual and opted-in scheduled checks, current/offline/malformed/
+bad-signature/missing-archive/downgrade cases, active-tunnel proceed and defer,
+preference preservation, relaunch, and Homebrew install/update/uninstall. Feed,
+release, and cask publication remain deployment actions requiring approval.
+Before publication, use `scripts/stage-private-update.sh` and the guarded
+loopback maintainer feed to exercise the signed prior-to-newer flow without a
+public asset. Verify that a manual check fetches once, presents the standard
+Sparkle UI, installs the newer notarized build, and restores the prior build
+after the rehearsal. Use macOS UI automation where it can
+observe and operate the installed app; record any unautomated acceptance item
+in Task 032 rather than treating it as completed.
