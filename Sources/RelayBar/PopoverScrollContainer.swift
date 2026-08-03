@@ -12,7 +12,6 @@ enum RelayBarPopoverLayout {
         max(0, viewportWidth - (horizontalInset * 2))
     }
 }
-
 /// A vertical popover scroller whose document width is always derived from
 /// the viewport. Focus rings and intrinsically wide controls therefore cannot
 /// create a horizontal scroll range or shift the document away from its
@@ -60,4 +59,3 @@ struct PopoverScrollContainer<Content: View>: View {
         }
     }
 }
-

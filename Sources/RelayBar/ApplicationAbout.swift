@@ -57,7 +57,6 @@ struct ApplicationMetadata: Equatable {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
-
 enum RelayBarProjectLink {
     static let website = URL(string: "https://lx2026.github.io/RelayBar/")!
     static let repository = URL(string: "https://github.com/lx2026/RelayBar")!
@@ -164,4 +163,3 @@ final class ApplicationAboutModel: ObservableObject {
         didCopyVersion = false
     }
 }
-
