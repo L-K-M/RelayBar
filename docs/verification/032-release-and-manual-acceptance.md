@@ -3,9 +3,9 @@
 Updated: 2026-08-02
 
 Result: In progress. VoiceOver inspection is excluded by maintainer decision.
-The maintainer approved local notarization and installation of 1.4.0 build 7.
-No commit, push, public release, appcast publication, or Homebrew change is
-authorized by this testing pass.
+The maintainer approved local notarization and installation of 1.4.0 build 7,
+then approved publication of the verified archive as a beta. Stable appcast,
+website-download, and Homebrew publication remain pending.
 
 ## Maintainer checklist
 
@@ -57,9 +57,11 @@ authorized by this testing pass.
 - [x] Build, notarize, staple, and Gatekeeper-assess the 1.4.0 build 7 universal
   candidate; verify nested signatures, architectures, dSYM UUIDs, and the
   installed `/Applications/RelayBar.app`.
-- [ ] After separate publication approval, record public archive identity,
-  signed appcast, prior-to-newer manual/scheduled updates, active-tunnel
-  choices, failure cases, and Homebrew install/update/uninstall evidence.
+- [x] After publication approval, publish the verified archive as a GitHub
+  prerelease and verify the anonymously downloaded public asset.
+- [ ] Record the stable signed appcast, prior-to-newer manual/scheduled updates,
+  active-tunnel choices, failure cases, and Homebrew
+  install/update/uninstall evidence.
 
 ### Minimum supported system
 
@@ -69,7 +71,7 @@ authorized by this testing pass.
 
 ## Existing automated evidence
 
-- The strict suite passes 222 tests with 15 expected opt-in skips.
+- The strict suite passes 229 tests with 15 expected opt-in skips.
 - Fresh light/dark Settings, New/Edit Profile, and scrolled-editor snapshot
   suites pass, including rendered horizontal-containment assertions.
 - The RelayBar-target warnings-as-errors universal Release build passes. The
@@ -97,3 +99,15 @@ authorized by this testing pass.
 - 2026-08-02: The maintainer reported that every Settings-footer and profile-
   editor check above passed on macOS 27.0 build 26A5388g. VoiceOver inspection
   remains waived, and the separate macOS 13 check remains open.
+- 2026-08-02: The maintainer approved a beta publication. Commit
+  `e260310834b3eeca3cb4a4792846f1bf933edd9e` was tagged
+  `v1.4.0-beta.1`; Apple accepted notary submission
+  `7106bfde-31d4-4d1f-b965-7eca2f28a181`. The stapled universal archive was
+  published as the non-draft GitHub prerelease
+  [RelayBar 1.4.0 Beta 1](https://github.com/lx2026/RelayBar/releases/tag/v1.4.0-beta.1).
+  Its final `RelayBar.zip` is 6,528,677 bytes with SHA-256
+  `358116688d81e9f1c9fe38070cbd4f0dbd7686f0eecb767b1d921bc80661a80a`.
+  An anonymous download was byte-identical and passed clean extraction,
+  strict signature, stapled-ticket, Gatekeeper, version/build, universal-
+  architecture, retained-resource, and launch checks. The stable appcast,
+  website download, and Homebrew cask were deliberately left unchanged.
