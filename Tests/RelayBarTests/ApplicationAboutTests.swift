@@ -11,6 +11,7 @@ private final class ExternalLinkOpenerSpy: ExternalLinkOpening {
         return true
     }
 }
+
 @MainActor
 private final class PasteboardWriterSpy: PasteboardWriting {
     private(set) var strings: [String] = []
