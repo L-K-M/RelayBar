@@ -61,24 +61,64 @@ final class VisualSnapshotHarness: XCTestCase {
 
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let label = appearanceName == .aqua ? "light" : "dark"
+            let listURL = outputDirectory.appendingPathComponent(
+                "tunnel-list-\(label).png"
+            )
             try capture(
                 view: RelayBarRootView(
-                    loginItemService: LoginItemServiceSpy(status: .enabled)
+                    loginItemService: LoginItemServiceSpy(status: .enabled),
+                    updateModel: previewUpdateModel()
                 )
                 .environmentObject(store),
                 appearance: appearanceName,
-                to: outputDirectory.appendingPathComponent("tunnel-list-\(label).png")
+                to: listURL
+            )
+            let listWithUpdateStateURL = outputDirectory.appendingPathComponent(
+                "tunnel-list-update-state-\(label).png"
+            )
+            try capture(
+                view: RelayBarRootView(
+                    loginItemService: LoginItemServiceSpy(status: .enabled),
+                    updateModel: previewUpdateModel(result: .upToDate)
+                )
+                .environmentObject(store),
+                appearance: appearanceName,
+                to: listWithUpdateStateURL
+            )
+            XCTAssertEqual(
+                try Data(contentsOf: listURL),
+                try Data(contentsOf: listWithUpdateStateURL),
+                "Updater state must not change the tunnel list or Settings button."
             )
             try capture(
                 view: SettingsView(
                     launchAtLogin: LaunchAtLoginModel(
                         service: LoginItemServiceSpy(status: .enabled)
                     ),
+                    updates: previewUpdateModel(),
+                    about: previewAboutModel(),
                     onBack: {}
                 )
                 .background(Color(nsColor: .windowBackgroundColor)),
                 appearance: appearanceName,
+                assertHorizontalContainment: true,
                 to: outputDirectory.appendingPathComponent("settings-\(label).png")
+            )
+            try capture(
+                view: SettingsView(
+                    launchAtLogin: LaunchAtLoginModel(
+                        service: LoginItemServiceSpy(status: .enabled)
+                    ),
+                    updates: previewUpdateModel(result: .upToDate),
+                    about: previewAboutModel(copied: true),
+                    onBack: {}
+                )
+                .background(Color(nsColor: .windowBackgroundColor)),
+                appearance: appearanceName,
+                assertHorizontalContainment: true,
+                to: outputDirectory.appendingPathComponent(
+                    "settings-transient-confirmations-\(label).png"
+                )
             )
             // The approval-required caption is the tallest Launch at Login
             // variant; capture it to verify the card's second row.
@@ -87,15 +127,50 @@ final class VisualSnapshotHarness: XCTestCase {
                     launchAtLogin: LaunchAtLoginModel(
                         service: LoginItemServiceSpy(status: .requiresApproval)
                     ),
+                    updates: previewUpdateModel(),
+                    about: previewAboutModel(),
                     onBack: {}
                 )
                 .background(Color(nsColor: .windowBackgroundColor)),
                 appearance: appearanceName,
+                assertHorizontalContainment: true,
                 to: outputDirectory.appendingPathComponent(
                     "settings-login-approval-\(label).png"
                 )
             )
         }
+    }
+
+    private func previewUpdateModel(
+        result: UpdateCheckResult? = nil
+    ) -> UpdateModel {
+        let service = SnapshotUpdateService()
+        let model = UpdateModel(
+            service: service,
+            announcer: SnapshotAccessibilityAnnouncer()
+        )
+        if let result {
+            model.checkForUpdates()
+            service.complete(with: result)
+        }
+        return model
+    }
+
+    private func previewAboutModel(copied: Bool = false) -> ApplicationAboutModel {
+        let model = ApplicationAboutModel(
+            metadata: ApplicationMetadata(
+                infoDictionary: [
+                    "CFBundleName": "RelayBar",
+                    "CFBundleShortVersionString": "1.3.0",
+                    "CFBundleVersion": "6"
+                ]
+            ),
+            pasteboardWriter: SnapshotPasteboardWriter(),
+            announcer: SnapshotAccessibilityAnnouncer(),
+            confirmationDuration: .seconds(30)
+        )
+        if copied { model.copyVersion() }
+        return model
     }
 
     func testCaptureTask021Snapshots() throws {
@@ -110,6 +185,14 @@ final class VisualSnapshotHarness: XCTestCase {
             tunnels: [],
             serverCatalog: catalog
         )
+        let editTunnel = Tunnel(
+            name: "PostgreSQL through bastion",
+            localPort: 5_432,
+            destinationHost: "database.internal",
+            destinationPort: 5_432,
+            sshHost: "developer@bastion.example.com",
+            groupTag: "Work"
+        )
 
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let label = appearanceName == .aqua ? "light" : "dark"
@@ -123,8 +206,24 @@ final class VisualSnapshotHarness: XCTestCase {
                 .background(Color(nsColor: .windowBackgroundColor)),
                 appearance: appearanceName,
                 size: NSSize(width: 380, height: 440),
+                assertHorizontalContainment: true,
                 to: outputDirectory.appendingPathComponent(
                     "task-021-new-profile-\(label).png"
+                )
+            )
+            try capture(
+                view: TunnelEditorView(
+                    tunnel: editTunnel,
+                    availableGroups: ["Personal", "Work"],
+                    onCancel: {},
+                    onSave: { _ in }
+                )
+                .background(Color(nsColor: .windowBackgroundColor)),
+                appearance: appearanceName,
+                size: NSSize(width: 380, height: 440),
+                assertHorizontalContainment: true,
+                to: outputDirectory.appendingPathComponent(
+                    "task-031-edit-profile-\(label).png"
                 )
             )
             try capture(
@@ -157,6 +256,7 @@ final class VisualSnapshotHarness: XCTestCase {
                 appearance: appearanceName,
                 size: NSSize(width: 380, height: 440),
                 scrollOffsetY: 300,
+                assertHorizontalContainment: true,
                 to: outputDirectory.appendingPathComponent(
                     "task-025-rule-type-\(label).png"
                 )
@@ -519,6 +619,7 @@ final class VisualSnapshotHarness: XCTestCase {
         appearance: NSAppearance.Name,
         size: NSSize = NSSize(width: 380, height: 440),
         scrollOffsetY: CGFloat? = nil,
+        assertHorizontalContainment: Bool = false,
         to url: URL
     ) throws {
         let hosting = NSHostingView(rootView: view)
@@ -568,6 +669,24 @@ final class VisualSnapshotHarness: XCTestCase {
             }
         }
 
+        if assertHorizontalContainment {
+            let scrollView = try XCTUnwrap(
+                firstScrollView(in: hosting),
+                "Expected the captured view to contain a scroll view."
+            )
+            let documentView = try XCTUnwrap(scrollView.documentView)
+            XCTAssertFalse(scrollView.hasHorizontalScroller)
+            XCTAssertEqual(
+                scrollView.contentView.bounds.minX,
+                0,
+                accuracy: 0.5
+            )
+            XCTAssertLessThanOrEqual(
+                documentView.bounds.width,
+                scrollView.contentView.bounds.width + 1
+            )
+        }
+
         let rep = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
         let data = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
@@ -591,6 +710,18 @@ final class VisualSnapshotHarness: XCTestCase {
         return nil
     }
 
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView {
+            return scrollView
+        }
+        for subview in view.subviews {
+            if let match = firstScrollView(in: subview) {
+                return match
+            }
+        }
+        return nil
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 1,
         condition: @escaping @MainActor () -> Bool
@@ -601,6 +732,38 @@ final class VisualSnapshotHarness: XCTestCase {
         }
         XCTAssertTrue(condition())
     }
+}
+
+@MainActor
+private final class SnapshotUpdateService: UpdateServicing {
+    let isAvailable = true
+    var automaticallyChecksForUpdates = false
+    var canCheckForUpdates = true
+    var deferredInstallTunnelCount: Int?
+    var stateDidChange: (@MainActor () -> Void)?
+    private var completion: (@MainActor (UpdateCheckResult) -> Void)?
+
+    func start() {}
+    func checkForUpdates(
+        completion: @escaping @MainActor (UpdateCheckResult) -> Void
+    ) {
+        self.completion = completion
+    }
+    func complete(with result: UpdateCheckResult) {
+        completion?(result)
+        completion = nil
+    }
+    func prepareForApplicationTermination() -> Bool { false }
+}
+
+@MainActor
+private struct SnapshotPasteboardWriter: PasteboardWriting {
+    func write(_ string: String) -> Bool { true }
+}
+
+@MainActor
+private struct SnapshotAccessibilityAnnouncer: AccessibilityAnnouncing {
+    func announce(_ message: String) {}
 }
 
 private final class Task027SnapshotService: RemoteFileServing, @unchecked Sendable {

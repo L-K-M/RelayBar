@@ -264,7 +264,8 @@ final class RemoteFilesModel: ObservableObject {
         previousPath: String?,
         isRefresh: Bool,
         popsHistory: Bool,
-        selectionAfterLoad: String?
+        selectionAfterLoad: String?,
+        resolvesFile: Bool
     )?
 
     init(
@@ -389,7 +390,12 @@ final class RemoteFilesModel: ObservableObject {
         }
         navigationHistory = []
         activeServer = server
-        load(path: RemotePath.normalized(remotePath), server: server, previousPath: nil)
+        load(
+            path: RemotePath.normalized(remotePath),
+            server: server,
+            previousPath: nil,
+            resolvesFile: true
+        )
     }
 
     func refresh() {
@@ -414,7 +420,8 @@ final class RemoteFilesModel: ObservableObject {
             previousPath: request.previousPath,
             isRefresh: request.isRefresh,
             popsHistory: request.popsHistory,
-            selectionAfterLoad: request.selectionAfterLoad
+            selectionAfterLoad: request.selectionAfterLoad,
+            resolvesFile: request.resolvesFile
         )
     }
 
@@ -651,7 +658,8 @@ final class RemoteFilesModel: ObservableObject {
         previousPath: String?,
         isRefresh: Bool = false,
         popsHistory: Bool = false,
-        selectionAfterLoad: String? = nil
+        selectionAfterLoad: String? = nil,
+        resolvesFile: Bool = false
     ) {
         let path = RemotePath.normalized(path)
         if isLoading, pendingPath == path {
@@ -665,7 +673,7 @@ final class RemoteFilesModel: ObservableObject {
         let generation = UUID()
         loadGeneration = generation
         errorMessage = nil
-        let cachedEntries = isRefresh
+        let cachedEntries = isRefresh || resolvesFile
             ? nil
             : directoryCache.entries(
                 for: server.connectionIdentity,
@@ -691,7 +699,8 @@ final class RemoteFilesModel: ObservableObject {
                 nil,
                 true,
                 false,
-                nil
+                nil,
+                false
             )
             screen = .browser
         } else {
@@ -701,7 +710,8 @@ final class RemoteFilesModel: ObservableObject {
                 previousPath,
                 isRefresh,
                 popsHistory,
-                selectionAfterLoad
+                selectionAfterLoad,
+                resolvesFile
             )
             isLoading = !isRefresh
             isRefreshing = isRefresh
@@ -711,29 +721,43 @@ final class RemoteFilesModel: ObservableObject {
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let loadedEntries = try await service.list(server: server, path: path)
+                let result: RemotePathLoadResult
+                if resolvesFile {
+                    result = try await service.loadPath(server: server, path: path)
+                } else {
+                    result = .directory(try await service.list(server: server, path: path))
+                }
                 try Task.checkCancellation()
                 guard loadGeneration == generation else { return }
-                directoryCache.insert(
-                    loadedEntries,
-                    for: server.connectionIdentity,
-                    path: path
-                )
-                commitLoadedFolder(
-                    path: path,
-                    entries: loadedEntries,
-                    previousPath: committedFromCache ? nil : previousPath,
-                    isRefresh: committedFromCache || isRefresh,
-                    popsHistory: committedFromCache ? false : popsHistory,
-                    selectionAfterLoad: committedFromCache ? nil : selectionAfterLoad
-                )
+                switch result {
+                case .directory(let loadedEntries):
+                    directoryCache.insert(
+                        loadedEntries,
+                        for: server.connectionIdentity,
+                        path: path
+                    )
+                    commitLoadedFolder(
+                        path: path,
+                        entries: loadedEntries,
+                        previousPath: committedFromCache ? nil : previousPath,
+                        isRefresh: committedFromCache || isRefresh,
+                        popsHistory: committedFromCache ? false : popsHistory,
+                        selectionAfterLoad: committedFromCache ? nil : selectionAfterLoad
+                    )
+                    screen = .browser
+                case .file(let entry):
+                    commitLoadedFile(entry)
+                    screen = .browser
+                }
                 pendingPath = nil
                 isLoading = false
                 isRefreshing = false
                 retryLoadRequest = nil
-                screen = .browser
                 serverCatalog.recordSuccessfulOpen(server)
                 refreshServers(preferredConnection: server.connectionIdentity)
+                if case .file(let entry) = result, entry.isPreviewable {
+                    preview(entry)
+                }
             } catch is CancellationError {
                 if loadGeneration == generation {
                     pendingPath = nil
@@ -778,6 +802,13 @@ final class RemoteFilesModel: ObservableObject {
         {
             selectedEntryID = nil
         }
+    }
+
+    private func commitLoadedFile(_ entry: RemoteFileEntry) {
+        currentPath = RemotePath.parent(of: entry.path)
+        remotePath = entry.path
+        entries = [entry]
+        selectedEntryID = entry.id
     }
 
     private func decodeImage(at url: URL) async throws -> NSImage {

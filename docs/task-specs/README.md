@@ -14,6 +14,8 @@ Each new task should define:
 - completion artifacts and explicitly deferred work.
 
 Keep requirements in one place and keep future ideas outside the current acceptance boundary.
+Application UI work also follows the
+[RelayBar Interface Principles](../designs/interface-principles.md).
 
 ## Completion protocol
 
@@ -29,8 +31,8 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 
 ## Active tasks
 
-No active tasks.
+- [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
 
 ## Backlog
 
-- [Task 028 — Update Experience](backlog/028-update-experience.md)
+No deferred tasks.

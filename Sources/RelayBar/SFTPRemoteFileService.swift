@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 
 protocol RemoteFileServing: AnyObject, Sendable {
+    func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry]
     func download(
         server: RemoteServer,
@@ -14,6 +15,10 @@ protocol RemoteFileServing: AnyObject, Sendable {
 }
 
 extension RemoteFileServing {
+    func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
+        .directory(try await list(server: server, path: path))
+    }
+
     func shutdown() {}
 }
 
@@ -254,6 +259,19 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
+        let (output, normalizedPath) = try await listingOutput(server: server, path: path)
+        return try SFTPListingParser.parse(output, parentPath: normalizedPath)
+    }
+
+    func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
+        let (output, normalizedPath) = try await listingOutput(server: server, path: path)
+        return try SFTPListingParser.parsePath(output, path: normalizedPath)
+    }
+
+    private func listingOutput(
+        server: RemoteServer,
+        path: String
+    ) async throws -> (output: String, normalizedPath: String) {
         guard RemotePath.validationMessage(for: path) == nil else {
             throw RemoteFileError.invalidPath
         }
@@ -263,7 +281,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
         )
         try validate(result)
-        return try SFTPListingParser.parse(result.output, parentPath: normalizedPath)
+        return (result.output, normalizedPath)
     }
 
     func download(

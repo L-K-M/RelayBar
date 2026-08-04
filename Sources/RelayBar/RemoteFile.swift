@@ -125,6 +125,11 @@ struct RemoteFileEntry: Identifiable, Hashable, Sendable {
     ]
 }
 
+enum RemotePathLoadResult: Equatable, Sendable {
+    case directory([RemoteFileEntry])
+    case file(RemoteFileEntry)
+}
+
 enum RemotePath {
     static let maximumUTF8ByteCount = 32 * 1_024
 
@@ -337,6 +342,24 @@ enum SFTPListingParser {
     static let maximumListingLineUTF8ByteCount = 32 * 1_024
     static let maximumEntryNameUTF8ByteCount = 4 * 1_024
 
+    static func parsePath(_ output: String, path: String) throws -> RemotePathLoadResult {
+        let normalizedPath = RemotePath.normalized(path)
+
+        for rawLine in output.split(whereSeparator: \.isNewline) {
+            guard rawLine.utf8.count <= maximumListingLineUTF8ByteCount else {
+                throw RemoteFileError.malformedListing
+            }
+            if let entry = directFileEntry(
+                from: String(rawLine),
+                requestedPath: normalizedPath
+            ) {
+                return .file(entry)
+            }
+        }
+
+        return .directory(try parse(output, parentPath: normalizedPath))
+    }
+
     static func parse(_ output: String, parentPath: String) throws -> [RemoteFileEntry] {
         var entries: [RemoteFileEntry] = []
         var sawStructuredListingLine = false
@@ -442,5 +465,56 @@ enum SFTPListingParser {
                 CharacterSet.controlCharacters.contains($0)
                     || CharacterSet.newlines.contains($0)
             }
+    }
+
+    private static func directFileEntry(
+        from line: String,
+        requestedPath: String
+    ) -> RemoteFileEntry? {
+        let fields = line.split(
+            maxSplits: 8,
+            omittingEmptySubsequences: true,
+            whereSeparator: \.isWhitespace
+        )
+        guard
+            fields.count == 9,
+            fields[0].count >= 10,
+            let size = Int64(fields[4]),
+            size >= 0
+        else {
+            return nil
+        }
+
+        let kind: RemoteFileEntry.Kind
+        switch fields[0].first {
+        case "-":
+            kind = .file
+        case "l":
+            kind = .symbolicLink
+        default:
+            return nil
+        }
+
+        var listedName = String(fields[8])
+        if kind == .symbolicLink, let separator = listedName.range(of: " -> ") {
+            listedName = String(listedName[..<separator.lowerBound])
+        }
+        let requestedName = (requestedPath as NSString).lastPathComponent
+        guard listedName.hasPrefix("/") else { return nil }
+        let candidatePath = RemotePath.normalized(listedName)
+        guard candidatePath == requestedPath else { return nil }
+        guard
+            requestedName.utf8.count <= maximumEntryNameUTF8ByteCount,
+            isSafeEntryName(requestedName)
+        else {
+            return nil
+        }
+        return RemoteFileEntry(
+            name: requestedName,
+            path: candidatePath,
+            kind: kind,
+            size: size,
+            modificationText: "\(fields[5]) \(fields[6]) \(fields[7])"
+        )
     }
 }

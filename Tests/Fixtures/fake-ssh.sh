@@ -11,6 +11,9 @@ delay_spec="${RELAYBAR_FAKE_SSH_DELAY_SPEC:-}"
 # A forward that ignores SIGTERM, so a stopped launch's control operation stays
 # alive while the next launch starts. Used to exercise launch-generation scoping.
 ignore_term_spec="${RELAYBAR_FAKE_SSH_IGNORE_TERM_SPEC:-}"
+# Lets process-shutdown tests prove RelayBar escalates a wedged master to
+# SIGKILL instead of waiting forever for a termination callback.
+ignore_master_term="${RELAYBAR_FAKE_SSH_IGNORE_MASTER_TERM:-}"
 
 if [ -n "$log_file" ]; then
     {
@@ -55,7 +58,12 @@ if [ "$is_master" -eq 1 ]; then
     if [ -n "$pid_file" ]; then
         printf '%s\n' "$$" > "$pid_file"
     fi
-    trap 'rm -f "$control_socket" "$pid_file"; exit 0' TERM INT EXIT
+    if [ "$ignore_master_term" = "1" ]; then
+        trap '' TERM INT
+        trap 'rm -f "$control_socket" "$pid_file"' EXIT
+    else
+        trap 'rm -f "$control_socket" "$pid_file"; exit 0' TERM INT EXIT
+    fi
     if [ -n "$ready_file" ]; then
         while [ ! -f "$ready_file" ]; do
             :

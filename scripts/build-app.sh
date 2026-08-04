@@ -46,6 +46,37 @@ xcodebuild \
 
 rm -rf "$APP"
 cp -R "$DERIVED_DATA/Build/Products/$XCODE_CONFIGURATION/RelayBar.app" "$APP"
+
+SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/B"
+if [[ ! -d "$SPARKLE_VERSION" ]]; then
+  echo "Sparkle.framework is missing from the built app." >&2
+  exit 1
+fi
+
+# Sparkle contains nested executable code. Sign every boundary inside-out so
+# the final app seal and each helper retain a valid hardened-runtime identity.
+for component in \
+  "$SPARKLE_VERSION/XPCServices/Installer.xpc" \
+  "$SPARKLE_VERSION/XPCServices/Downloader.xpc" \
+  "$SPARKLE_VERSION/Autoupdate" \
+  "$SPARKLE_VERSION/Updater.app"
+do
+  codesign \
+    --force \
+    --sign "$SIGNING_IDENTITY" \
+    --options runtime \
+    --timestamp \
+    --preserve-metadata=entitlements,requirements,flags \
+    "$component" >/dev/null
+done
+
+codesign \
+  --force \
+  --sign "$SIGNING_IDENTITY" \
+  --options runtime \
+  --timestamp \
+  "$SPARKLE_FRAMEWORK" >/dev/null
 codesign \
   --force \
   --sign "$SIGNING_IDENTITY" \
@@ -53,6 +84,15 @@ codesign \
   --timestamp \
   "$APP" >/dev/null
 codesign --verify --deep --strict --verbose=2 "$APP"
+
+for component in \
+  "$SPARKLE_VERSION/XPCServices/Installer.xpc" \
+  "$SPARKLE_VERSION/XPCServices/Downloader.xpc" \
+  "$SPARKLE_VERSION/Updater.app" \
+  "$SPARKLE_FRAMEWORK"
+do
+  codesign --verify --strict --verbose=2 "$component"
+done
 
 echo "Signed with: $SIGNING_IDENTITY"
 echo "$APP"

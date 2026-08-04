@@ -25,4 +25,8 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 018 — Remove Dead Compatibility Accessors](018-remove-dead-compatibility-accessors.md)
 - [Task 019 — Count Running Phases Without an Intermediate Array](019-count-running-phases-without-array.md)
 - [Task 023 — Homebrew Cask](023-homebrew-cask.md)
+- [Task 028 — Secure Self-Updates](028-secure-self-updates.md)
 - [Task 029 — Formal Notarized 1.3.0 Release](029-formal-notarized-1.3.0-release.md)
+- [Task 030 — Show Version and Project Links](030-version-and-project-links.md)
+- [Task 031 — Fix Edit Profile Insets](031-fix-edit-profile-insets.md)
+- [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)

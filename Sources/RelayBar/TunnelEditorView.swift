@@ -75,7 +75,7 @@ struct TunnelEditorView: View {
             editorHeader
             Divider()
 
-            ScrollView(.vertical) {
+            PopoverScrollContainer {
                 VStack(alignment: .leading, spacing: 18) {
                     if tunnel == nil { quickImport }
                     connectionDetails
@@ -84,8 +84,6 @@ struct TunnelEditorView: View {
                     if usesUnixSockets { unixSocketSettings }
                     safetyMessages
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()

@@ -4,6 +4,7 @@ import SwiftUI
 struct RelayBarRootView: View {
     @EnvironmentObject private var store: TunnelStore
     @StateObject private var launchAtLogin: LaunchAtLoginModel
+    @ObservedObject private var updates: UpdateModel
     @State private var screen: Screen = .list
 
     private enum Screen {
@@ -12,10 +13,14 @@ struct RelayBarRootView: View {
         case settings
     }
 
-    init(loginItemService: any LoginItemServicing = MainAppLoginItemService()) {
+    init(
+        loginItemService: any LoginItemServicing = MainAppLoginItemService(),
+        updateModel: UpdateModel
+    ) {
         _launchAtLogin = StateObject(
             wrappedValue: LaunchAtLoginModel(service: loginItemService)
         )
+        updates = updateModel
     }
 
     var body: some View {
@@ -47,6 +52,7 @@ struct RelayBarRootView: View {
             case .settings:
                 SettingsView(
                     launchAtLogin: launchAtLogin,
+                    updates: updates,
                     onBack: { screen = .list }
                 )
             }
