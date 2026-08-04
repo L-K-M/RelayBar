@@ -23,7 +23,12 @@ Set `RELAYBAR_FLEXIBLE_LIVE_TEST=1` with `RELAYBAR_LIVE_SSH_HOST` to verify that
 
 Flexible-forwarding changes additionally require a live OpenSSH control workflow. Exercise Local SOCKS with client-side hostname delegation, Remote SOCKS with allowed and denied `PermitRemoteOpen` destinations, repeated remote port-`0` allocation, and each server-supported fixed TCP/Unix matrix. Record server-controlled `GatewayPorts` or Unix-socket limitations instead of silently skipping them.
 
-Set `RELAYBAR_REMOTE_FILES_LIVE_TEST=1`, `RELAYBAR_LIVE_SSH_HOST`, and `RELAYBAR_LIVE_REMOTE_PATH` to run the opt-in Remote Files listing test against a real saved-server target. Add `RELAYBAR_LIVE_REMOTE_EXPECT_NONEMPTY=1` when the configured path is known to contain entries so a false empty-folder result fails the test.
+Set `RELAYBAR_REMOTE_FILES_LIVE_TEST=1`, `RELAYBAR_LIVE_SSH_HOST`, and
+`RELAYBAR_LIVE_REMOTE_PATH` to run the opt-in Remote Files path test against a
+real saved-server target. Add `RELAYBAR_LIVE_SSH_IDENTITY_FILE` when that saved
+connection uses an explicit identity. Use `RELAYBAR_LIVE_REMOTE_EXPECT_NONEMPTY=1`
+for a nonempty folder or `RELAYBAR_LIVE_REMOTE_EXPECT_FILE=1` for a directly
+previewable Markdown file.
 
 Remote Files changes should additionally exercise that server and absolute path manually for nested navigation, cached Back and revisit, uncached-open cancellation, refresh, file download, recursive folder download, cancellation, image preview, Markdown preview, connection loss, window close, and representative failures. For transport-reuse changes, record cold initial-open and at least five warm uncached nested-folder timings against a genuinely high-latency server, and confirm the warm operations reuse one master without another key exchange or authentication.
 

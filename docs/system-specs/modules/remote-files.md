@@ -1,6 +1,7 @@
 # Remote Files
 
-Remote Files opens an exact folder on an SSH server without adding search, indexing, mounting, or editing.
+Remote Files opens an exact folder or supported preview file on an SSH server
+without adding search, indexing, mounting, or editing.
 
 ## Entry and window
 
@@ -12,10 +13,14 @@ Remote Files opens an exact folder on an SSH server without adding search, index
 - A single Quick Add tunnel whose generated name matches its forwarded destination is labelled by its SSH host in the server picker. An intentional custom name remains visible with the SSH host for context when that SSH connection is not duplicated.
 - **Add SSH Host** accepts an optional local display name and a validated `user@server`-style SSH target. It saves Remote Files metadata only: it does not create a forwarding profile, add a forwarding rule, start SSH, or edit OpenSSH config.
 - A standalone saved host can be removed from the launcher after confirmation. Removal also drops its matching recent entry but does not change forwarding profiles or OpenSSH config.
-- Only successful folder opens are promoted to the recent section, which retains at most eight connections with the newest first. Failed opens do not change recents.
+- Only successful folder or file opens are promoted to the recent section, which retains at most eight connections with the newest first. Failed opens do not change recents.
 - OpenSSH config discovery reads at most 1 MiB from `~/.ssh/config`, exposes at most 256 concrete `Host` aliases, and ignores wildcard, character-pattern, and negated aliases. Config aliases remain read-only and are not copied into RelayBar storage.
 - A successful open changes the compact launcher into a wider browser window.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.
+- When the launcher path identifies a supported image or Markdown file, RelayBar
+  opens the existing bounded preview with that exact file selected. Back returns
+  through a single-file browser context to the launcher. Another regular file
+  is shown selected in that context without starting a download automatically.
 
 ## Folder browser
 
@@ -84,7 +89,10 @@ Empty folders show a single focused empty state with an explicit accessibility d
 - The batch-input pipe suppresses `SIGPIPE`; if the child exits before input is written, RelayBar handles the write failure instead of terminating.
 - Close-by-default spawning explicitly preserves the batch reader as child standard input, including when that reader already occupies descriptor zero.
 - Parsed listing lines are limited to 32 KiB, entry names to 4 KiB, entry sizes must be nonnegative, and supported entries remain capped at 10,000.
-- Listing rows may contain either basenames or absolute paths. An absolute entry is accepted only when it is a direct child of the requested folder, then reduced to its basename; out-of-folder absolute entries fail closed.
+- Listing rows may contain either basenames or absolute paths. An exact regular-
+  file row may resolve the launcher path itself. Folder rows accept an absolute
+  entry only when it is a direct child of the requested folder, then reduce it
+  to its basename; out-of-folder absolute entries fail closed.
 - RelayBar does not add SFTP quiet mode implicitly, so bounded diagnostics retain actionable host-key, resolution, timeout, refusal, and connection-loss details for normalization. A user-saved `-q` option is still preserved.
 - The master receives validated SSH-native connection arguments. SFTP children receive the same validated connection behavior with SFTP-specific translation, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
 - The user's normal OpenSSH config, identities, agent, jump host, and host-key behavior remain in effect.

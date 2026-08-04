@@ -2093,6 +2093,40 @@ final class ProgressPollingIntervalTests: XCTestCase {
 }
 
 final class SFTPListingParserTests: XCTestCase {
+    func testResolvesAnExactAbsoluteFilePath() throws {
+        let path = "/home/linxy97/workspace/2026/youtube-video-transcript/TRANSCRIPTION_LEARNINGS.md"
+        let output = "-rw-r--r-- 1 linxy97 staff 4096 Aug 3 20:30 \(path)"
+
+        XCTAssertEqual(
+            try SFTPListingParser.parsePath(output, path: path),
+            .file(RemoteFileEntry(
+                name: "TRANSCRIPTION_LEARNINGS.md",
+                path: path,
+                kind: .file,
+                size: 4_096,
+                modificationText: "Aug 3 20:30"
+            ))
+        )
+    }
+
+    func testDoesNotMistakeDirectoryContentsForTheRequestedPath() throws {
+        let directoryOutput = """
+        drwxr-xr-x 2 alice staff 64 Aug 3 20:30 .
+        drwxr-xr-x 3 alice staff 96 Aug 3 20:30 ..
+        -rw-r--r-- 1 alice staff 128 Aug 3 20:30 app
+        """
+        XCTAssertEqual(
+            try SFTPListingParser.parsePath(directoryOutput, path: "/srv/app"),
+            .directory([RemoteFileEntry(
+                name: "app",
+                path: "/srv/app/app",
+                kind: .file,
+                size: 128,
+                modificationText: "Aug 3 20:30"
+            )])
+        )
+    }
+
     // Entries whose names hold glob metacharacters parse, render, and remain
     // openable; sftp resolves their quoted paths literally.
     func testKeepsEntriesWhoseNamesCarryGlobMetacharacters() throws {
@@ -2234,7 +2268,28 @@ final class SFTPListingParserTests: XCTestCase {
 }
 
 final class SFTPRemoteFileServiceTests: XCTestCase {
-    func testConfiguredRemoteFolderWhenLiveTestingIsEnabled() async throws {
+    func testLoadsAnExactRemoteFileWithoutTreatingItAsADirectory() async throws {
+        let service = makeFixtureService()
+        let path = "/home/linxy97/workspace/2026/youtube-video-transcript/TRANSCRIPTION_LEARNINGS.md"
+
+        let result = try await service.loadPath(
+            server: makeFixtureServer(host: "directfile"),
+            path: path
+        )
+
+        XCTAssertEqual(
+            result,
+            .file(RemoteFileEntry(
+                name: "TRANSCRIPTION_LEARNINGS.md",
+                path: path,
+                kind: .file,
+                size: 4_096,
+                modificationText: "Aug 3 20:30"
+            ))
+        )
+    }
+
+    func testConfiguredRemotePathWhenLiveTestingIsEnabled() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard
             environment["RELAYBAR_REMOTE_FILES_LIVE_TEST"] == "1",
@@ -2254,15 +2309,31 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
             id: UUID(),
             name: "Live",
             sshHost: sshHost,
-            additionalArguments: []
+            additionalArguments: environment["RELAYBAR_LIVE_SSH_IDENTITY_FILE"].map {
+                ["-i", $0]
+            } ?? []
         )
 
-        let entries = try await service.list(server: server, path: remotePath)
-        if environment["RELAYBAR_LIVE_REMOTE_EXPECT_NONEMPTY"] == "1" {
-            XCTAssertFalse(
-                entries.isEmpty,
-                "Expected the configured live folder to contain at least one entry."
-            )
+        let result = try await service.loadPath(server: server, path: remotePath)
+        if environment["RELAYBAR_LIVE_REMOTE_EXPECT_FILE"] == "1" {
+            guard case .file(let entry) = result else {
+                return XCTFail("Expected the configured live path to resolve as a file.")
+            }
+            XCTAssertEqual(entry.path, RemotePath.normalized(remotePath))
+            XCTAssertTrue(entry.isPreviewableMarkdown)
+            let previewURL = try await service.preparePreview(server: server, entry: entry)
+            defer {
+                try? FileManager.default.removeItem(
+                    at: previewURL.deletingLastPathComponent()
+                )
+            }
+            let document = try await RemoteMarkdownDecoder.load(contentsOf: previewURL)
+            XCTAssertFalse(document.plainText.isEmpty)
+        } else if environment["RELAYBAR_LIVE_REMOTE_EXPECT_NONEMPTY"] == "1" {
+            guard case .directory(let entries) = result else {
+                return XCTFail("Expected the configured live path to resolve as a folder.")
+            }
+            XCTAssertFalse(entries.isEmpty)
         }
     }
 
@@ -3117,6 +3188,64 @@ final class RemoteDirectoryCacheTests: XCTestCase {
 
 @MainActor
 final class RemoteFilesModelTests: XCTestCase {
+    func testDirectMarkdownPathOpensPreviewAndPreservesBackPath() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(
+            name: "TRANSCRIPTION_LEARNINGS.md",
+            parentPath: "/home/linxy97/workspace/2026/youtube-video-transcript"
+        )
+        service.pathResults[entry.path] = .file(entry)
+        let previewDirectory = try makeTemporaryDirectory()
+        let previewURL = previewDirectory.appendingPathComponent(entry.name)
+        try Data("# Transcription learnings\n\nDirect preview.".utf8).write(to: previewURL)
+        service.previewURL = previewURL
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil {
+            model.screen == .preview
+                && model.previewMarkdown?.plainText.contains("Direct preview") == true
+        }
+
+        XCTAssertEqual(service.loadPathRequests.map(\.path), [entry.path])
+        XCTAssertEqual(model.currentPath, RemotePath.parent(of: entry.path))
+        XCTAssertEqual(model.remotePath, entry.path)
+        XCTAssertEqual(model.entries, [entry])
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(model.previewEntry, entry)
+
+        model.goBack()
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.entries, [entry])
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.remotePath, entry.path)
+    }
+
+    func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "archive.zip")
+        service.pathResults[entry.path] = .file(entry)
+        let presenter = StubRemoteFilePresenter()
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            presenter: presenter
+        )
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        XCTAssertEqual(model.entries, [entry])
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertTrue(service.previewRequests.isEmpty)
+        XCTAssertEqual(presenter.chooseCount, 0)
+    }
+
     func testStandaloneHostOpensWithoutAForwardingProfileAndBecomesRecent() async throws {
         let catalog = RemoteServerCatalog()
         let service = StubRemoteFileService()
@@ -3862,9 +3991,11 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
 
     private struct State {
         var listings: [String: [RemoteFileEntry]] = [:]
+        var pathResults: [String: RemotePathLoadResult] = [:]
         var errors: [String: Error] = [:]
         var suspendedListPaths: Set<String> = []
         var listRequests: [ListRequest] = []
+        var loadPathRequests: [ListRequest] = []
         var shutdownCount = 0
         var downloadError: Error?
         var waitsForDownloadCancellation = false
@@ -3882,6 +4013,11 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         set { withLock { state.listings = newValue } }
     }
 
+    var pathResults: [String: RemotePathLoadResult] {
+        get { withLock { state.pathResults } }
+        set { withLock { state.pathResults = newValue } }
+    }
+
     var errors: [String: Error] {
         get { withLock { state.errors } }
         set { withLock { state.errors = newValue } }
@@ -3894,6 +4030,10 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
 
     var listRequests: [ListRequest] {
         withLock { state.listRequests }
+    }
+
+    var loadPathRequests: [ListRequest] {
+        withLock { state.loadPathRequests }
     }
 
     var shutdownCount: Int {
@@ -3948,6 +4088,17 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
             throw error
         }
         return result.listing
+    }
+
+    func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
+        let resolution = withLock {
+            state.loadPathRequests.append(ListRequest(server: server, path: path))
+            return state.pathResults[path]
+        }
+        if let resolution {
+            return resolution
+        }
+        return .directory(try await list(server: server, path: path))
     }
 
     func shutdown() {

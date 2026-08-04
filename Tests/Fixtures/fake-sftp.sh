@@ -21,6 +21,9 @@ case "$host" in
             ;;
         esac
         ;;
+    directfile)
+        printf '%s\n' '-rw-r--r-- 1 linxy97 staff 4096 Aug 3 20:30 /home/linxy97/workspace/2026/youtube-video-transcript/TRANSCRIPTION_LEARNINGS.md'
+        ;;
     sharedslow)
         case "$command" in
         get*)
