@@ -345,7 +345,12 @@ final class RelayBarAppDelegate:
     @objc private func togglePopover() {
         if let popover, popover.isShown {
             popover.performClose(nil)
-        } else if popoverToggleGuard.shouldPresent() {
+        } else if
+            !PopoverToggleGuard.shouldSuppressToggle(
+                eventType: NSApp.currentEvent?.type
+            )
+                || popoverToggleGuard.shouldPresent()
+        {
             presentPopover()
         }
     }
@@ -383,14 +388,11 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
-        // Only a close caused by an outside mouse-down can be the front half
-        // of the click whose mouse-up runs the toggle action; Escape,
-        // in-popover, and programmatic closes never race it, so they must
-        // not disarm a deliberate following click. An unknown event (for
-        // example a close driven by app deactivation) records, matching the
-        // guard's purpose of never re-opening over a real icon click.
-        let eventType = NSApp.currentEvent?.type
-        if eventType == nil || eventType == .leftMouseDown || eventType == .rightMouseDown {
+        if
+            PopoverToggleGuard.shouldRecordClose(
+                eventType: NSApp.currentEvent?.type
+            )
+        {
             popoverToggleGuard.recordClose()
         }
     }
@@ -736,16 +738,39 @@ final class RelayBarAppDelegate:
 /// "closed" and would immediately re-present the popover, making the icon
 /// unable to dismiss it. The guard treats a toggle that lands inside a short
 /// window after a close caused by an outside mouse-down as the tail of that
-/// same click and swallows it once.
+/// same click and swallows it once. Timing uses the monotonic system uptime
+/// clock, not wall-clock time, so an NTP step cannot distort the window.
 struct PopoverToggleGuard {
     /// The mouse-down close and mouse-up action of one click arrive well
     /// inside this window; two deliberate clicks do not.
     static let suppressionWindow: TimeInterval = 0.35
 
-    private var lastClose: Date?
+    /// Only a close caused by a mouse-down delivered outside the popover can
+    /// be the front half of the click whose mouse-up runs the toggle action;
+    /// Escape, in-popover, and programmatic `performClose` closes (which
+    /// arrive as key or mouse-up events) never race it, so they must not
+    /// disarm a deliberate following click. An unknown event context — a
+    /// close driven by app deactivation — records, the safer default for
+    /// never re-opening over a real icon click.
+    static func shouldRecordClose(eventType: NSEvent.EventType?) -> Bool {
+        guard let eventType else { return true }
+        return eventType == .leftMouseDown || eventType == .rightMouseDown
+    }
 
-    mutating func recordClose(now: Date = Date()) {
-        lastClose = now
+    /// Only a toggle fired by a mouse-up can be the tail of the click that
+    /// closed the popover. Keyboard, accessibility, and programmatic toggles
+    /// always present, so the guard can never swallow the re-launch re-open
+    /// escape hatch or an assistive activation.
+    static func shouldSuppressToggle(eventType: NSEvent.EventType?) -> Bool {
+        eventType == .leftMouseUp
+    }
+
+    private var lastCloseUptime: TimeInterval?
+
+    mutating func recordClose(
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        lastCloseUptime = uptime
     }
 
     /// Returns `false` exactly once when the toggle lands within the
@@ -753,10 +778,12 @@ struct PopoverToggleGuard {
     /// that already dismissed the popover. A close recorded by an intentional
     /// toggle-close is consumed the same way, so at worst one rapid re-click
     /// is ignored and the next one opens the menu.
-    mutating func shouldPresent(now: Date = Date()) -> Bool {
-        guard let lastClose else { return true }
-        if now.timeIntervalSince(lastClose) < Self.suppressionWindow {
-            self.lastClose = nil
+    mutating func shouldPresent(
+        now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        guard let lastCloseUptime else { return true }
+        if now - lastCloseUptime < Self.suppressionWindow {
+            self.lastCloseUptime = nil
             return false
         }
         return true
