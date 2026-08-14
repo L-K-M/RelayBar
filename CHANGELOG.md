@@ -28,6 +28,10 @@ Notable RelayBar changes are recorded here.
   one a crowded or notched menu bar drops.
 - Standard editing shortcuts reach text fields in the profile editor and the
   Remote Files window again, through a main menu the app now installs itself.
+- Editing a running profile now restarts it on the updated definition. The
+  save used to stop the tunnel and leave it stopped, so fixing as much as a
+  profile's name silently dropped its connection until it was started again
+  by hand.
 
 ## [1.3.0] - 2026-07-30
 

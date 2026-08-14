@@ -135,6 +135,12 @@ final class TunnelStore: ObservableObject {
         tunnels[index] = tunnel
         phases[tunnel.id] = .stopped
         save()
+        if wasActive {
+            // Replacing the definition of a live profile used to leave it
+            // stopped without saying so. Relaunch through the normal
+            // pipeline on the updated definition instead.
+            start(tunnel)
+        }
     }
 
     func move(_ tunnel: Tunnel, toGroup rawGroup: String?) {

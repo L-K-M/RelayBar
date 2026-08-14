@@ -19,7 +19,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 - Profile-level Unix controls store a validated octal bind mask and whether a retry may remove a stale local socket whose type, device, and inode RelayBar recorded during the current app run. RelayBar never replaces an unowned path; remote socket cleanup remains server-controlled.
 - Single Local TCP profiles retain the browser shortcut. Menus otherwise expose only type-correct copy or local-socket reveal actions. Reveal is offered from the rule's own shape rather than a filesystem probe, and falls back to the enclosing folder when the socket is already gone.
 - Derived sections are computed once per change to the saved list rather than per view evaluation, so phase and runtime-port updates do not rebuild them.
-- Editing an active profile stops it before replacing its definition.
+- Editing an active profile stops it, replaces its definition, and immediately relaunches it on the updated definition through the normal start pipeline.
 - Changing only a group tag, moving a profile, renaming a group, or ungrouping members is metadata-only and preserves process phase, retries, pending browser work, runtime ports, and process ownership.
 - Deleting a profile cancels its connection, control operation, retry, pending browser launch, runtime ports, and owned temporary artifacts.
 - Definitions persist immediately after add, edit, delete, move, rename, or ungroup operations.

@@ -310,6 +310,61 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         store.stop(profile)
     }
 
+    /// Task 037. Replacing the definition of a live profile relaunches it on
+    /// the updated definition instead of silently leaving it stopped.
+    func testNonTagEditOfActiveProfileRelaunchesWithUpdatedDefinition() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let profile = makeLocalProfile()
+        store.add(profile)
+        store.start(profile)
+        let reachedRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+        defer { store.stopAll() }
+        let invocationsBeforeEdit = masterInvocationCount(
+            try String(contentsOf: fixture.logURL)
+        )
+
+        var edited = store.tunnels[0]
+        edited.name = "Edited Web"
+        store.update(edited)
+
+        let relaunched = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(relaunched)
+        XCTAssertEqual(store.tunnels[0].name, "Edited Web")
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL)),
+            invocationsBeforeEdit + 1
+        )
+    }
+
+    /// Task 037. Editing a profile that is not active must not start it.
+    func testNonTagEditOfStoppedProfileStaysStopped() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let profile = makeLocalProfile()
+        store.add(profile)
+
+        var edited = store.tunnels[0]
+        edited.name = "Edited Web"
+        store.update(edited)
+
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(store.phase(for: profile), .stopped)
+        XCTAssertEqual(store.runningCount, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.logURL.path))
+    }
+
     func testGroupMovesPreserveStoppedFailedAndRetryingPhases() async throws {
         let (stoppedDefaults, stoppedSuite) = makeIsolatedDefaults()
         defer { stoppedDefaults.removePersistentDomain(forName: stoppedSuite) }
