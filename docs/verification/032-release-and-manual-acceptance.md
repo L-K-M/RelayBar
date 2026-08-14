@@ -1,6 +1,6 @@
 # Task 032 — Release and Manual Acceptance Verification
 
-Updated: 2026-08-02
+Updated: 2026-08-14
 
 Result: In progress. VoiceOver inspection is excluded by maintainer decision.
 The maintainer approved local notarization and installation of 1.4.0 build 7,
@@ -25,11 +25,12 @@ website-download, and Homebrew publication remain pending.
   feedback does not depend on movement or shift the footer.
 - [x] Increase system text size and confirm every Settings control remains
   reachable vertically without horizontal clipping or overlap.
-- [x] Confirm **Automatic Updates** uses the promised weekly-check copy,
-  persists an intentional toggle change across relaunch, and adds no badge or
-  status to the tunnel list. A clean first launch defaults off; an existing
-  installation may retain its previous choice. Restore the preferred setting
-  after the check.
+- [x] Confirm the updater preference—then labeled **Automatic Updates** and now
+  labeled **Automatically Check for Updates**—uses the promised weekly-check
+  copy, persists an intentional toggle change across relaunch, and adds no
+  badge or status to the tunnel list. A clean first launch defaults off; an
+  existing installation may retain its previous choice. Restore the preferred
+  setting after the check.
 - [x] Before the production appcast is published, **Check for Updates…** should
   end with the concise retry state. Close and reopen Settings and confirm the
   transient result is gone.
