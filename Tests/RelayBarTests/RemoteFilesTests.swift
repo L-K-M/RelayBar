@@ -3463,6 +3463,7 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         try await waitUntil {
             !model.isLoading
+                && service.listRequests.count == 1
                 && model.currentPath == RemotePath.parent(of: entry.path)
                 && model.entries == [entry]
         }
@@ -3476,6 +3477,34 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
         XCTAssertEqual(model.remotePath, RemotePath.parent(of: entry.path))
+    }
+
+    /// Task 038. A directly opened file at the root still has a containing
+    /// folder: Back lists `/` with the file selected.
+    func testBackFromRootLevelDirectFileListsRoot() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin", parentPath: "")
+        service.pathResults[entry.path] = .file(entry)
+        service.listings["/"] = [entry]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && service.listRequests.count == 1
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(service.listRequests.map(\.path), ["/"])
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
