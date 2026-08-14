@@ -1,6 +1,6 @@
 # Task 048 — Reject Invalid SFTP UTF-8
 
-Status: In Progress
+Status: Complete
 
 ## Outcome
 
@@ -41,3 +41,14 @@ valid UTF-8 instead of presenting it as an empty folder.
 - Either capture cap fails closed even when sftp exits successfully.
 - Relevant tests and `git diff --check` pass, and the Remote Files and shared
   security specifications describe the implemented boundary.
+
+## Evidence
+
+- macOS 15 CI ran `swift test -Xswiftc -warnings-as-errors`: 260 tests passed
+  with 15 skipped and no failures on 2026-08-14.
+- The same CI run completed the unsigned RelayBar Release build with
+  `xcodebuild` on 2026-08-14.
+- Fixture syntax, raw invalid-byte assertions, unreadable-capture permissions,
+  task-number references, and `git diff --check` passed locally on 2026-08-14.
+- GLM 5.3 completed with zero actionable suggestions after the final
+  implementation review on 2026-08-14.
