@@ -141,6 +141,16 @@ final class RemoteServerCatalog {
     private let sshConfigURL: URL?
     private var savedRecords: [Record]
     private var recentRecords: [Record]
+    /// Parsed `~/.ssh/config` hosts plus the file stamp they were read under.
+    /// `servers(from:)` runs after every folder navigation, so the config is
+    /// re-read only when its modification date or size changes rather than on
+    /// every call.
+    private var cachedSSHConfig: (
+        url: URL,
+        modificationDate: Date?,
+        fileSize: Int,
+        hosts: [String]
+    )?
 
     init(defaults: UserDefaults? = nil, sshConfigURL: URL? = nil) {
         self.defaults = defaults
@@ -171,7 +181,7 @@ final class RemoteServerCatalog {
             .map { $0.server(source: .saved) }
             .sorted(by: Self.sortByDisplayName)
         let profiles = Self.profileServers(from: tunnels)
-        let config = (sshConfigURL.map(SSHConfigHostReader.load) ?? [])
+        let config = sshConfigHosts
             .map {
                 RemoteServer(
                     id: UUID(),
@@ -266,6 +276,31 @@ final class RemoteServerCatalog {
     private func persist(_ records: [Record], key: String) {
         guard let defaults, let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: key)
+    }
+
+    private var sshConfigHosts: [String] {
+        guard let sshConfigURL else { return [] }
+        let attributes = try? FileManager.default.attributesOfItem(
+            atPath: sshConfigURL.path
+        )
+        let modificationDate = attributes?[.modificationDate] as? Date
+        let fileSize = (attributes?[.size] as? NSNumber)?.intValue ?? -1
+        if
+            let cached = cachedSSHConfig,
+            cached.url == sshConfigURL,
+            cached.modificationDate == modificationDate,
+            cached.fileSize == fileSize
+        {
+            return cached.hosts
+        }
+        let hosts = SSHConfigHostReader.load(from: sshConfigURL)
+        cachedSSHConfig = (
+            sshConfigURL,
+            modificationDate,
+            fileSize,
+            hosts
+        )
+        return hosts
     }
 
     private static func loadRecords(

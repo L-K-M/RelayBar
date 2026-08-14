@@ -335,6 +335,32 @@ final class RemoteServerCatalogTests: XCTestCase {
         )
     }
 
+    func testSSHConfigHostsReloadWhenTheConfigFileChanges() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+        let configURL = temporaryDirectory.appendingPathComponent("config")
+        try "Host first\n".write(to: configURL, atomically: true, encoding: .utf8)
+
+        let catalog = RemoteServerCatalog(sshConfigURL: configURL)
+        XCTAssertEqual(
+            catalog.servers(from: []).filter { $0.source == .sshConfig }
+                .map(\.sshHost),
+            ["first"]
+        )
+
+        try "Host first\nHost second\n".write(
+            to: configURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertEqual(
+            catalog.servers(from: []).filter { $0.source == .sshConfig }
+                .map(\.sshHost),
+            ["first", "second"]
+        )
+    }
+
     func testPersistsStandaloneHostsAndRemovalAlsoDropsTheirRecentEntry() throws {
         let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

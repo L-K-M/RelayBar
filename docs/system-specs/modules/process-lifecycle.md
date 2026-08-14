@@ -7,6 +7,7 @@
 - The master runs with `-N`, `-T`, `BatchMode`, a 10-second connect timeout, forward-failure exit, server keepalives, `ControlPersist=no`, and `ClearAllForwardings=yes`.
 - Its private control socket is created below a random app-owned `0700` temporary directory and is not shared with unrelated SSH clients.
 - The master starts with no forwards. Each rule is installed in order by direct `/usr/bin/ssh -F none -S <socket> -O forward` arguments.
+- The control socket appears only after connection and authentication both finish, and the 10-second connect timeout bounds only the TCP connect. Readiness is therefore polled for up to 30 seconds before a launch is reported as having never become ready.
 - Control stdout and stderr are capped at 64 KiB and each helper times out after 10 seconds.
 - Each launch carries a generation identifier, and every control operation is keyed by its own identifier and tagged with the launch that owns it. A stopped or replaced launch's operation can neither block nor complete the launch that replaced it, so a restart issued while a previous helper is still being reaped installs its rules normally.
 - A helper's pipe handlers are detached before its remaining output is read, so one reader owns each descriptor. Output delivered after an operation completes is discarded rather than carried into the next operation.

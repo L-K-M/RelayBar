@@ -4,8 +4,29 @@ Notable RelayBar changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- The menu-bar item's tooltip and accessibility value report the live active
+  tunnel count, so hovering the icon answers "is anything connected?" without
+  opening the menu.
+
+### Changed
+
+- Remote Files re-uses its parsed `~/.ssh/config` aliases until the file's
+  modification date or size changes. Server refreshes run after every folder
+  navigation, so they now cost one `stat` instead of a full re-read and parse.
+
 ### Fixed
 
+- Deleting a profile asks for confirmation first. The destructive item lived
+  in the row menu where one slip destroyed the profile with no undo.
+- A saved profile collection that fails to decode is preserved verbatim under
+  `savedTunnels.v2.corrupt-backup` before the store starts empty. The next
+  save previously overwrote the only copy of the user's profiles.
+- The control-socket readiness window is 30 seconds rather than 12. The socket
+  appears only after connection and authentication both finish, the 10-second
+  connect timeout bounds only the TCP connect, and slow networks or large
+  agent key sets were misreported as a broken master.
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
   ssh exit when a forward cannot be established — it runs nothing and reads
   nothing — and RelayBar already sets it on every connection it launches, so

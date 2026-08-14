@@ -299,6 +299,7 @@ private struct TunnelRow: View {
     let onDelete: () -> Void
 
     @State private var isNamingNewGroup = false
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         VStack(spacing: 9) {
@@ -417,7 +418,9 @@ private struct TunnelRow: View {
                     }
                     Button("Edit", systemImage: "pencil", action: onEdit)
                     Divider()
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        isConfirmingDelete = true
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 25, height: 25)
@@ -468,6 +471,16 @@ private struct TunnelRow: View {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
         )
+        .confirmationDialog(
+            "Delete \(tunnel.displayName)?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Profile", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The profile and its forwarding rules are removed permanently.")
+        }
     }
 
     private var statusIndicator: some View {

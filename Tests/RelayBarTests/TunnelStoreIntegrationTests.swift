@@ -173,6 +173,29 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertNotNil(defaults.data(forKey: "savedTunnels.v1"))
     }
 
+    func testPreservesUndecodableSavedCollectionBeforeStartingEmpty() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let corrupt = Data("not a tunnel collection".utf8)
+        defaults.set(corrupt, forKey: "savedTunnels.v2")
+
+        let store = TunnelStore(defaults: defaults)
+
+        XCTAssertTrue(store.tunnels.isEmpty)
+        XCTAssertEqual(
+            defaults.data(forKey: "savedTunnels.v2.corrupt-backup"),
+            corrupt
+        )
+
+        var replacement = makeLocalProfile()
+        replacement.name = "After Recovery"
+        store.add(replacement)
+        XCTAssertEqual(
+            defaults.data(forKey: "savedTunnels.v2.corrupt-backup"),
+            corrupt
+        )
+    }
+
     func testGroupMutationsNormalizeMergeAndPersistWithoutASeparateGroupStore() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

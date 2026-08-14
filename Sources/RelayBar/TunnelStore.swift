@@ -24,9 +24,18 @@ final class TunnelStore: ObservableObject {
     private let processTerminationGracePeriod: TimeInterval
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
+    /// An undecodable v2 blob is preserved here verbatim before the store can
+    /// start from an empty list, because the next `save()` would otherwise
+    /// overwrite the only copy of the user's profiles.
+    private let corruptStorageBackupKey = "savedTunnels.v2.corrupt-backup"
     private let controlOutputLimit = 64 * 1_024
     private let masterErrorOutputLimit = 16 * 1_024
     private let localSocketPathLimit = 103
+    /// The control socket appears only after the connection and authentication
+    /// both finish, and `ConnectTimeout` bounds just the TCP connect. 600 polls
+    /// 50 ms apart waits 30 seconds so slow networks or large agent key sets
+    /// are not misreported as a broken master.
+    private let controlSocketStartupPollCount = 600
 
     private var processes: [UUID: Process] = [:]
     private var terminatingSSHProcesses: Set<ObjectIdentifier> = []
@@ -69,19 +78,24 @@ final class TunnelStore: ObservableObject {
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
 
         if
-            let data = defaults.data(forKey: storageKey),
-            let saved = try? JSONDecoder().decode([Tunnel].self, from: data)
+            let storedData = defaults.data(forKey: storageKey),
+            let saved = try? JSONDecoder().decode([Tunnel].self, from: storedData)
         {
             tunnels = saved
-        } else if
-            let data = defaults.data(forKey: legacyStorageKey),
-            let migrated = try? JSONDecoder().decode([Tunnel].self, from: data),
-            let encoded = try? JSONEncoder().encode(migrated)
-        {
-            tunnels = migrated
-            defaults.set(encoded, forKey: storageKey)
         } else {
-            tunnels = []
+            if let storedData = defaults.data(forKey: storageKey) {
+                defaults.set(storedData, forKey: corruptStorageBackupKey)
+            }
+            if
+                let data = defaults.data(forKey: legacyStorageKey),
+                let migrated = try? JSONDecoder().decode([Tunnel].self, from: data),
+                let encoded = try? JSONEncoder().encode(migrated)
+            {
+                tunnels = migrated
+                defaults.set(encoded, forKey: storageKey)
+            } else {
+                tunnels = []
+            }
         }
     }
 
@@ -432,7 +446,7 @@ final class TunnelStore: ObservableObject {
         startupTasks[id]?.cancel()
         startupTasks[id] = Task { @MainActor [weak self, weak process] in
             guard let self, let process else { return }
-            for _ in 0..<240 {
+            for _ in 0..<self.controlSocketStartupPollCount {
                 guard
                     !Task.isCancelled,
                     self.desiredTunnels[id] != nil,
@@ -462,7 +476,8 @@ final class TunnelStore: ObservableObject {
             self.failStartup(
                 id: id,
                 process: process,
-                message: "SSH connected but its private control socket did not become ready."
+                message: "SSH did not finish connecting within 30 seconds; "
+                    + "its private control socket never became ready."
             )
         }
     }

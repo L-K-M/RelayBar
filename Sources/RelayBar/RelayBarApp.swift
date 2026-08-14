@@ -113,6 +113,26 @@ final class RelayBarAppDelegate:
             button.action = #selector(togglePopover)
         }
         statusItem = item
+        refreshStatusItemDescription()
+    }
+
+    /// Hovering the item or asking VoiceOver names the live tunnel count, so
+    /// the icon answers "is anything connected?" without opening the menu.
+    private static func statusItemDescription(activeTunnelCount: Int) -> String {
+        switch activeTunnelCount {
+        case 0: "RelayBar — all tunnels stopped"
+        case 1: "RelayBar — 1 tunnel active"
+        default: "RelayBar — \(activeTunnelCount) tunnels active"
+        }
+    }
+
+    private func refreshStatusItemDescription() {
+        guard let button = statusItem?.button else { return }
+        let description = Self.statusItemDescription(
+            activeTunnelCount: store.runningCount
+        )
+        button.toolTip = description
+        button.setAccessibilityValue(description)
     }
 
     /// A fixed-size template glyph, as both reference menu-bar apps use. Two
@@ -202,6 +222,7 @@ final class RelayBarAppDelegate:
     }
 
     private func refreshStatusItemImage() {
+        refreshStatusItemDescription()
         let showsActiveTunnels = store.runningCount > 0
         guard showsActiveTunnels != statusItemShowsActiveTunnels else { return }
         statusItemShowsActiveTunnels = showsActiveTunnels
