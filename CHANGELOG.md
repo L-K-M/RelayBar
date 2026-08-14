@@ -12,6 +12,9 @@ Notable RelayBar changes are recorded here.
 - Row menus can copy a profile as the `ssh` command RelayBar effectively
   runs — same grammar Quick Add imports, so the command pastes straight back
   or into a terminal.
+- The profile editor says exactly why Save is disabled — the first blocking
+  issue, next to the button and as its tooltip — instead of making you hunt
+  a dozen fields.
 
 ### Fixed
 

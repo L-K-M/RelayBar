@@ -329,18 +329,87 @@ struct TunnelEditorView: View {
     }
 
     private var actionBar: some View {
-        HStack {
-            Button("Cancel", action: onCancel)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button(tunnel == nil ? "Add Profile" : "Save Changes", action: save)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!isValid)
+        VStack(spacing: 8) {
+            if let issue = firstValidationIssue {
+                Label(issue, systemImage: "info.circle")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Before you can save: \(issue)")
+            }
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(tunnel == nil ? "Add Profile" : "Save Changes", action: save)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!isValid)
+                    .help(firstValidationIssue ?? "")
+            }
         }
         .padding(.horizontal, 16)
-        .frame(height: 56)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+    }
+
+    /// The single reason Save is disabled, so a rejected form explains
+    /// itself instead of making the user hunt a dozen fields. Checks mirror
+    /// `builtTunnel` in the same order and stop at the first problem.
+    private var firstValidationIssue: String? {
+        if hasPendingGroupName {
+            return "Finish naming the new group."
+        }
+        if rules.isEmpty {
+            return "Add at least one forwarding rule."
+        }
+        for (index, rule) in rules.enumerated() {
+            if let issue = rule.validationIssue {
+                return "Rule \(index + 1): \(issue)"
+            }
+        }
+        guard
+            let mask = UInt16(streamBindMask, radix: 8),
+            mask <= 0o777
+        else {
+            return "Enter a valid octal socket bind mask such as 0177."
+        }
+        if hasReverseSOCKS {
+            switch reversePolicyChoice {
+            case .unspecified:
+                return "Choose a destination policy for Remote SOCKS."
+            case .restricted:
+                let destinations = reverseAllowedDestinations
+                    .split(whereSeparator: { $0.isWhitespace || $0 == "," })
+                    .map(String.init)
+                if destinations.isEmpty {
+                    return "List at least one allowed host:port destination."
+                }
+                if !destinations.allSatisfy(
+                    SSHArgumentPolicy.isValidPermitRemoteOpenDestination
+                ) {
+                    return "Allowed destinations must be host:port entries."
+                }
+            case .any, .none:
+                break
+            }
+        }
+        let host = sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        if host.isEmpty {
+            return "Enter an SSH host such as user@server."
+        }
+        if !SSHArgumentPolicy.isValidHostTarget(host) {
+            return "The SSH host cannot contain spaces or start with a dash."
+        }
+        let builtRules = rules.compactMap(\.forwardingRule)
+        if builtRules.count == rules.count {
+            let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
+            if probe.hasConflictingListeners {
+                return "Two rules listen on the same address and port."
+            }
+        }
+        return nil
     }
 
     private var builtTunnel: Tunnel? {
@@ -760,7 +829,8 @@ private struct ForwardingRuleEditor: View {
     }
 }
 
-private struct ForwardingRuleDraft: Identifiable {
+/// Internal rather than fileprivate so the validation copy is unit-testable.
+struct ForwardingRuleDraft: Identifiable {
     var id: UUID
     var kind: ForwardingRuleKind
     var listenKind: ForwardListenEndpoint.Kind
@@ -796,6 +866,72 @@ private struct ForwardingRuleDraft: Identifiable {
         destinationHost = rule.destination?.tcp?.host ?? ""
         destinationPort = rule.destination?.tcp.map { String($0.port) } ?? ""
         destinationPath = rule.destination?.path ?? ""
+    }
+
+    /// The first reason this draft cannot become a valid rule, mirroring
+    /// the checks in `forwardingRule` with user-facing wording.
+    var validationIssue: String? {
+        switch listenKind {
+        case .tcp:
+            if listenPort.trimmingCharacters(in: .whitespaces).isEmpty {
+                return "enter a listen port"
+            }
+            guard let port = Int(listenPort) else {
+                return "the listen port is not a number"
+            }
+            if kind.listensRemotely {
+                guard (0...65_535).contains(port) else {
+                    return "the listen port must be 0–65535 (0 = automatic)"
+                }
+            } else {
+                guard (1...65_535).contains(port) else {
+                    return "the listen port must be 1–65535"
+                }
+            }
+            let bind = listenAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard SSHArgumentPolicy.isValidBindAddress(bind.isEmpty ? nil : bind) else {
+                return "the listen address cannot contain spaces or start with a dash"
+            }
+        case .unix:
+            let path = listenPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if path.isEmpty {
+                return "enter a local socket path"
+            }
+            guard SSHArgumentPolicy.isValidSocketPath(path) else {
+                return "the socket path must be absolute and cannot contain a colon"
+            }
+        }
+
+        if !kind.isDynamic {
+            switch destinationKind {
+            case .tcp:
+                let host = destinationHost.trimmingCharacters(in: .whitespacesAndNewlines)
+                if host.isEmpty {
+                    return "enter a destination host"
+                }
+                guard SSHArgumentPolicy.isValidDestinationHost(host) else {
+                    return "the destination host cannot contain spaces or start with a dash"
+                }
+                if destinationPort.trimmingCharacters(in: .whitespaces).isEmpty {
+                    return "enter a destination port"
+                }
+                guard
+                    let port = Int(destinationPort),
+                    (1...65_535).contains(port)
+                else {
+                    return "the destination port must be 1–65535"
+                }
+            case .unix:
+                let path = destinationPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                if path.isEmpty {
+                    return "enter a destination socket path"
+                }
+                guard SSHArgumentPolicy.isValidSocketPath(path) else {
+                    return "the destination socket path must be absolute and cannot contain a colon"
+                }
+            }
+        }
+        return nil
     }
 
     var forwardingRule: ForwardingRule? {
