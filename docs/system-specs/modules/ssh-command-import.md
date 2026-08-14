@@ -22,6 +22,7 @@ Quick Add converts a forwarding-only SSH command into one RelayBar profile witho
 - Remote commands, multiple SSH destinations, custom config files, command-execution options, malformed rules, relative or unsafe socket paths, and ambiguous duplicate structured options are rejected.
 - A connection option outside the preserved set is reported as not imported. The unsafe-option wording is reserved for values rejected on their contents, so a harmless option is never described as able to run commands or read files.
 - Parsing is transactional: editor state changes only after the complete command validates.
+- When the pasteboard holds a complete importable command as the editor opens, Quick Add offers a one-click (or ⇧⌘V) import chip; partial or unrelated clipboard contents never produce a suggestion, and typing dismisses it.
 - The same safety policy is checked again immediately before launch.
 
 See [Security boundaries](../shared/security-boundaries.md).

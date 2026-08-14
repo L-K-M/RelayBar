@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TunnelEditorView: View {
@@ -18,6 +19,7 @@ struct TunnelEditorView: View {
     @State private var unlinkStaleSocket: Bool
     @State private var startsAtLaunch: Bool
     @State private var importError: String?
+    @State private var clipboardSuggestion: String?
     @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
 
@@ -95,7 +97,19 @@ struct TunnelEditorView: View {
         }
         .onAppear {
             focusedField = tunnel == nil ? .command : .name
+            detectClipboardSuggestion()
         }
+    }
+
+    /// When the pasteboard already holds a complete importable command, offer
+    /// it once per editor session instead of making the user paste it. The
+    /// read happens on editor appearance (a user action), and the suggestion
+    /// disappears on use or as soon as the user types.
+    private func detectClipboardSuggestion() {
+        guard tunnel == nil, command.isEmpty else { return }
+        clipboardSuggestion = ClipboardSSHCommand.candidate(
+            from: NSPasteboard.general.string(forType: .string)
+        )
     }
 
     private var editorHeader: some View {
@@ -131,11 +145,29 @@ struct TunnelEditorView: View {
                 .layoutPriority(1)
                 .focused($focusedField, equals: .command)
                 .onSubmit(importCommand)
+                .onChange(of: command) { _ in
+                    clipboardSuggestion = nil
+                }
 
                 Button("Import", action: importCommand)
                     .buttonStyle(.bordered)
                     .fixedSize()
                     .disabled(command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let clipboardSuggestion {
+                Button {
+                    command = clipboardSuggestion
+                    self.clipboardSuggestion = nil
+                    importCommand()
+                } label: {
+                    Label("Import command from clipboard", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 10.5, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .help(clipboardSuggestion)
+                .accessibilityLabel("Import SSH command from clipboard")
             }
 
             if let importError {
