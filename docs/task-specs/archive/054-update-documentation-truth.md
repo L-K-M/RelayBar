@@ -47,7 +47,7 @@ update behavior, network contact, and dependencies accurately.
   marked `In Progress`.
 - Tasks 039 and 042 are `Complete` at their indexed archive paths, and the
   active and archive task-index links resolve.
-- RelayBar starts Sparkle at launch and resets its cycle after the scheduled-
+- RelayBar starts Sparkle at launch and resets its cycle after the scheduled
   check preference changes. Pinned Sparkle 2.9.4 may run an overdue scheduled
   check promptly, so the application spec and privacy policy allow for that
   network timing without claiming every enable or launch makes a request.

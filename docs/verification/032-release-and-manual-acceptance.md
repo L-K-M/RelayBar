@@ -102,7 +102,7 @@ website-download, and Homebrew publication remain pending.
   embedded in `Packaging/Info.plist`. After maintainer authorization, Sparkle's
   `sign_update` signed and verified a disposable local payload. The payload was
   moved to Trash and nothing was published.
-- 2026-08-02: The maintainer reported that every Settings-footer and profile-
+- 2026-08-02: The maintainer reported that every Settings footer and profile
   editor check above passed on macOS 27.0 build 26A5388g. VoiceOver inspection
   remains waived, and the separate macOS 13 check remains open.
 - 2026-08-02: The maintainer approved a beta publication. Commit
@@ -114,6 +114,6 @@ website-download, and Homebrew publication remain pending.
   Its final `RelayBar.zip` is 6,528,677 bytes with SHA-256
   `358116688d81e9f1c9fe38070cbd4f0dbd7686f0eecb767b1d921bc80661a80a`.
   An anonymous download was byte-identical and passed clean extraction,
-  strict signature, stapled-ticket, Gatekeeper, version/build, universal-
+  strict signature, stapled-ticket, Gatekeeper, version/build, universal
   architecture, retained-resource, and launch checks. The stable appcast,
   website download, and Homebrew cask were deliberately left unchanged.
