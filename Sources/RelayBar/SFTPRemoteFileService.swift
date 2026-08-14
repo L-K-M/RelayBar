@@ -347,6 +347,9 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             guard fileManager.fileExists(atPath: partial.path) else {
                 throw RemoteFileError.missingDownload
             }
+            // The polling loop secured the payload only while it ran; lock
+            // the finished payload down before it becomes the user's file.
+            securePartialPermissions(at: partial)
 
             if fileManager.fileExists(atPath: destination.path) {
                 _ = try fileManager.replaceItemAt(

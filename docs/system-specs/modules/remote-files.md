@@ -43,7 +43,7 @@ without adding search, indexing, mounting, or editing.
 - A temporary strip reports progress, supports cancellation, and offers **Reveal in Finder** after completion.
 - Back navigation is disabled in every browser folder while a transfer is active or still cleaning up.
 - Transfer progress and state icons expose explicit accessibility descriptions rather than relying on system-symbol names.
-- Downloads use a hidden, fixed-length UUID staging directory beside the destination. The directory is created with mode `0700` before SFTP writes its payload, and its bounded name avoids exceeding local filesystem limits when the chosen destination name is long. Existing content is replaced only after the new transfer succeeds.
+- Downloads use a hidden, fixed-length UUID staging directory beside the destination. The directory is created with mode `0700` before SFTP writes its payload, its bounded name avoids exceeding local filesystem limits when the chosen destination name is long, and the finished payload is locked to `0600` (file) or `0700` (folder) before it becomes the destination. Existing content is replaced only after the new transfer succeeds.
 - Cancellation and failure remove the complete staging directory and leave an existing destination unchanged.
 - Cancellation and failure messages explicitly state that temporary data was removed and existing files were unchanged.
 - Transfer progress is scoped to its originating attempt; a delayed callback from a failed or cancelled attempt cannot update a retry.
