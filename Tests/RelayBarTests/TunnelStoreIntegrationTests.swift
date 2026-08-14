@@ -699,6 +699,26 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         store.stop(profile)
     }
 
+    func testEditingAStoppedProfileLeavesItStopped() throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let profile = makeLocalProfile()
+        store.add(profile)
+
+        var edited = store.tunnels[0]
+        edited.name = "Edited Web"
+        store.update(edited)
+
+        XCTAssertEqual(store.phase(for: profile), .stopped)
+        XCTAssertEqual(store.runningCount, 0)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: fixture.logURL.path)
+        )
+    }
+
     func testInstallsMixedRulesSeparatelyAndMapsAutomaticPorts() async throws {
         let fixture = try makeFakeSSHFixture()
         defer { fixture.cleanup() }

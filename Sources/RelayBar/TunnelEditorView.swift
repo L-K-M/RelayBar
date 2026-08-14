@@ -32,7 +32,7 @@ struct TunnelEditorView: View {
     init(
         tunnel: Tunnel?,
         availableGroups: [String],
-        isActive: Bool = false,
+        isActive: Bool,
         onCancel: @escaping () -> Void,
         onSave: @escaping (Tunnel) -> Void
     ) {

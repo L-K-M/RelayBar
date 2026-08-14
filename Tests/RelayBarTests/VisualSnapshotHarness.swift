@@ -200,6 +200,7 @@ final class VisualSnapshotHarness: XCTestCase {
                 view: TunnelEditorView(
                     tunnel: nil,
                     availableGroups: ["Personal", "Work"],
+                    isActive: false,
                     onCancel: {},
                     onSave: { _ in }
                 )
@@ -215,6 +216,7 @@ final class VisualSnapshotHarness: XCTestCase {
                 view: TunnelEditorView(
                     tunnel: editTunnel,
                     availableGroups: ["Personal", "Work"],
+                    isActive: true,
                     onCancel: {},
                     onSave: { _ in }
                 )
@@ -249,6 +251,7 @@ final class VisualSnapshotHarness: XCTestCase {
                 view: TunnelEditorView(
                     tunnel: nil,
                     availableGroups: ["Personal", "Work"],
+                    isActive: false,
                     onCancel: {},
                     onSave: { _ in }
                 )
