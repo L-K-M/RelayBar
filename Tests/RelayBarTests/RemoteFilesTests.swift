@@ -288,7 +288,9 @@ final class SSHConfigHostReaderTests: XCTestCase {
 
     /// Task 043. Hosts in included files load like top-level hosts, relative
     /// patterns resolve against ~/.ssh, unmatched patterns are ignored, and
-    /// non-matching extensions and directories are skipped.
+    /// non-matching extensions and directories are skipped. The nested
+    /// include resolves against ~/.ssh as OpenSSH does, so `delta` can only
+    /// arrive through it — the outer glob never matches that file.
     func testFollowsIncludesWithGlobAndNestedFiles() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -301,7 +303,7 @@ final class SSHConfigHostReaderTests: XCTestCase {
         try write("Host top\n Include hosts.d/*.conf\nInclude missing/*.conf\n", to: sshDirectory.appendingPathComponent("config"))
         try write("Host alpha beta\n", to: hostsDirectory.appendingPathComponent("a.conf"))
         try write("Host gamma\nInclude nested.conf\n", to: hostsDirectory.appendingPathComponent("b.conf"))
-        try write("Host delta\n", to: hostsDirectory.appendingPathComponent("nested.conf"))
+        try write("Host delta\n", to: sshDirectory.appendingPathComponent("nested.conf"))
         try write("Host not-included\n", to: hostsDirectory.appendingPathComponent("ignore.txt"))
 
         let aliases = SSHConfigHostReader.load(

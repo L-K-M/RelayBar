@@ -139,33 +139,28 @@ enum SSHConfigHostReader {
         }
     }
 
-    /// OpenSSH resolves relative Include patterns against `~/.ssh` for user
-    /// configuration files — the only kind RelayBar reads — and silently
-    /// ignores patterns that match nothing. GLOB_MARK suffixes directories
-    /// so they can be skipped: OpenSSH includes files only.
+    /// OpenSSH resolves patterns without a leading slash or tilde against
+    /// `~/.ssh` for user configuration files — the only kind RelayBar reads
+    /// — and silently ignores patterns that match nothing. `GLOB_TILDE`
+    /// covers both `~/` and `~user/` forms; `GLOB_MARK` suffixes directories
+    /// so they can be skipped (OpenSSH includes files only), and
+    /// `GLOB_BRACE` keeps brace patterns working as they do on macOS.
     private static func include(
         pattern: String,
         homeDirectory: URL,
         depth: Int,
         state: inout LoadState
     ) {
-        let resolvedPattern: String
-        if pattern.hasPrefix("~/") {
-            resolvedPattern = homeDirectory
-                .appendingPathComponent(String(pattern.dropFirst(2)))
-                .path
-        } else if pattern.hasPrefix("/") {
-            resolvedPattern = pattern
-        } else {
-            resolvedPattern = homeDirectory
+        let resolvedPattern = pattern.hasPrefix("/") || pattern.hasPrefix("~")
+            ? pattern
+            : homeDirectory
                 .appendingPathComponent(".ssh", isDirectory: true)
                 .appendingPathComponent(pattern)
                 .path
-        }
 
         var globResult = glob_t()
         let status = resolvedPattern.withCString {
-            glob($0, GLOB_MARK, nil, &globResult)
+            glob($0, GLOB_TILDE | GLOB_MARK | GLOB_BRACE, nil, &globResult)
         }
         defer { globfree(&globResult) }
         guard status == 0, let paths = globResult.gl_pathv else { return }
