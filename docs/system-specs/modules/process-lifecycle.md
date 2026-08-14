@@ -21,7 +21,7 @@
 - Delays are 1, 2, 4, 8, 16, 32, then 60 seconds for remaining attempts.
 - A successful complete profile resets the retry count.
 - Each retry creates a new control directory and clears prior runtime port allocations.
-- Stop, edit, delete, and quit terminate the master and every helper owned by that profile, cancel startup and pending retries, and clean owned sockets and control files.
+- Stop, delete, and quit terminate the master and every helper owned by that profile, cancel startup and pending retries, and clean owned sockets and control files. Editing an active profile terminates its current launch the same way and immediately starts a fresh launch from the replaced definition.
 - Group-only edits and group move, rename, or ungroup actions do not stop or launch SSH. They preserve stopped, starting, retrying, running, or failed phase and all process-owned runtime state.
 - Group Start All, Stop All, and Restart All snapshot the group's saved members at invocation and reuse the per-profile start and stop paths unchanged — including retry, generation, cleanup, and error behavior — so each member's outcome is independent and no second process manager or group runtime state exists.
 - Exhaustion changes the profile to failed and requires another user start.

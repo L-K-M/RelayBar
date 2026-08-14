@@ -39,6 +39,8 @@ struct RelayBarRootView: View {
                 TunnelEditorView(
                     tunnel: tunnel,
                     availableGroups: store.groupNames,
+                    isActive: tunnel.map { store.phase(for: $0).isLifecycleActive }
+                        ?? false,
                     onCancel: { screen = .list },
                     onSave: { savedTunnel in
                         if tunnel == nil {

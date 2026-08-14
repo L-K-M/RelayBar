@@ -618,7 +618,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertTrue(message.contains("fake forwarding failure"))
     }
 
-    func testTagMutationKeepsAutomaticRuntimePortAndConnectionEditStillStops() async throws {
+    func testTagMutationKeepsAutomaticRuntimePortAndConnectionEditRestarts() async throws {
         let fixture = try makeFakeSSHFixture()
         defer { fixture.cleanup() }
         let (defaults, suiteName) = makeIsolatedDefaults()
@@ -651,8 +651,52 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         connectionEdit.sshHost = "replacement-server"
         store.update(connectionEdit)
 
-        XCTAssertEqual(store.phase(for: profile), .stopped)
-        XCTAssertTrue(store.runtimePorts(for: profile).isEmpty)
+        XCTAssertEqual(store.phase(for: profile), .starting)
+        let restarted = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(restarted)
+        XCTAssertFalse(store.runtimePorts(for: profile).isEmpty)
+        let masterInvocations = parsedInvocations(
+            try String(contentsOf: fixture.logURL)
+        )
+        .filter { $0.contains("-M") }
+        XCTAssertEqual(masterInvocations.count, 2)
+        XCTAssertEqual(masterInvocations.last?.last, "replacement-server")
+        store.stop(profile)
+    }
+
+    func testEditingARunningProfileRestartsItWithTheNewDefinition() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let profile = makeLocalProfile()
+        store.add(profile)
+        store.start(profile)
+        let reachedRunning = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(reachedRunning)
+
+        var edited = store.tunnels[0]
+        edited.sshHost = "replacement.example.com"
+        store.update(edited)
+
+        XCTAssertEqual(store.phase(for: profile), .starting)
+        let restarted = await waitUntil {
+            store.phase(for: profile) == .running
+        }
+        XCTAssertTrue(restarted)
+        XCTAssertEqual(store.tunnels[0].sshHost, "replacement.example.com")
+        let masterInvocations = parsedInvocations(
+            try String(contentsOf: fixture.logURL)
+        )
+        .filter { $0.contains("-M") }
+        XCTAssertEqual(masterInvocations.count, 2)
+        XCTAssertEqual(masterInvocations.last?.last, "replacement.example.com")
+        store.stop(profile)
     }
 
     func testInstallsMixedRulesSeparatelyAndMapsAutomaticPorts() async throws {

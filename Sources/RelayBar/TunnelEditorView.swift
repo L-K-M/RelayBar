@@ -2,6 +2,9 @@ import SwiftUI
 
 struct TunnelEditorView: View {
     let tunnel: Tunnel?
+    /// Whether the edited profile currently owns lifecycle work. The save
+    /// action discloses that applying an active profile's changes restarts it.
+    let isActive: Bool
     let availableGroups: [String]
     let onCancel: () -> Void
     let onSave: (Tunnel) -> Void
@@ -29,10 +32,12 @@ struct TunnelEditorView: View {
     init(
         tunnel: Tunnel?,
         availableGroups: [String],
+        isActive: Bool = false,
         onCancel: @escaping () -> Void,
         onSave: @escaping (Tunnel) -> Void
     ) {
         self.tunnel = tunnel
+        self.isActive = isActive
         self.availableGroups = availableGroups
         self.onCancel = onCancel
         self.onSave = onSave
@@ -334,13 +339,18 @@ struct TunnelEditorView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
             Spacer()
-            Button(tunnel == nil ? "Add Profile" : "Save Changes", action: save)
+            Button(saveButtonTitle, action: save)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(!isValid)
         }
         .padding(.horizontal, 16)
         .frame(height: 56)
+    }
+
+    private var saveButtonTitle: String {
+        if tunnel == nil { return "Add Profile" }
+        return isActive ? "Save & Restart" : "Save Changes"
     }
 
     private var builtTunnel: Tunnel? {

@@ -4,6 +4,13 @@ Notable RelayBar changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Editing an active profile now restarts it with the new definition instead of
+  leaving it stopped. The editor's save button is labeled Save & Restart while
+  the profile owns lifecycle work, so the restart is disclosed at the decision
+  point.
+
 ### Fixed
 
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
