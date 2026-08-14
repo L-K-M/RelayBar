@@ -2728,10 +2728,25 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
             )
             XCTFail("Expected an unreadable listing capture to fail.")
         } catch let error as RemoteFileError {
-            XCTAssertEqual(error, .invalidListingEncoding)
+            XCTAssertEqual(error, .unreadableListing)
+            XCTAssertEqual(
+                error.errorDescription,
+                "RelayBar could not read the remote folder listing."
+            )
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testReadableEmptyListingStillReturnsAnEmptyFolder() async throws {
+        let service = makeFixtureService()
+
+        let entries = try await service.list(
+            server: makeFixtureServer(host: "empty"),
+            path: "/srv/app"
+        )
+
+        XCTAssertTrue(entries.isEmpty)
     }
 
     func testLossilyDecodesMalformedUTF8Diagnostics() async {

@@ -25,9 +25,15 @@ extension RemoteFileServing {
 /// Configuration is immutable after initialization. Each command owns separate
 /// process state, and the small boxes shared with callbacks synchronize access.
 final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
+    private enum CapturedStandardOutput {
+        case text(String)
+        case invalidUTF8
+        case unreadable
+    }
+
     private struct CommandResult {
         let status: Int32
-        let output: String?
+        let output: CapturedStandardOutput
         let error: String
         let exceededOutputLimit: Bool
     }
@@ -281,8 +287,14 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
         )
         try validate(result)
-        guard let output = result.output else {
+        let output: String
+        switch result.output {
+        case .text(let text):
+            output = text
+        case .invalidUTF8:
             throw RemoteFileError.invalidListingEncoding
+        case .unreadable:
+            throw RemoteFileError.unreadableListing
         }
         return (output, normalizedPath)
     }
@@ -863,11 +875,14 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private static func readUTF8String(
         at url: URL,
         maximumBytes: Int64
-    ) -> String? {
+    ) -> CapturedStandardOutput {
         guard let data = readData(at: url, maximumBytes: maximumBytes) else {
-            return nil
+            return .unreadable
         }
-        return String(data: data, encoding: .utf8)
+        guard let text = String(data: data, encoding: .utf8) else {
+            return .invalidUTF8
+        }
+        return .text(text)
     }
 
     private static func readDiagnosticString(
