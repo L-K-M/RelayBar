@@ -4,6 +4,15 @@ Notable RelayBar changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Profiles can be duplicated from the row menu. The copy gets fresh profile
+  and rule identities, lands right after the original, and starts stopped —
+  clone-then-tweak without retyping a connection.
+- Row menus can copy a profile as the `ssh` command RelayBar effectively
+  runs — same grammar Quick Add imports, so the command pastes straight back
+  or into a terminal.
+
 ### Fixed
 
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
