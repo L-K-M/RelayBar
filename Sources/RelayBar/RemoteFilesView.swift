@@ -611,7 +611,7 @@ private struct AddRemoteServerView: View {
                     .accessibilityHidden(true)
                 TextField("Development server", text: $name)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Saved host name")
+                    .accessibilityLabel("Name")
                     .accessibilityHint("Optional display name")
             }
 
@@ -621,7 +621,7 @@ private struct AddRemoteServerView: View {
                     .accessibilityHidden(true)
                 TextField("user@server", text: $sshHost)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Saved host SSH host")
+                    .accessibilityLabel("SSH host")
                     .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($isHostFocused)
                     .onSubmit(add)
