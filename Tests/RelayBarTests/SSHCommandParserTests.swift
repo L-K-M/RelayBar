@@ -608,6 +608,61 @@ final class TunnelGroupingTests: XCTestCase {
     }
 }
 
+final class TunnelDeletionPromptTests: XCTestCase {
+    func testStoppedProfilePromptIdentifiesProfileRouteAndHost() {
+        let tunnel = Tunnel(
+            name: "Admin",
+            localPort: 8_080,
+            destinationHost: "dashboard.internal",
+            destinationPort: 443,
+            sshHost: "bastion.example"
+        )
+
+        let prompt = TunnelDeletionPrompt(
+            tunnel: tunnel,
+            phase: .stopped,
+            runtimePorts: [:]
+        )
+
+        XCTAssertEqual(prompt.title, "Delete \u{201c}Admin\u{201d}?")
+        XCTAssertTrue(prompt.message.contains("SSH host: bastion.example"))
+        XCTAssertTrue(prompt.message.contains(tunnel.displaySummary))
+        XCTAssertTrue(prompt.message.contains("permanently removes the profile"))
+        XCTAssertFalse(prompt.message.contains("stops its active SSH connection"))
+    }
+
+    func testActiveProfilePromptWarnsThatDeletionStopsConnection() {
+        let tunnel = Tunnel(
+            name: "Database",
+            localPort: 5_432,
+            destinationHost: "database.internal",
+            destinationPort: 5_432,
+            sshHost: "production-bastion"
+        )
+
+        for phase in activePhases {
+            let prompt = TunnelDeletionPrompt(
+                tunnel: tunnel,
+                phase: phase,
+                runtimePorts: [:]
+            )
+
+            XCTAssertTrue(
+                prompt.message.contains("stops its active SSH connection"),
+                "Expected an active warning for \(phase)"
+            )
+        }
+    }
+
+    private var activePhases: [TunnelPhase] {
+        [
+            .starting,
+            .retrying(attempt: 1, maxAttempts: 3, delay: 2, message: "retry"),
+            .running
+        ]
+    }
+}
+
 private struct LegacyTunnel: Codable {
     let id: UUID
     let name: String
