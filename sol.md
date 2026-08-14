@@ -1,10 +1,16 @@
 # RelayBar comprehensive review
 
 Audit date: 2026-08-14
-Audited revision: `1faa8d9` (`origin/main` at the start of the review)
+Audited revision: `1faa8d9` (`origin/main` at the start of the review;
+[observed green CI run](https://github.com/L-K-M/RelayBar/actions/runs/31840652766))
 Scope: application source, tests, fixtures, build and release automation, system and
 task specifications, security and privacy documentation, committed screenshots,
 assets, and recent repository history.
+
+Document lifecycle: this is the review and implementation ledger requested for the
+current pass. Completed entries will not be copied into the durable `ANALYSIS.md`
+backlog; remaining work will be consolidated there after the implementation PRs
+reach steady state.
 
 ## Executive assessment
 
@@ -378,7 +384,7 @@ Acceptance:
 - No claim implies that Sparkle, network access, automatic installation, or telemetry
   is absent/present contrary to source.
 
-## High-priority next work
+## Next work
 
 ### RB-010 — Coordinate, await, and safely reap every normal shutdown
 
@@ -790,8 +796,8 @@ Mac reproduction:
 
 ## Product and delight backlog
 
-These ideas fit the product, but each should begin with a prototype or short task spec
-rather than direct implementation.
+These ideas fit the product and are the review's `Explore` items. Each should begin
+with a prototype or short task spec rather than direct implementation.
 
 ### Tunnel operations
 
