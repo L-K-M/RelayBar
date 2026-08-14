@@ -1,6 +1,6 @@
 # Task 039 — Confirm Profile Deletion
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-08-14
 
@@ -34,3 +34,18 @@ forwarding profile or silently stopping its active SSH connection.
 - The confirmation identifies the profile and route, and active lifecycle
   phases include the connection-stopping warning.
 - Relevant automated checks and `git diff --check` pass.
+
+## Evidence
+
+- Source inspection confirmed that **Delete\u{2026}** only presents the dialog,
+  Cancel has no action, and the destructive confirmation owns the sole
+  production call to `TunnelStore.delete`. Prompt tests cover every current
+  lifecycle phase and compare the warning directly with `isLifecycleActive`.
+- [macOS CI](https://github.com/L-K-M/RelayBar/actions/runs/31846909116)
+  passed the warnings-as-errors Swift suite and unsigned Release Xcode build on
+  commit `c8fbc9e`.
+- The [follow-up GLM run](https://github.com/L-K-M/RelayBar/actions/runs/31846906411)
+  exhausted all three Z.ai requests with HTTP 429 and generated no review. The
+  earlier actionable feedback was addressed in `c8fbc9e`; this remaining
+  result is an external reviewer-availability limitation.
+- Static acceptance assertions and `git diff --check` passed on 2026-08-14.
