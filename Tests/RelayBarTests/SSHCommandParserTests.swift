@@ -621,8 +621,7 @@ final class TunnelRowTextTests: XCTestCase {
         )
 
         XCTAssertEqual(status, "Waiting to retry · Connection timed out.")
-        XCTAssertFalse(status.contains("60"))
-        XCTAssertFalse(status.contains("in "))
+        XCTAssertFalse(status.hasPrefix("Retrying in"))
     }
 
     func testBrowserHelpNamesTheDefaultBrowserForEveryPhase() {
