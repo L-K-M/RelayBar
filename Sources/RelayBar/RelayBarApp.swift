@@ -349,7 +349,13 @@ final class RelayBarAppDelegate:
             !PopoverToggleGuard.shouldSuppressToggle(
                 eventType: NSApp.currentEvent?.type
             )
-                || popoverToggleGuard.shouldPresent()
+                // Short-circuit is load-bearing: shouldPresent() consumes
+                // the recorded close, so only mouse-up toggles may call it;
+                // other toggles must present without disarming the guard.
+                || popoverToggleGuard.shouldPresent(
+                    now: NSApp.currentEvent?.timestamp
+                        ?? ProcessInfo.processInfo.systemUptime
+                )
         {
             presentPopover()
         }
@@ -401,7 +407,13 @@ final class RelayBarAppDelegate:
         // icon click. Unknown-event closes (app deactivation) skip the
         // hit-test and record, the safer default.
         if NSApp.currentEvent != nil, !isPointerOverStatusItem() { return }
-        popoverToggleGuard.recordClose()
+        // Record in the gesture's own clock domain: NSEvent timestamps and
+        // system uptime share the monotonic boot clock, so the toggle's
+        // event timestamp measures the actual click hold time.
+        popoverToggleGuard.recordClose(
+            uptime: NSApp.currentEvent?.timestamp
+                ?? ProcessInfo.processInfo.systemUptime
+        )
     }
 
     private func isPointerOverStatusItem() -> Bool {
@@ -754,8 +766,9 @@ final class RelayBarAppDelegate:
 /// clock, not wall-clock time, so an NTP step cannot distort the window.
 struct PopoverToggleGuard {
     /// The mouse-down close and mouse-up action of one click arrive well
-    /// inside this window; two deliberate clicks do not.
-    static let suppressionWindow: TimeInterval = 0.35
+    /// inside this window, and deliberate clicks elsewhere no longer arm the
+    /// guard, so slow click-and-hold releases cost nothing to cover.
+    static let suppressionWindow: TimeInterval = 0.6
 
     /// Only a close caused by a left mouse-down delivered outside the
     /// popover can be the front half of the click whose mouse-up runs the
