@@ -1,6 +1,6 @@
 # Task 037 — Atomic Forwarding Control Paths
 
-Status: In Progress
+Status: Complete
 
 ## Outcome
 
@@ -29,3 +29,17 @@ handling.
 - Both SSH master owners use the shared primitive and validate cleanup ownership.
 - Relevant tests and the warnings-as-errors build pass.
 - `git diff --check` passes.
+
+## Evidence
+
+- [macOS CI](https://github.com/L-K-M/RelayBar/actions/runs/31847098674)
+  passed the full test suite, warnings-as-errors checks, and unsigned Release
+  build for the final implementation commit on 2026-08-14.
+- The [follow-up GLM 5.3 review](https://github.com/L-K-M/RelayBar/actions/runs/31847097079)
+  completed successfully with no actionable suggestion. Its boundary-coverage
+  question was verified against the shared-helper tests for the exact budget
+  and first byte over, plus the forwarding-owner residue regression.
+- Source review confirmed that both forwarding and Remote Files SSH masters use
+  `SSHControlPath.create` and validate cleanup ownership. `git diff --check
+  origin/main...HEAD` passed on 2026-08-14. Swift and Xcode were unavailable on
+  the Linux workspace, so macOS CI is the build and test authority.
