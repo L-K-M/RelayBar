@@ -295,24 +295,27 @@ final class RelayBarAppDelegate:
             keyEquivalent: "Z"
         )
         editMenu.addItem(.separator())
+        // `NSText` is where AppKit declares these four, so `#selector` can name
+        // them. Undo and redo above have no declaration to point at — they only
+        // ever travel the responder chain — so they stay string selectors.
         editMenu.addItem(
             withTitle: "Cut",
-            action: Selector(("cut:")),
+            action: #selector(NSText.cut(_:)),
             keyEquivalent: "x"
         )
         editMenu.addItem(
             withTitle: "Copy",
-            action: Selector(("copy:")),
+            action: #selector(NSText.copy(_:)),
             keyEquivalent: "c"
         )
         editMenu.addItem(
             withTitle: "Paste",
-            action: Selector(("paste:")),
+            action: #selector(NSText.paste(_:)),
             keyEquivalent: "v"
         )
         editMenu.addItem(
             withTitle: "Select All",
-            action: Selector(("selectAll:")),
+            action: #selector(NSText.selectAll(_:)),
             keyEquivalent: "a"
         )
         editItem.submenu = editMenu
