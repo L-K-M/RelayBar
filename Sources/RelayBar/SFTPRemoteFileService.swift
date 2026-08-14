@@ -347,9 +347,6 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             guard fileManager.fileExists(atPath: partial.path) else {
                 throw RemoteFileError.missingDownload
             }
-            // The polling loop secured the payload only while it ran; lock
-            // the finished payload down before it becomes the user's file.
-            securePartialPermissions(at: partial)
 
             if fileManager.fileExists(atPath: destination.path) {
                 _ = try fileManager.replaceItemAt(
@@ -360,6 +357,10 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             } else {
                 try fileManager.moveItem(at: partial, to: destination)
             }
+            // replaceItemAt keeps the *replaced* item's attributes, so the
+            // payload must be locked down here, not at the staging path:
+            // owner-only, as the staging directory's 0700 already promised.
+            securePartialPermissions(at: destination)
             try? fileManager.removeItem(at: stagingDirectory)
         } catch {
             if ownsStagingDirectory {
