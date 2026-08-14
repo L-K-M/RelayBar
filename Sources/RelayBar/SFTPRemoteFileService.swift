@@ -546,21 +546,24 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                         {
                             outputLimitBox.markExceeded()
                         }
-                        let output = Self.readUTF8String(
+                        let capturedOutput = Self.readUTF8String(
                             at: outputURL,
                             maximumBytes: outputLimit
                         )
-                        let error = Self.readDiagnosticString(
+                        let capturedError = Self.readDiagnosticString(
                             at: errorURL,
                             maximumBytes: errorLimit
                         )
+                        let exceededOutputLimit = outputLimitBox.hasExceeded
+                            || capturedOutput.exceededLimit
+                            || capturedError.exceededLimit
                         try? FileManager.default.removeItem(at: temporaryDirectory)
                         continuation.resume(
                             returning: CommandResult(
                                 status: status,
-                                output: output,
-                                error: error,
-                                exceededOutputLimit: outputLimitBox.hasExceeded
+                                output: capturedOutput.output,
+                                error: capturedError.text,
+                                exceededOutputLimit: exceededOutputLimit
                             )
                         )
                     }
@@ -875,27 +878,33 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private static func readUTF8String(
         at url: URL,
         maximumBytes: Int64
-    ) -> CapturedStandardOutput {
-        guard let data = readData(at: url, maximumBytes: maximumBytes) else {
-            return .unreadable
+    ) -> (output: CapturedStandardOutput, exceededLimit: Bool) {
+        guard let capture = readData(at: url, maximumBytes: maximumBytes) else {
+            return (.unreadable, false)
         }
-        guard let text = String(data: data, encoding: .utf8) else {
-            return .invalidUTF8
+        guard let text = String(data: capture.data, encoding: .utf8) else {
+            return (.invalidUTF8, capture.exceededLimit)
         }
-        return .text(text)
+        return (.text(text), capture.exceededLimit)
     }
 
     private static func readDiagnosticString(
         at url: URL,
         maximumBytes: Int64
-    ) -> String {
-        guard let data = readData(at: url, maximumBytes: maximumBytes) else {
-            return ""
+    ) -> (text: String, exceededLimit: Bool) {
+        guard let capture = readData(at: url, maximumBytes: maximumBytes) else {
+            return ("", false)
         }
-        return String(decoding: data, as: UTF8.self)
+        return (
+            String(decoding: capture.data, as: UTF8.self),
+            capture.exceededLimit
+        )
     }
 
-    private static func readData(at url: URL, maximumBytes: Int64) -> Data? {
+    private static func readData(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> (data: Data, exceededLimit: Bool)? {
         guard
             maximumBytes > 0,
             maximumBytes <= Int64(Int.max),
@@ -905,7 +914,14 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
         defer { try? handle.close() }
         do {
-            return try handle.read(upToCount: Int(maximumBytes)) ?? Data()
+            let data = try handle.read(upToCount: Int(maximumBytes)) ?? Data()
+            let exceededLimit: Bool
+            if data.count == Int(maximumBytes) {
+                exceededLimit = try handle.read(upToCount: 1)?.isEmpty == false
+            } else {
+                exceededLimit = false
+            }
+            return (data, exceededLimit)
         } catch {
             return nil
         }

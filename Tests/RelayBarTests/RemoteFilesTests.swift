@@ -2731,7 +2731,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
             XCTAssertEqual(error, .unreadableListing)
             XCTAssertEqual(
                 error.errorDescription,
-                "RelayBar could not read the remote folder listing."
+                "RelayBar could not read the SFTP response for this folder."
             )
         } catch {
             XCTFail("Unexpected error: \(error)")
@@ -2781,6 +2781,26 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
                 path: "/srv/app"
             )
             XCTFail("Expected the diagnostic limit to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testOutputLimitWinsWhenTruncationSplitsUTF8() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the output limit to fail before UTF-8 validation.")
         } catch let error as RemoteFileError {
             XCTAssertEqual(error, .responseTooLarge)
         } catch {

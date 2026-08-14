@@ -23,6 +23,8 @@ valid UTF-8 instead of presenting it as an empty folder.
 - Surface invalid successful listing output as a typed user-facing error.
 - Decode bounded standard error with replacement characters before existing
   diagnostic normalization.
+- Confirm each capture limit with a one-byte post-cap probe before interpreting
+  UTF-8 so truncation cannot be mistaken for an encoding failure.
 - Cover invalid listing bytes, actionable malformed diagnostics, and the
   diagnostic byte limit.
 
