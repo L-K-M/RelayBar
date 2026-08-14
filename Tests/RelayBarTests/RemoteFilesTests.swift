@@ -3191,13 +3191,13 @@ final class RemoteFilesModelTests: XCTestCase {
     func testInitialOpenCanBeCancelledWithoutLosingLauncherInput() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
-        service.suspendedListPaths.insert("/srv/app")
+        service.deferredLoadPaths.insert("/srv/app")
         let model = RemoteFilesModel(tunnels: [tunnel], service: service)
         model.remotePath = "/srv/app"
         let selectedServerID = model.selectedServerID
 
         model.openRemotePath()
-        try await waitUntil { service.listRequests.count == 1 }
+        try await waitUntil { service.pendingDeferredLoadPathCount == 1 }
 
         XCTAssertEqual(model.screen, .launcher)
         XCTAssertTrue(model.isLoading)
@@ -3215,10 +3215,27 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.selectedServerID, selectedServerID)
         XCTAssertEqual(service.shutdownCount, 1)
 
+        service.failDeferredLoadPath(
+            "/srv/app",
+            with: .commandFailed("Late failure")
+        )
+        try await waitUntil { service.completedLoadPathRequestCount == 1 }
         await Task.yield()
-        XCTAssertNil(model.errorMessage, "A cancelled request must not publish an error.")
+
+        XCTAssertNil(
+            model.errorMessage,
+            "A late failure from a cancelled request must not publish an error."
+        )
         XCTAssertEqual(model.screen, .launcher)
         XCTAssertEqual(model.servers.first?.source, .forwardingProfile)
+
+        service.deferredLoadPaths.remove("/srv/app")
+        service.pathResults["/srv/app"] = .directory([])
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        XCTAssertEqual(service.loadPathRequests.count, 2)
+        XCTAssertEqual(model.currentPath, "/srv/app")
     }
 
     func testDirectMarkdownPathOpensPreviewAndPreservesBackPath() async throws {
@@ -4027,6 +4044,11 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         var pathResults: [String: RemotePathLoadResult] = [:]
         var errors: [String: Error] = [:]
         var suspendedListPaths: Set<String> = []
+        var deferredLoadPaths: Set<String> = []
+        var deferredLoadPathContinuations: [
+            String: CheckedContinuation<RemotePathLoadResult, Error>
+        ] = [:]
+        var completedLoadPathRequestCount = 0
         var listRequests: [ListRequest] = []
         var loadPathRequests: [ListRequest] = []
         var shutdownCount = 0
@@ -4059,6 +4081,19 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     var suspendedListPaths: Set<String> {
         get { withLock { state.suspendedListPaths } }
         set { withLock { state.suspendedListPaths = newValue } }
+    }
+
+    var deferredLoadPaths: Set<String> {
+        get { withLock { state.deferredLoadPaths } }
+        set { withLock { state.deferredLoadPaths = newValue } }
+    }
+
+    var pendingDeferredLoadPathCount: Int {
+        withLock { state.deferredLoadPathContinuations.count }
+    }
+
+    var completedLoadPathRequestCount: Int {
+        withLock { state.completedLoadPathRequestCount }
     }
 
     var listRequests: [ListRequest] {
@@ -4124,14 +4159,37 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     }
 
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
-        let resolution = withLock {
+        let request = withLock {
             state.loadPathRequests.append(ListRequest(server: server, path: path))
-            return state.pathResults[path]
+            return (
+                resolution: state.pathResults[path],
+                isDeferred: state.deferredLoadPaths.contains(path)
+            )
         }
-        if let resolution {
+        defer {
+            withLock { state.completedLoadPathRequestCount += 1 }
+        }
+        if request.isDeferred {
+            return try await withCheckedThrowingContinuation { continuation in
+                withLock {
+                    state.deferredLoadPathContinuations[path] = continuation
+                }
+            }
+        }
+        if let resolution = request.resolution {
             return resolution
         }
         return .directory(try await list(server: server, path: path))
+    }
+
+    func failDeferredLoadPath(
+        _ path: String,
+        with error: RemoteFileError
+    ) {
+        let continuation = withLock {
+            state.deferredLoadPathContinuations.removeValue(forKey: path)
+        }
+        continuation?.resume(throwing: error)
     }
 
     func shutdown() {

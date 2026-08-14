@@ -299,6 +299,8 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     var canCancelInitialOpen: Bool {
+        // `isLoading` is set on the launcher only by the explicit initial
+        // path open; browser loads use the same flag on `.browser`.
         screen == .launcher && isLoading
     }
 

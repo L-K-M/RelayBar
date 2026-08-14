@@ -20,7 +20,9 @@ without adding search, indexing, mounting, or editing.
   progress label and offers **Cancel** with the standard cancel keyboard action.
   Cancelling retires the pending load and owned SSH session immediately, stays
   on the launcher, preserves the entered path and server selection, and neither
-  reports an error nor records a recent connection.
+  reports an error nor records a recent connection. A delayed success or
+  failure from the cancelled generation is discarded, and a later explicit
+  Open starts a clean request.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.
 - When the launcher path identifies a supported image or Markdown file, RelayBar
   opens the existing bounded preview with that exact file selected. Back returns

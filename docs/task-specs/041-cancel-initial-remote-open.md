@@ -32,5 +32,6 @@ may otherwise wait up to 120 seconds for SSH readiness.
   readiness timeout.
 - Entered path and server selection survive cancellation.
 - A cancelled completion cannot navigate, report an error, or record a recent.
+- A new Open after cancellation starts cleanly and can succeed.
 - The service shutdown path runs so owned SSH/SFTP processes are retired.
 - Relevant automated checks and `git diff --check` pass.
