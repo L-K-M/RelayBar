@@ -4,7 +4,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 
 ## Contract
 
-- Users can add, edit, delete, start, and stop profiles.
+- Users can add, edit, duplicate, delete, start, and stop profiles. Duplicating inserts an independent copy with fresh profile and rule identities directly after the original; an explicitly named profile's copy gains a " copy" suffix, and the copy starts stopped.
 - Each profile may have one optional group tag. The editor places a native **Group · Optional** picker below Name, and Quick Add leaves the selected group unchanged.
 - When every profile is ungrouped, the saved list keeps its original flat presentation. Once any profile has a group, named sections use localized standard ordering, preserve saved order within each section, and place **Ungrouped** last when needed.
 - Row menus can move a profile to Ungrouped, an existing group, or a new inline-created group. Named section menus can rename the group or ungroup every member; no separate group records are stored.
@@ -23,6 +23,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
   profile-specific accessibility name.
 - A retrying row reports that it is waiting to retry and keeps its attempt badge;
   it does not present the stored retry delay as a live countdown.
+- Every row menu can copy the profile's forwarding-only `ssh` invocation — the same grammar Quick Add imports, with TCP binds named explicitly and unsafe characters backslash-escaped — so the copied command pastes back into Quick Add unchanged and runs in a shell.
 - Derived sections are computed once per change to the saved list rather than per view evaluation, so phase and runtime-port updates do not rebuild them.
 - Editing an active profile stops it before replacing its definition.
 - Changing only a group tag, moving a profile, renaming a group, or ungrouping members is metadata-only and preserves process phase, retries, pending browser work, runtime ports, and process ownership.

@@ -163,6 +163,7 @@ private struct TunnelListView: View {
                 store.openInBrowser(tunnel, ruleID: $0)
             },
             onEdit: { onEdit(tunnel) },
+            onDuplicate: { store.duplicate(tunnel) },
             onMoveToGroup: { store.move(tunnel, toGroup: $0) },
             onDelete: { store.delete(tunnel) }
         )
@@ -319,6 +320,7 @@ private struct TunnelRow: View {
     let onOpen: () -> Void
     let onOpenRule: (UUID) -> Void
     let onEdit: () -> Void
+    let onDuplicate: () -> Void
     let onMoveToGroup: (String?) -> Void
     let onDelete: () -> Void
 
@@ -418,6 +420,9 @@ private struct TunnelRow: View {
                         }
                     }
                     Divider()
+                    Button("Copy SSH Command", systemImage: "command") {
+                        copy(SSHCommandFormatter.command(for: tunnel))
+                    }
                     Menu("Move to Group") {
                         Button {
                             onMoveToGroup(nil)
@@ -443,6 +448,7 @@ private struct TunnelRow: View {
                         }
                     }
                     Button("Edit", systemImage: "pencil", action: onEdit)
+                    Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                     Divider()
                     Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
                 } label: {
