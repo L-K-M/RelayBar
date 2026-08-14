@@ -225,11 +225,26 @@ final class TunnelStore: ObservableObject {
         }
         let trimmedName = source.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedName.isEmpty {
-            copy.name = "\(trimmedName) copy"
+            copy.name = availableDuplicatedName(for: trimmedName)
         }
         tunnels.insert(copy, at: index + 1)
         save()
         return copy
+    }
+
+    /// Finder-style copy naming: the first copy is "Web copy", and repeated
+    /// duplicates gain " copy 2", " copy 3", … instead of colliding.
+    private func availableDuplicatedName(for base: String) -> String {
+        let taken = Set(
+            tunnels.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+        )
+        var candidate = "\(base) copy"
+        var suffix = 2
+        while taken.contains(candidate) {
+            candidate = "\(base) copy \(suffix)"
+            suffix += 1
+        }
+        return candidate
     }
 
     func toggle(_ tunnel: Tunnel) {

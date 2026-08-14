@@ -276,6 +276,29 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(copy.displayName, store.tunnels[0].displayName)
     }
 
+    /// Task 039. Repeated duplicates gain Finder-style numbered names
+    /// instead of colliding on one " copy" row.
+    func testRepeatedDuplicatesGainNumberedNames() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        let profile = makeGroupedProfile(name: "Web", port: 43_252, group: nil)
+        store.add(profile)
+
+        let firstCopy = try XCTUnwrap(store.duplicate(profile))
+        let secondCopy = try XCTUnwrap(store.duplicate(profile))
+        let copyOfCopy = try XCTUnwrap(store.duplicate(firstCopy))
+
+        XCTAssertEqual(firstCopy.name, "Web copy")
+        XCTAssertEqual(secondCopy.name, "Web copy 2")
+        XCTAssertEqual(copyOfCopy.name, "Web copy copy")
+        // Each copy lands directly after its own source.
+        XCTAssertEqual(
+            store.tunnels.map(\.name),
+            ["Web", "Web copy 2", "Web copy", "Web copy copy"]
+        )
+    }
+
     /// Task 009. `grouping` is cached so the list body does not rebuild sections
     /// on every phase publish. Every mutation path must invalidate it.
     func testGroupingCacheInvalidatesOnEveryMutationPath() throws {
@@ -295,6 +318,17 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         renamedDashboard.name = "Renamed"
         store.update(renamedDashboard)
         XCTAssertEqual(store.grouping.sections.first?.tunnels.first?.name, "Renamed")
+
+        let duplicated = try XCTUnwrap(store.duplicate(store.tunnels[0]))
+        XCTAssertEqual(
+            store.grouping.sections.first?.tunnels.map(\.name),
+            ["Renamed", "Renamed copy"]
+        )
+        store.delete(duplicated)
+        XCTAssertEqual(
+            store.grouping.sections.first?.tunnels.map(\.name),
+            ["Renamed"]
+        )
 
         store.move(store.tunnels[0], toGroup: "Personal")
         XCTAssertEqual(store.grouping.groupNames, ["Personal"])
