@@ -393,6 +393,9 @@ private struct TunnelRow: View {
                         }
                     }
                     Divider()
+                    Button("Copy SSH Command", systemImage: "command") {
+                        copy(SSHCommandFormatter.command(for: tunnel))
+                    }
                     Menu("Move to Group") {
                         Button {
                             onMoveToGroup(nil)

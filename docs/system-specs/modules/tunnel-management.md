@@ -18,6 +18,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 - Remote TCP port `0` means Automatic. Its allocated port is runtime-only, is shown and copyable while running, and is cleared on stop or restart.
 - Profile-level Unix controls store a validated octal bind mask and whether a retry may remove a stale local socket whose type, device, and inode RelayBar recorded during the current app run. RelayBar never replaces an unowned path; remote socket cleanup remains server-controlled.
 - Single Local TCP profiles retain the browser shortcut. Menus otherwise expose only type-correct copy or local-socket reveal actions. Reveal is offered from the rule's own shape rather than a filesystem probe, and falls back to the enclosing folder when the socket is already gone.
+- Every row menu can copy the profile's forwarding-only `ssh` invocation — the same grammar Quick Add imports, with TCP binds named explicitly and unsafe characters backslash-escaped — so the copied command pastes back into Quick Add unchanged and runs in a shell.
 - Derived sections are computed once per change to the saved list rather than per view evaluation, so phase and runtime-port updates do not rebuild them.
 - Editing an active profile stops it before replacing its definition.
 - Changing only a group tag, moving a profile, renaming a group, or ungrouping members is metadata-only and preserves process phase, retries, pending browser work, runtime ports, and process ownership.
