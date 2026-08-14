@@ -44,4 +44,6 @@ update behavior, network contact, and dependencies accurately.
 - The active-task index names Tasks 032 and 034, which are the two specs still
   marked `In Progress`.
 - `git diff --check` passed. Swift and Xcode are unavailable in this Linux
-  environment; no updater behavior or executable code path changed.
+  environment; the only executable-code changes are the visible and
+  accessibility-facing Settings label strings, and no updater behavior or
+  logic changed.
