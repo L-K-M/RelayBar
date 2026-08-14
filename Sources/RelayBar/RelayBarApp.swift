@@ -383,7 +383,16 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
-        popoverToggleGuard.recordClose()
+        // Only a close caused by an outside mouse-down can be the front half
+        // of the click whose mouse-up runs the toggle action; Escape,
+        // in-popover, and programmatic closes never race it, so they must
+        // not disarm a deliberate following click. An unknown event (for
+        // example a close driven by app deactivation) records, matching the
+        // guard's purpose of never re-opening over a real icon click.
+        let eventType = NSApp.currentEvent?.type
+        if eventType == nil || eventType == .leftMouseDown || eventType == .rightMouseDown {
+            popoverToggleGuard.recordClose()
+        }
     }
 
     /// An agent app has no menu bar of its own, so without a main menu the
@@ -726,8 +735,8 @@ final class RelayBarAppDelegate:
 /// on mouse-up. Reading `isShown` in the action therefore always sees
 /// "closed" and would immediately re-present the popover, making the icon
 /// unable to dismiss it. The guard treats a toggle that lands inside a short
-/// window after any close as the tail of that same click and swallows it
-/// once.
+/// window after a close caused by an outside mouse-down as the tail of that
+/// same click and swallows it once.
 struct PopoverToggleGuard {
     /// The mouse-down close and mouse-up action of one click arrive well
     /// inside this window; two deliberate clicks do not.
