@@ -76,6 +76,10 @@ struct StatusItemSummary: Equatable {
         "RelayBar — \(accessibilityValue)"
     }
 
+    func requiresImageReplacement(comparedTo previous: StatusItemSummary) -> Bool {
+        state != previous.state
+    }
+
     private var activeDescription: String {
         activeCount == 1 ? "1 tunnel active" : "\(activeCount) tunnels active"
     }
@@ -233,7 +237,9 @@ final class RelayBarAppDelegate:
             }
 
             if state == .issue {
-                NSGraphicsContext.current?.compositingOperation = .destinationOut
+                let context = NSGraphicsContext.current
+                context?.saveGraphicsState()
+                context?.compositingOperation = .destinationOut
                 let stem = NSBezierPath()
                 stem.move(to: NSPoint(x: 9, y: 6.8))
                 stem.line(to: NSPoint(x: 9, y: 12.2))
@@ -247,6 +253,7 @@ final class RelayBarAppDelegate:
                 )
                 NSColor.black.setFill()
                 dot.fill()
+                context?.restoreGraphicsState()
                 return true
             }
 
@@ -266,11 +273,17 @@ final class RelayBarAppDelegate:
             arrows.lineJoinStyle = .round
 
             // Knock the arrows out of the filled disc so they stay legible.
-            if state == .active {
-                NSGraphicsContext.current?.compositingOperation = .destinationOut
+            let context = NSGraphicsContext.current
+            let knocksOutArrows = state == .active
+            if knocksOutArrows {
+                context?.saveGraphicsState()
+                context?.compositingOperation = .destinationOut
             }
             NSColor.black.setStroke()
             arrows.stroke()
+            if knocksOutArrows {
+                context?.restoreGraphicsState()
+            }
             return true
         }
         image.isTemplate = true
@@ -292,15 +305,21 @@ final class RelayBarAppDelegate:
     private func refreshStatusItemImage() {
         let summary = currentStatusItemSummary
         guard summary != statusItemSummary else { return }
-        let previousState = statusItemSummary.state
+        let previousSummary = statusItemSummary
+        let stateChanged = summary.requiresImageReplacement(
+            comparedTo: previousSummary
+        )
         statusItemSummary = summary
 
         guard let button = statusItem?.button else { return }
-        if summary.state != previousState {
+        if stateChanged {
             button.image = Self.statusBarImage(state: summary.state)
         }
         button.setAccessibilityValue(summary.accessibilityValue)
         button.toolTip = summary.toolTip
+        if stateChanged {
+            NSAccessibility.post(element: button, notification: .valueChanged)
+        }
     }
 
     private var currentStatusItemSummary: StatusItemSummary {

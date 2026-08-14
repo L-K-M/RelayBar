@@ -13,7 +13,8 @@ give assistive technology an accurate compact status summary.
 
 - Retain one named, position-preserving `NSStatusItem` for the app lifetime.
 - Use static monochrome template symbols with a drawn fallback.
-- Do not animate, notify, or depend on color for failure attention.
+- Do not animate, post user notifications, or depend on color for failure
+  attention.
 
 ## Work
 
@@ -22,6 +23,8 @@ give assistive technology an accurate compact status summary.
 - Add a distinct issue symbol and equivalent drawn fallback.
 - Update the button accessibility value and native help whenever state or
   counts change.
+- Post one accessibility value-change notification on state transitions, not
+  routine count-only updates.
 - Cover state priority, counts, and pluralized accessibility copy with tests.
 - Update the application-shell system contract.
 

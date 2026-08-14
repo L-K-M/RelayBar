@@ -51,6 +51,15 @@ final class StatusItemSummaryTests: XCTestCase {
             "RelayBar — All tunnels stopped"
         )
     }
+
+    func testImageReplacementDependsOnStateRatherThanCounts() {
+        let oneActive = StatusItemSummary(activeCount: 1, failedCount: 0)
+        let twoActive = StatusItemSummary(activeCount: 2, failedCount: 0)
+        let issue = StatusItemSummary(activeCount: 1, failedCount: 1)
+
+        XCTAssertFalse(twoActive.requiresImageReplacement(comparedTo: oneActive))
+        XCTAssertTrue(issue.requiresImageReplacement(comparedTo: twoActive))
+    }
 }
 
 /// The literal key text matters more than usual here: AppKit owns these keys,

@@ -33,7 +33,9 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The image-only status button retains the accessibility title **RelayBar** and
   exposes a live value with correctly pluralized active and failed counts. The
   same summary is available as native help. Both update even when a count
-  changes without changing the icon state.
+  changes without changing the icon state. VoiceOver receives a value-change
+  notification only when the state changes, so a new issue is discoverable
+  without announcing routine count-only updates.
 - The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
