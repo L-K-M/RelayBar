@@ -6,6 +6,15 @@ Notable RelayBar changes are recorded here.
 
 ### Fixed
 
+- Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
+  ssh exit when a forward cannot be established — it runs nothing and reads
+  nothing — and RelayBar already sets it on every connection it launches, so
+  rejecting it refused an option the app itself depends on.
+- An option that is merely outside the preserved set now reports that it is not
+  imported, instead of claiming it can execute commands or read arbitrary
+  files. That claim was untrue of every harmless option that simply was not
+  listed.
+
 - The menu-bar icon no longer disappears after a launch. The item is now an
   AppKit `NSStatusItem` the application delegate creates and holds, under the
   explicit autosave name `com.lx2026.RelayBar.status`, so RelayBar can assert

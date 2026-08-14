@@ -18,6 +18,7 @@ enum SSHCommandParser {
         case missingHost
         case missingOptionValue(String)
         case unsupportedOption(String)
+        case unsupportedOpenSSHOption(String)
         case unsafeOption(String)
         case conflictingOption(String)
         case remoteCommand
@@ -40,6 +41,8 @@ enum SSHCommandParser {
                 "\(option) needs a value."
             case .unsupportedOption(let option):
                 "\(option) is not supported by the quick importer."
+            case .unsupportedOpenSSHOption(let option):
+                "\(option) is not one of the connection options RelayBar imports."
             case .unsafeOption(let option):
                 "\(option) is blocked because it can execute commands or access arbitrary files."
             case .conflictingOption(let option):
@@ -213,8 +216,12 @@ enum SSHCommandParser {
                 throw ParseError.unsafeOption(original)
             }
         default:
+            // Missing from the allowlist, or malformed. Either way this is a
+            // plain "RelayBar does not import that" outcome; claiming the
+            // option can run commands or read files says something untrue
+            // about every harmless option that simply is not listed.
             guard SSHArgumentPolicy.isSafeOpenSSHOption(value) else {
-                throw ParseError.unsafeOption(original)
+                throw ParseError.unsupportedOpenSSHOption(original)
             }
             extraArguments.append(contentsOf: ["-o", value])
         }

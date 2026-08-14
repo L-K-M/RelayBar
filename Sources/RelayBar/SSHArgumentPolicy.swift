@@ -11,6 +11,11 @@ enum SSHArgumentPolicy {
         "compression",
         "connectionattempts",
         "connecttimeout",
+        // A boolean that makes ssh exit when a forward cannot be established.
+        // It runs nothing and reads nothing, and RelayBar already sets it on
+        // every connection it launches, so rejecting it on import refused an
+        // option the app itself relies on.
+        "exitonforwardfailure",
         "hostkeyalgorithms",
         "identitiesonly",
         "ipqos",
