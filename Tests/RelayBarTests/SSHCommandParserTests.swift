@@ -608,6 +608,40 @@ final class TunnelGroupingTests: XCTestCase {
     }
 }
 
+final class TunnelRowTextTests: XCTestCase {
+    func testRetryStatusDoesNotPresentStoredDelayAsLiveCountdown() {
+        let status = TunnelRowText.status(
+            for: .retrying(
+                attempt: 2,
+                maxAttempts: 5,
+                delay: 60,
+                message: "Connection timed out."
+            ),
+            sshHost: "unused"
+        )
+
+        XCTAssertEqual(status, "Waiting to retry · Connection timed out.")
+        XCTAssertFalse(status.contains("60"))
+        XCTAssertFalse(status.contains("in "))
+    }
+
+    func testBrowserHelpNamesTheDefaultBrowserForEveryPhase() {
+        let phases: [TunnelPhase] = [
+            .stopped,
+            .starting,
+            .retrying(attempt: 1, maxAttempts: 5, delay: 1, message: "retry"),
+            .running,
+            .failed("failed")
+        ]
+
+        for phase in phases {
+            XCTAssertTrue(
+                TunnelRowText.browserHelp(for: phase).contains("default browser")
+            )
+        }
+    }
+}
+
 private struct LegacyTunnel: Codable {
     let id: UUID
     let name: String

@@ -286,6 +286,30 @@ private struct TunnelListView: View {
     }
 }
 
+enum TunnelRowText {
+    static func status(for phase: TunnelPhase, sshHost: String) -> String {
+        switch phase {
+        case .failed(let message):
+            return message
+        case .retrying(_, _, _, let message):
+            return "Waiting to retry · \(message)"
+        case .stopped, .starting, .running:
+            return "via \(sshHost)"
+        }
+    }
+
+    static func browserHelp(for phase: TunnelPhase) -> String {
+        switch phase {
+        case .running:
+            return "Open in default browser"
+        case .starting, .retrying:
+            return "Open in default browser when connected"
+        case .stopped, .failed:
+            return "Start tunnel and open in default browser"
+        }
+    }
+}
+
 private struct TunnelRow: View {
     let tunnel: Tunnel
     let phase: TunnelPhase
@@ -310,6 +334,7 @@ private struct TunnelRow: View {
                         Text(tunnel.displayName)
                             .font(.system(size: 13.5, weight: .semibold))
                             .lineLimit(1)
+                            .help(tunnel.displayName)
                         if case .failed = phase {
                             Text("Issue")
                                 .font(.system(size: 9.5, weight: .medium))
@@ -327,36 +352,38 @@ private struct TunnelRow: View {
                         }
                     }
 
-                    Text(tunnel.displaySummary(runtimePorts: runtimePorts))
+                    Text(routeSummary)
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .help(routeSummary)
 
-                    Text(errorOrHost)
+                    Text(statusText)
                         .font(.system(size: 10.5))
                         .foregroundStyle(isFailure ? Color.red : Color.secondary)
                         .lineLimit(1)
+                        .help(statusText)
                 }
 
                 Spacer(minLength: 4)
 
                 if tunnel.unambiguousBrowserURL != nil {
                     Button(action: onOpen) {
-                        Image(systemName: "safari")
+                        Image(systemName: "globe")
                             .font(.system(size: 13, weight: .medium))
                             .frame(width: 28, height: 28)
                             .background(Circle().fill(Color.accentColor.opacity(0.1)))
                     }
                     .buttonStyle(.plain)
                     .help(openButtonHelp)
-                    .accessibilityLabel("Open \(tunnel.displayName) in browser")
+                    .accessibilityLabel("Open \(tunnel.displayName) in default browser")
                 }
 
                 Menu {
                     ForEach(Array(tunnel.rules.enumerated()), id: \.element.id) { index, rule in
                         Menu("Rule \(index + 1) · \(rule.kind.label)") {
                             if rule.localBrowserURL != nil {
-                                Button("Open in Browser", systemImage: "safari") {
+                                Button("Open in Default Browser", systemImage: "globe") {
                                     onOpenRule(rule.id)
                                 }
                             }
@@ -425,6 +452,9 @@ private struct TunnelRow: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .help("Actions for \(tunnel.displayName)")
+                .accessibilityLabel("Actions for \(tunnel.displayName)")
+                .accessibilityHint("Opens profile and forwarding rule actions")
 
                 Button(action: onToggle) {
                     ZStack {
@@ -522,25 +552,15 @@ private struct TunnelRow: View {
     }
 
     private var openButtonHelp: String {
-        switch phase {
-        case .running:
-            return "Open in browser"
-        case .starting, .retrying:
-            return "Open in browser when connected"
-        case .stopped, .failed:
-            return "Start tunnel and open in browser"
-        }
+        TunnelRowText.browserHelp(for: phase)
     }
 
-    private var errorOrHost: String {
-        switch phase {
-        case .failed(let message):
-            return message
-        case .retrying(_, _, let delay, let message):
-            return "Retrying in \(max(1, Int(ceil(delay))))s · \(message)"
-        case .stopped, .starting, .running:
-            return "via \(tunnel.sshHost)"
-        }
+    private var routeSummary: String {
+        tunnel.displaySummary(runtimePorts: runtimePorts)
+    }
+
+    private var statusText: String {
+        TunnelRowText.status(for: phase, sshHost: tunnel.sshHost)
     }
 
     private func isCurrentGroup(_ group: String) -> Bool {

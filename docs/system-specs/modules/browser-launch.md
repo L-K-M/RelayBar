@@ -10,6 +10,9 @@ The browser button opens a forwarded web endpoint without requiring the user to 
 - Missing and wildcard bind hosts (`*`, `0.0.0.0`, `::`) map to `localhost`.
 - IPv6 hosts are emitted with URL brackets.
 - A running profile opens immediately in the macOS default browser.
+- Browser actions use a browser-neutral system symbol and name the default
+  browser in their menu, help, and accessibility text; they never imply that
+  Safari is required.
 - A stopped profile starts first and opens only after all its rules reach running state.
 - Starting or retrying profiles retain one pending open request.
 - Stop, edit, delete, quit, or retry exhaustion cancels the pending request.
