@@ -1,6 +1,6 @@
 # Task 041 — Cancel Initial Remote Files Open
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-08-14
 
@@ -35,3 +35,21 @@ may otherwise wait up to 120 seconds for SSH readiness.
 - A new Open after cancellation starts cleanly and can succeed.
 - The service shutdown path runs so owned SSH/SFTP processes are retired.
 - Relevant automated checks and `git diff --check` pass.
+
+## Evidence
+
+- [macOS CI](https://github.com/L-K-M/RelayBar/actions/runs/31847032476)
+  passed the test suite, warnings-as-errors checks, and unsigned Release build
+  for the final implementation commit on 2026-08-14.
+- The [initial GLM 5.3 review](https://github.com/L-K-M/RelayBar/actions/runs/31846489049)
+  completed and its useful late-completion concern was addressed with a
+  deliberately non-cooperative deferred-load fixture. The final test forces a
+  cancelled generation to fail late, verifies no error, navigation, or recent,
+  and then verifies a fresh Open succeeds.
+- The [follow-up GLM run](https://github.com/L-K-M/RelayBar/actions/runs/31847031189)
+  could not produce a review because all three API attempts returned HTTP 429;
+  this is recorded as an external review-service limit, not a code failure.
+- Source review confirmed every initial-open success and failure publication is
+  generation-guarded and cancellation invokes service shutdown. `git diff
+  --check origin/main...HEAD` passed on 2026-08-14. Swift and Xcode were
+  unavailable on the Linux workspace, so macOS CI is the build authority.

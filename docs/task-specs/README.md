@@ -33,7 +33,6 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
-- [Task 041 — Cancel Initial Remote Files Open](041-cancel-initial-remote-open.md)
 
 ## Backlog
 
