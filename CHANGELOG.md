@@ -12,6 +12,8 @@ Notable RelayBar changes are recorded here.
 - Row menus can copy a profile as the `ssh` command RelayBar effectively
   runs — same grammar Quick Add imports, so the command pastes straight back
   or into a terminal.
+- Round icon buttons deepen on hover, the row's ⋯ menu matches its sibling
+  buttons, and truncated SSH errors expand in a hover tooltip.
 
 ### Fixed
 

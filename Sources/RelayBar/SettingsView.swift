@@ -55,14 +55,12 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onBack
+            )
 
             Text("Settings")
                 .font(.system(size: 15, weight: .semibold))

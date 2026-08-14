@@ -184,26 +184,23 @@ private struct TunnelListView: View {
             Spacer()
 
             HStack(spacing: 8) {
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.primary.opacity(0.06)))
-                }
-                .buttonStyle(.plain)
+                CircleIconButton(
+                    systemName: "gearshape",
+                    accessibilityLabel: "Settings",
+                    action: onSettings
+                )
                 .help("Settings")
-                .accessibilityLabel("Settings")
 
-                Button(action: onAdd) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.accentColor.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
+                CircleIconButton(
+                    systemName: "plus",
+                    font: .system(size: 13, weight: .semibold),
+                    foreground: .primary,
+                    base: Color.accentColor.opacity(0.12),
+                    hoverBase: Color.accentColor.opacity(0.22),
+                    accessibilityLabel: "Add tunnel",
+                    action: onAdd
+                )
                 .help("Add tunnel")
-                .accessibilityLabel("Add tunnel")
             }
         }
         .padding(.horizontal, 14)
@@ -338,20 +335,22 @@ private struct TunnelRow: View {
                         .font(.system(size: 10.5))
                         .foregroundStyle(isFailure ? Color.red : Color.secondary)
                         .lineLimit(1)
+                        .help(statusLineHelp)
                 }
 
                 Spacer(minLength: 4)
 
                 if tunnel.unambiguousBrowserURL != nil {
-                    Button(action: onOpen) {
-                        Image(systemName: "safari")
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.accentColor.opacity(0.1)))
-                    }
-                    .buttonStyle(.plain)
+                    CircleIconButton(
+                        systemName: "safari",
+                        font: .system(size: 13, weight: .medium),
+                        foreground: .primary,
+                        base: Color.accentColor.opacity(0.1),
+                        hoverBase: Color.accentColor.opacity(0.2),
+                        accessibilityLabel: "Open \(tunnel.displayName) in browser",
+                        action: onOpen
+                    )
                     .help(openButtonHelp)
-                    .accessibilityLabel("Open \(tunnel.displayName) in browser")
                 }
 
                 Menu {
@@ -535,6 +534,19 @@ private struct TunnelRow: View {
             return "Open in browser when connected"
         case .stopped, .failed:
             return "Start tunnel and open in browser"
+        }
+    }
+
+    /// The full, untruncated text behind the one-line status line, so a
+    /// long SSH error is readable on hover.
+    private var statusLineHelp: String {
+        switch phase {
+        case .failed(let message):
+            return message
+        case .retrying(_, _, _, let message):
+            return message
+        case .stopped, .starting, .running:
+            return "via \(tunnel.sshHost)"
         }
     }
 
@@ -791,5 +803,36 @@ private struct AppMark: View {
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// The popover's round icon buttons share one treatment — a tinted circle
+/// that deepens on hover — so the surface answers the mouse instead of
+/// feeling inert. Internal: used by the list, editor, and settings headers
+/// and by row actions.
+struct CircleIconButton: View {
+    let systemName: String
+    var font: Font = .system(size: 12.5, weight: .semibold)
+    var foreground: Color = .secondary
+    var base: Color = Color.primary.opacity(0.06)
+    var hoverBase: Color = Color.primary.opacity(0.12)
+    var size: CGFloat = 28
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(font)
+                .foregroundStyle(foreground)
+                .frame(width: size, height: size)
+                .background(Circle().fill(isHovered ? hoverBase : base))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .accessibilityLabel(accessibilityLabel)
     }
 }

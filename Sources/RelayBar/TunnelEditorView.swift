@@ -96,14 +96,12 @@ struct TunnelEditorView: View {
 
     private var editorHeader: some View {
         HStack(spacing: 10) {
-            Button(action: onCancel) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onCancel
+            )
 
             Text(tunnel == nil ? "New Profile" : "Edit Profile")
                 .font(.system(size: 15, weight: .semibold))
