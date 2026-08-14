@@ -38,5 +38,6 @@ valid UTF-8 instead of presenting it as an empty folder.
   bounded text to the existing friendly error.
 - Oversized malformed diagnostics still fail with the existing response-size
   error.
+- Either capture cap fails closed even when sftp exits successfully.
 - Relevant tests and `git diff --check` pass, and the Remote Files and shared
   security specifications describe the implemented boundary.

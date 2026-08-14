@@ -2784,6 +2784,26 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
     }
 
+    func testSuccessfulCommandStillRejectsOversizedDiagnostics() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "successdiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail before exit-status handling.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testOutputLimitWinsWhenTruncationSplitsUTF8() async {
         let service = SFTPRemoteFileService(
             executableURL: fixtureExecutableURL,

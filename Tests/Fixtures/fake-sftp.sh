@@ -70,15 +70,22 @@ case "$host" in
         ;;
     invalidutf8)
         printf '\377\n'
+        exit 0
         ;;
     unreadable)
         chmod 000 /dev/fd/1
+        exit 0
         ;;
     empty)
+        exit 0
         ;;
     invaliddiagnostic)
         printf 'Permission denied: \377\n' >&2
         exit 1
+        ;;
+    successdiagnostic)
+        printf 'warning\n' >&2
+        exit 0
         ;;
     slow)
         mkdir -p "$(dirname "$local_path")"
