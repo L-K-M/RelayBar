@@ -3432,6 +3432,7 @@ final class RemoteFilesModelTests: XCTestCase {
             parentPath: "/home/linxy97/workspace/2026/youtube-video-transcript"
         )
         service.pathResults[entry.path] = .file(entry)
+        service.listings[RemotePath.parent(of: entry.path)] = [entry]
         let previewDirectory = try makeTemporaryDirectory()
         let previewURL = previewDirectory.appendingPathComponent(entry.name)
         try Data("# Transcription learnings\n\nDirect preview.".utf8).write(to: previewURL)
@@ -3455,9 +3456,26 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         XCTAssertEqual(model.screen, .browser)
         XCTAssertEqual(model.entries, [entry])
+
+        // Task 038. With no folder history, Back from a directly opened file
+        // opens the containing folder with the file selected instead of
+        // abandoning the browser for the launcher.
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && model.currentPath == RemotePath.parent(of: entry.path)
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(
+            service.listRequests.map(\.path),
+            [RemotePath.parent(of: entry.path)]
+        )
+
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
-        XCTAssertEqual(model.remotePath, entry.path)
+        XCTAssertEqual(model.remotePath, RemotePath.parent(of: entry.path))
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {

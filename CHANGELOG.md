@@ -33,6 +33,9 @@ Notable RelayBar changes are recorded here.
   imported, instead of claiming it can execute commands or read arbitrary
   files. That claim was untrue of every harmless option that simply was not
   listed.
+- Back from a directly opened remote file now opens the file's containing
+  folder with the file selected, instead of dropping straight out of the
+  browser to the launcher.
 
 - The menu-bar icon no longer disappears after a launch. The item is now an
   AppKit `NSStatusItem` the application delegate creates and holds, under the

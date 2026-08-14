@@ -19,7 +19,8 @@ without adding search, indexing, mounting, or editing.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.
 - When the launcher path identifies a supported image or Markdown file, RelayBar
   opens the existing bounded preview with that exact file selected. Back returns
-  through a single-file browser context to the launcher. Another regular file
+  through a single-file browser context, then opens the containing folder with
+  the file selected, and only then the launcher. Another regular file
   is shown selected in that context without starting a download automatically.
 
 ## Folder browser
@@ -31,7 +32,7 @@ without adding search, indexing, mounting, or editing.
 - Successful listings enter a session-only LRU cache keyed by exact SSH connection identity and normalized absolute path. The cache retains at most 20,000 aggregate entry units, charges an empty snapshot one unit, and evicts whole least-recently-used snapshots.
 - Cached Back and revisit navigation publish rows synchronously, then revalidate them in place. Revalidation keeps the rows visible, preserves selection when possible, and reports failure through the existing nonblocking error and retry affordance.
 - Explicit Refresh bypasses the cache. Duplicate loads for the same presented path coalesce, and generation checks prevent a superseded listing or revalidation from changing the current folder.
-- Back follows navigation history, reselects the folder that was left, and returns to the launcher from the initial folder.
+- Back follows navigation history, reselects the folder that was left, opens the containing folder from a directly opened file, and returns to the launcher from the initial folder.
 - Supported images and Markdown documents open a split preview workspace. Other files begin destination selection for download.
 - Search, filters, indexing, workspace discovery, rename, move, delete, upload, and remote editing are absent.
 
