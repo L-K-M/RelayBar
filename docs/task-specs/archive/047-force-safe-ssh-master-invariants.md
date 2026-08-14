@@ -1,8 +1,10 @@
-# Task 036 — Force Safe SSH Master Invariants
+# Task 047 — Force Safe SSH Master Invariants
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-08-14
+
+Completed: 2026-08-14
 
 ## Outcome
 
@@ -36,3 +38,19 @@ tasks.
 - System and security specifications describe the implemented policy.
 - `swift test -Xswiftc -warnings-as-errors`, the unsigned Release Xcode build,
   and `git diff --check` pass.
+
+## Evidence
+
+- Local OpenSSH 9.2 `ssh -G` evaluation passed every forced-policy and
+  preserved-connection assertion on 2026-08-14.
+- GitHub Actions run `31847241096` passed the complete Swift package with
+  warnings as errors and the unsigned Release Xcode build for commit
+  `80c9f64` on 2026-08-14.
+- GLM identified a latent two-pipe test-harness deadlock and an over-broad
+  SSH-config trust claim. Commit `80c9f64` addressed both; the two review
+  threads were answered and resolved after green CI. Its follow-up exhausted
+  three 300-second API attempts without producing another review.
+- `git diff --check` passed on 2026-08-14.
+- No manual UI or live-SSH check was required: this task changes structured
+  master arguments, covers their real OpenSSH evaluation, and does not change
+  the transport, authentication, or forwarding operation paths.
