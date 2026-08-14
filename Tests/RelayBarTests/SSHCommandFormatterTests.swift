@@ -116,7 +116,7 @@ final class SSHCommandFormatterTests: XCTestCase {
                     listen: .tcp(bindAddress: "::1", port: 1_081)
                 )
             ],
-            reverseSOCKSPolicy: .none
+            reverseSOCKSPolicy: ReverseSOCKSPolicy.none
         )
         let imported = try SSHCommandParser.parse(
             SSHCommandFormatter.command(for: tunnel)
