@@ -2714,6 +2714,26 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
     }
 
+    func testUnreadableListingCaptureDoesNotReturnAnEmptyFolder() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 0,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "empty"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected an unreadable listing capture to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testLossilyDecodesMalformedUTF8Diagnostics() async {
         let service = makeFixtureService()
 

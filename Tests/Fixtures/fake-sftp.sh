@@ -71,6 +71,8 @@ case "$host" in
     invalidutf8)
         printf '\377\n'
         ;;
+    empty)
+        ;;
     invaliddiagnostic)
         printf 'Permission denied: \377\n' >&2
         exit 1

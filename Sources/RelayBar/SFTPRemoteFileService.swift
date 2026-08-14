@@ -865,7 +865,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         maximumBytes: Int64
     ) -> String? {
         guard let data = readData(at: url, maximumBytes: maximumBytes) else {
-            return ""
+            return nil
         }
         return String(data: data, encoding: .utf8)
     }
