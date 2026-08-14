@@ -29,6 +29,7 @@ forwarding profile or silently stopping its active SSH connection.
 
 - Choosing **Delete\u{2026}** does not mutate the store before confirmation.
 - Cancelling dismisses the confirmation without stopping or deleting anything.
+- No other profile affordance bypasses the row confirmation.
 - Confirming **Delete Profile** invokes the existing deletion path exactly once.
 - The confirmation identifies the profile and route, and active lifecycle
   phases include the connection-stopping warning.

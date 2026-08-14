@@ -631,7 +631,7 @@ final class TunnelDeletionPromptTests: XCTestCase {
         XCTAssertFalse(prompt.message.contains("stops its active SSH connection"))
     }
 
-    func testActiveProfilePromptWarnsThatDeletionStopsConnection() {
+    func testConnectionWarningMatchesLifecycleActivityForEveryPhase() {
         let tunnel = Tunnel(
             name: "Database",
             localPort: 5_432,
@@ -640,26 +640,29 @@ final class TunnelDeletionPromptTests: XCTestCase {
             sshHost: "production-bastion"
         )
 
-        for phase in activePhases {
+        // Keep this list exhaustive with TunnelPhase so a new lifecycle case
+        // must make an explicit prompt-copy decision here.
+        let phases: [TunnelPhase] = [
+            .stopped,
+            .starting,
+            .retrying(attempt: 1, maxAttempts: 3, delay: 2, message: "retry"),
+            .running,
+            .failed("failed")
+        ]
+
+        for phase in phases {
             let prompt = TunnelDeletionPrompt(
                 tunnel: tunnel,
                 phase: phase,
                 runtimePorts: [:]
             )
 
-            XCTAssertTrue(
+            XCTAssertEqual(
                 prompt.message.contains("stops its active SSH connection"),
-                "Expected an active warning for \(phase)"
+                phase.isLifecycleActive,
+                "Connection warning did not match lifecycle activity for \(phase)"
             )
         }
-    }
-
-    private var activePhases: [TunnelPhase] {
-        [
-            .starting,
-            .retrying(attempt: 1, maxAttempts: 3, delay: 2, message: "retry"),
-            .running
-        ]
     }
 }
 
