@@ -151,33 +151,52 @@ final class RelayBarAppDelegate:
         if UpdateServiceFactory.shared.prepareForApplicationTermination() {
             return .terminateCancel
         }
-        return confirmQuittingWithActiveTunnels()
-            ? .terminateNow
-            : .terminateCancel
+        guard store.runningCount > 0 else { return .terminateNow }
+        presentQuitConfirmation()
+        return .terminateLater
     }
 
-    /// Quitting SIGTERMs every live tunnel's SSH process. Rather than
-    /// dropping connections on a stray ⌘Q, ask once while any profile owns
-    /// lifecycle work. `runningCount` is the store's one definition of
-    /// active: starting, retrying, or running. A deferred update install
-    /// takes over termination first and asks its own question.
-    private func confirmQuittingWithActiveTunnels() -> Bool {
-        let activeCount = store.runningCount
-        guard activeCount > 0 else { return true }
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = QuitConfirmation.messageText
-        alert.informativeText = QuitConfirmation.informativeText(
-            activeTunnelCount: activeCount
-        )
-        alert.addButton(
-            withTitle: QuitConfirmation.stopButtonTitle(
+    /// Presenting a modal alert synchronously inside the terminate dispatch
+    /// spins a nested run loop mid-termination, where a second quit event or
+    /// a timer can re-enter this path. Apple's pattern for confirming during
+    /// termination is to answer later: present on the next turn, then reply.
+    private var quitConfirmationInFlight = false
+
+    private func presentQuitConfirmation() {
+        guard !quitConfirmationInFlight else { return }
+        quitConfirmationInFlight = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { quitConfirmationInFlight = false }
+            // The tunnels that triggered the prompt may have stopped while
+            // it was queued; confirm only against work still alive now.
+            let activeCount = store.runningCount
+            guard activeCount > 0 else {
+                NSApplication.shared.reply(
+                    toApplicationShouldTerminate: true
+                )
+                return
+            }
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = QuitConfirmation.messageText
+            alert.informativeText = QuitConfirmation.informativeText(
                 activeTunnelCount: activeCount
             )
-        )
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+            let stopButton = alert.addButton(
+                withTitle: QuitConfirmation.stopButtonTitle(
+                    activeTunnelCount: activeCount
+                )
+            )
+            // The default action kills every live SSH process; say so in red.
+            stopButton.hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+            let confirmed = alert.runModal() == .alertFirstButtonReturn
+            NSApplication.shared.reply(
+                toApplicationShouldTerminate: confirmed
+            )
+        }
     }
 
     // MARK: Status item

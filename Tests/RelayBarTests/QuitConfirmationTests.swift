@@ -2,6 +2,10 @@ import XCTest
 @testable import RelayBar
 
 final class QuitConfirmationTests: XCTestCase {
+    func testHeadlineIsPinned() {
+        XCTAssertEqual(QuitConfirmation.messageText, "Quit RelayBar?")
+    }
+
     func testSingularCopyForOneActiveTunnel() {
         XCTAssertEqual(
             QuitConfirmation.informativeText(activeTunnelCount: 1),
