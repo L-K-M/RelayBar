@@ -1,132 +1,80 @@
 # RelayBar
 
-RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profiles and exact-path remote file access. It runs macOS's built-in `/usr/bin/ssh` and `/usr/bin/sftp` directly.
+A fork of [lx2026/RelayBar](https://github.com/lx2026/RelayBar), a tiny native macOS
+menu-bar app for structured SSH forwarding profiles and exact-path remote file access.
 
-[Download v1.3.0](https://github.com/lx2026/RelayBar/releases/download/v1.3.0/RelayBar.zip)
-· [Changelog](CHANGELOG.md)
+Every feature and every released build comes from upstream. Start at the
+[upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
+to install a release, and the full documentation. This fork exists for one reason.
 
-## Install
+## Why this fork exists
 
-Install the current stable release with Homebrew:
+Upstream RelayBar's menu-bar icon can disappear and never come back. The app keeps
+running, but there is nothing left to click.
 
-```bash
-brew install --cask lx2026/tap/relaybar
-```
+RelayBar is an `LSUIElement` agent, so it has no Dock icon and no window, and its only
+surface was a SwiftUI `MenuBarExtra`. `MenuBarExtra` owns its `NSStatusItem` privately
+and exposes neither `autosaveName` nor `isVisible`. macOS persists that item's menu-bar
+slot and its visibility into the app's own preferences, under a name it assigns by
+creation order, and restores both on every later launch. So once the icon had been
+recorded as hidden — by a stray ⌘-drag, a menu-bar manager, or a slot no attached display
+can draw — the app could neither detect it nor undo it. What was left was a process in
+Activity Monitor with no way in, and no way out either: the only Quit button lived inside
+the popover that had become unreachable.
 
-Later releases can be installed with:
+## What this fork changes
 
-```bash
-brew upgrade --cask lx2026/tap/relaybar
-```
+**The application delegate owns the status item.** It is created once at launch and held
+for the process lifetime, as AppKit menu-bar apps normally do it, rather than being
+managed by a SwiftUI scene. The app moves off the SwiftUI `App` lifecycle to a plain
+`NSApplication` one so that ownership is real rather than nominal.
 
-If RelayBar was previously installed manually, quit it and remove the existing
-`/Applications/RelayBar.app` before the first Homebrew installation. Homebrew
-will not overwrite an application that it does not manage.
+**The item has a stable identity the app can address.** It carries the explicit autosave
+name `com.lx2026.RelayBar.status`. At every launch RelayBar asserts its visibility,
+discards a saved slot that no attached screen can display, and clears the stale keys the
+old `MenuBarExtra` item left behind.
 
-## Screenshots
+**The item is icon-only.** It previously drew the word "RelayBar" beside the glyph,
+because a `Label` in `MenuBarExtra`'s label closure renders both title and icon. At
+roughly three times the width, it was the first thing a crowded or notched menu bar drops.
 
-<p align="center">
-  <img src="docs/screenshots/relaybar-tunnels.png" alt="RelayBar tunnel list" width="360">
-  <img src="docs/screenshots/relaybar-add-tunnel.png" alt="RelayBar new tunnel form" width="360">
-</p>
+**Re-launching the app is an escape hatch.** Opening RelayBar while it is already running
+re-asserts the icon and opens the menu, instead of doing nothing.
 
-<p align="center">
-  <img src="docs/designs/media/001/remote-files-concept-a.png" alt="RelayBar Remote Files flow from the menu through browsing, preview, and download" width="760">
-</p>
+**The app installs its own main menu,** so ⌘X/⌘C/⌘V/⌘A still reach the text fields in the
+profile editor and the Remote Files window after leaving the SwiftUI scene.
 
-## What it does
+One deliberate trade-off: because visibility is asserted at every launch, ⌘-dragging the
+icon off the menu bar does not persist. For an app whose only surface is that icon,
+coming back is the safer default.
 
-- Imports repeated and mixed `-L`, `-D`, and `-R` rules from forwarding-only SSH commands
-- Supports TCP ports, Unix sockets, local SOCKS, reverse SOCKS, and automatic remote ports
-- Runs every rule in a profile over one managed SSH connection
-- Optionally groups saved profiles into lightweight menu-bar sections
-- Starts and stops each profile with one click
-- Opens an unambiguous local TCP forward in the default browser with one click
-- Retries unexpected disconnects up to 10 times with exponential backoff
-- Shows startup failures directly beside the tunnel
-- Stores tunnel definitions in local `UserDefaults`
-- Stops child SSH processes when RelayBar quits
-- Opens an exact remote folder through a recent connection, saved host, forwarding profile, or concrete `~/.ssh/config` alias
-- Downloads remote files or folders with progress, cancellation, and Finder reveal
-- Previews supported remote images without adding editing or gallery features
-- Renders remote Markdown in a safe, read-only view with GFM, callouts, inert tags, syntax highlighting, footnotes, and native math
-
-For example, Quick Add accepts `ssh -N -D 9999 -p 1234 user@server`, and one profile can combine local, SOCKS, and remote rules. A SOCKS client that should resolve names from the SSH server side must send hostnames through SOCKS, for example:
-
-```bash
-curl --socks5-hostname 127.0.0.1:9999 https://example.com
-```
-
-RelayBar provides TCP forwarding; it is not a UDP or DNS server and does not change macOS proxy or resolver settings. Reverse SOCKS has the opposite egress direction: clients on the SSH-server side request TCP connections from the Mac's network position. Remote non-loopback listeners also depend on the server's `GatewayPorts` policy.
-
-Safe connection options such as `-p`, `-J`, `-i`, and a restricted set of `-o` values are preserved when importing a command. Forwarding declarations are parsed into typed rules. Options that can execute local commands, select arbitrary configuration files, or write logs are rejected. RelayBar never invokes a shell.
-
-RelayBar is distributed outside the Mac App Store and is intentionally not sandboxed. Its SSH process behaves like the command-line client: it reads the user's normal `~/.ssh/config` and `known_hosts`, can use configured identity files, and inherits access to the user's SSH agent. SSH still runs non-interactively, so password prompts are not supported. On recent macOS versions, the first connection to a `.local` or LAN host may ask for Local Network access.
-
-## Roadmap
-
-RelayBar handles the few steps between a remote server and your Mac. Use Claude Code, Codex, or a terminal to search and edit on the remote machine.
-
-1. **Port forwarding** (complete)
-   - ~~Import a standard `ssh -N -L` command.~~
-   - ~~Add, edit, and delete a forward by hand.~~
-   - ~~Save forward definitions locally.~~
-   - ~~Start and stop each forward from the menu bar.~~
-   - ~~Start a stopped forward and open its URL in the default browser.~~
-   - ~~Retry an unexpected disconnect up to 10 times.~~
-   - ~~Show connection errors beside the affected forward.~~
-   - ~~Stop managed SSH processes when RelayBar quits.~~
-   - ~~Combine repeated local, SOCKS, remote, and Unix-socket rules in one profile.~~
-   - ~~Show OpenSSH-assigned remote ports and type-correct endpoint actions.~~
-   - ~~Group saved profiles without changing their SSH process state.~~
-2. **Remote files** (complete)
-   1. ~~**Open a pasted path:** paste an absolute path copied from remote `pwd`, choose a saved server, and open that folder.~~
-   2. ~~**Navigate folders:** show the files and subfolders at that path, with basic navigation and refresh. No search or indexing.~~
-   3. ~~**Download a file:** choose a local destination, track progress, cancel, and reveal the result in Finder.~~
-   4. ~~**Download a folder:** transfer a folder recursively, show progress, and allow cancellation.~~
-   5. ~~**Preview images:** preview one supported remote image at a time.~~
-   6. ~~**Render Markdown:** render GFM and common Obsidian reading syntax in a bounded, read-only native view. Remote images and embeds are not fetched, raw HTML is inert, and Mermaid remains source-only.~~
-
-Remote file operations stop at opening, previewing, and downloading.
-
-Markdown rendering uses exactly pinned open-source packages. Required license text is bundled from [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
-
-## System specs
-
-The concise architecture and behavior archive starts at [`docs/system-specs`](docs/system-specs/README.md).
+Everything else tracks upstream.
 
 ## Build
 
-Requires macOS 13 or newer and the Xcode command-line tools.
+Requires macOS 13 or newer and the Xcode command-line tools. This fork publishes no
+releases, so build it yourself:
 
 ```bash
 ./scripts/build-app.sh
 open .build/RelayBar.app
 ```
 
-The packaged app is written to `.build/RelayBar.app`. The build script automatically finds the first valid **Developer ID Application** certificate in the login keychain and signs with the hardened runtime.
+The script writes `.build/RelayBar.app` and signs it with the first valid **Developer ID
+Application** certificate in your login keychain; set `SIGNING_IDENTITY` to choose a
+different one.
 
-To create a signed ZIP:
-
-```bash
-./scripts/package-release.sh
-```
-
-This writes `.build/RelayBar.zip`. A Developer ID signature identifies the publisher, but a downloaded app should also be notarized to pass Gatekeeper without warnings. After storing one `notarytool` keychain profile, notarize and staple with:
-
-```bash
-xcrun notarytool store-credentials YOUR_NOTARY_PROFILE \
-  --apple-id YOUR_APPLE_ID \
-  --team-id YOUR_TEAM_ID \
-  --password YOUR_APP_SPECIFIC_PASSWORD
-
-NOTARY_PROFILE=YOUR_NOTARY_PROFILE ./scripts/notarize-release.sh
-```
-
-Set `SIGNING_IDENTITY` only when a Mac has multiple Developer ID certificates and the automatic choice is not the one you want.
+Bundled third-party license text is in
+[`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
 
 ## Test
 
 ```bash
 swift test
 ```
+
+## Architecture
+
+The behavior and architecture archive starts at
+[`docs/system-specs`](docs/system-specs/README.md). Fork changes are recorded in
+[`CHANGELOG.md`](CHANGELOG.md).

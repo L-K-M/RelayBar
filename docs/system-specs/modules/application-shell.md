@@ -1,10 +1,24 @@
 # Application Shell
 
-RelayBar is a native SwiftUI `MenuBarExtra` application for macOS 13 or newer.
+RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
+`NSStatusItem` owned by the application delegate, presenting a SwiftUI popover.
 
 ## Contract
 
 - The app runs as a menu-bar accessory with no Dock icon (`LSUIElement`).
+- The delegate creates the status item once at launch, holds it for the process
+  lifetime, and gives it the explicit autosave name
+  `com.lx2026.RelayBar.status`. The system persists the item's slot and
+  visibility under that name in RelayBar's own defaults domain, so the app can
+  address, repair, and re-assert its own icon. Visibility is set true at every
+  launch, a saved slot that no attached screen can display is discarded before
+  the item is created, and the state the earlier `MenuBarExtra` item left under
+  the system-assigned name `Item-0` is cleared.
+- The menu-bar item is image-only and never lays out a title.
+- Re-launching the running app opens the menu and re-asserts the icon rather
+  than doing nothing, so a hidden item is always recoverable.
+- A main menu supplies the standard editing key equivalents, which an
+  `LSUIElement` app otherwise never routes to the first responder.
 - The popover is a 380 × 440 point window containing the tunnel list, the profile editor, or the settings screen.
 - The profile editor and Settings use one viewport-constrained vertical-scroll
   container. Its document width is the viewport minus balanced 16-point
@@ -48,7 +62,10 @@ RelayBar is a native SwiftUI `MenuBarExtra` application for macOS 13 or newer.
 
 ## Ownership
 
-- `RelayBarApp` owns application lifecycle.
+- `RelayBarMain` is the entry point; `RelayBarAppDelegate` owns application
+  lifecycle, the status item, and the popover that hosts `RelayBarRootView`.
+- `StatusItemDefaults` owns the persisted status-item keys the system writes
+  into RelayBar's defaults domain.
 - `RelayBarRootView` owns navigation and presentation.
 - `TunnelStore.shared` owns tunnel and process state.
 - `LaunchAtLoginModel` owns login-item state behind the injected `LoginItemServicing` boundary.

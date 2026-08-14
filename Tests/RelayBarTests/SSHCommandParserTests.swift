@@ -161,6 +161,42 @@ final class SSHCommandParserTests: XCTestCase {
         )
     }
 
+    /// RelayBar sets `ExitOnForwardFailure` on every connection it launches
+    /// (`TunnelStore.launchTunnel`), so refusing to import it rejected an
+    /// option the app itself depends on.
+    func testPreservesKeepaliveAndExitOnForwardFailureOptions() throws {
+        let command = "ssh -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
+            + " -o ExitOnForwardFailure=yes -L 64530:paseo:64530 -p 64531"
+            + " tunnel@116.202.149.227"
+
+        let result = try SSHCommandParser.parse(command)
+
+        XCTAssertEqual(result.sshHost, "tunnel@116.202.149.227")
+        XCTAssertEqual(result.rules.count, 1)
+        XCTAssertEqual(
+            result.additionalArguments,
+            [
+                "-o", "ServerAliveInterval=30",
+                "-o", "ServerAliveCountMax=3",
+                "-o", "ExitOnForwardFailure=yes",
+                "-p", "64531"
+            ]
+        )
+    }
+
+    /// An option that is merely absent from the allowlist reports that it is
+    /// not imported, rather than accusing it of running commands.
+    func testUnlistedOptionReportsThatItIsNotImported() {
+        XCTAssertThrowsError(
+            try SSHCommandParser.parse("ssh -o Ciphers=aes128-ctr -D 1080 host")
+        ) { error in
+            XCTAssertEqual(
+                error as? SSHCommandParser.ParseError,
+                .unsupportedOpenSSHOption("-o Ciphers=aes128-ctr")
+            )
+        }
+    }
+
     func testRejectsMalformedOrAmbiguousForwardingCommands() {
         let commands = [
             "ssh host",

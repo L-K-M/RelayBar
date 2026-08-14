@@ -2,6 +2,33 @@
 
 Notable RelayBar changes are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
+  ssh exit when a forward cannot be established — it runs nothing and reads
+  nothing — and RelayBar already sets it on every connection it launches, so
+  rejecting it refused an option the app itself depends on.
+- An option that is merely outside the preserved set now reports that it is not
+  imported, instead of claiming it can execute commands or read arbitrary
+  files. That claim was untrue of every harmless option that simply was not
+  listed.
+
+- The menu-bar icon no longer disappears after a launch. The item is now an
+  AppKit `NSStatusItem` the application delegate creates and holds, under the
+  explicit autosave name `com.lx2026.RelayBar.status`, so RelayBar can assert
+  its own visibility at every launch and discard a saved slot that no attached
+  screen can display. `MenuBarExtra` kept its status item private, leaving the
+  app no way to recover once the system had persisted the icon as hidden.
+- Re-launching a running RelayBar opens the menu and re-asserts the icon
+  instead of doing nothing, so an unreachable icon is no longer a dead end.
+- The menu-bar item is image-only. It previously drew the word "RelayBar" beside
+  the glyph, taking roughly three times the width and making the item the first
+  one a crowded or notched menu bar drops.
+- Standard editing shortcuts reach text fields in the profile editor and the
+  Remote Files window again, through a main menu the app now installs itself.
+
 ## [1.3.0] - 2026-07-30
 
 ### Added

@@ -1,34 +1,75 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Program entry point.
+///
+/// RelayBar is a menu-bar agent (`LSUIElement`), so it runs as an `.accessory`
+/// app with no Dock icon. A plain `NSApplication` lifecycle rather than a
+/// SwiftUI `App` scene is what keeps the status item addressable: `MenuBarExtra`
+/// owns its `NSStatusItem` privately and exposes neither `autosaveName` nor
+/// `isVisible`, so an app built on it cannot name, repair, or re-assert its own
+/// icon once the system has persisted that icon as hidden.
 @main
-@MainActor
-struct RelayBarApp: App {
-    @NSApplicationDelegateAdaptor(RelayBarAppDelegate.self) private var appDelegate
-    @StateObject private var store = TunnelStore.shared
-    @StateObject private var updates = UpdateModel(
-        service: UpdateServiceFactory.shared
-    )
-
-    var body: some Scene {
-        MenuBarExtra {
-            RelayBarRootView(updateModel: updates)
-                .environmentObject(store)
-        } label: {
-            Label("RelayBar", systemImage: store.runningCount > 0
-                  ? "arrow.left.arrow.right.circle.fill"
-                  : "arrow.left.arrow.right.circle")
-        }
-        .menuBarExtraStyle(.window)
+enum RelayBarMain {
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = RelayBarAppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
+        app.run()
     }
 }
 
 @MainActor
-final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
+final class RelayBarAppDelegate:
+    NSObject, NSApplicationDelegate, NSPopoverDelegate
+{
+    /// An explicit, stable autosave name. AppKit persists the item's slot and
+    /// its visibility under `NSStatusItem Preferred Position <name>` and
+    /// `NSStatusItem Visible <name>` in RelayBar's own defaults domain.
+    /// `MenuBarExtra` left the name to AppKit, which assigns one by creation
+    /// order — `Item-0` — so the persisted state was neither recognizable as
+    /// RelayBar's nor reachable from RelayBar.
+    private static let statusItemAutosaveName = "com.lx2026.RelayBar.status"
+
+    private lazy var store = TunnelStore.shared
+    private lazy var updates = UpdateModel(service: UpdateServiceFactory.shared)
+
+    private var statusItem: NSStatusItem?
+    private var popover: NSPopover?
+    private var statusItemShowsActiveTunnels = false
+    private var tunnelActivityObserver: AnyCancellable?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
+        setUpStatusItem()
+        observeTunnelActivity()
         UpdateServiceFactory.shared.start()
         configureDebugPreviewIfNeeded()
+    }
+
+    /// Re-launching the app — double-clicking it in Finder, or `open -a
+    /// RelayBar` — re-asserts the icon and opens the menu. Without this, an
+    /// agent app whose only surface is a hidden status item offers no way back
+    /// in: relaunching an already-running `LSUIElement` app starts no second
+    /// process and, unhandled, does nothing at all.
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows: Bool
+    ) -> Bool {
+        presentPopover()
+        return false
+    }
+
+    /// RelayBar keeps no custom restorable state, so opting in costs nothing
+    /// and silences the macOS 14+ launch warning.
+    func applicationSupportsSecureRestorableState(
+        _ app: NSApplication
+    ) -> Bool {
+        true
     }
 
     func applicationShouldTerminate(
@@ -37,6 +78,261 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         UpdateServiceFactory.shared.prepareForApplicationTermination()
             ? .terminateCancel
             : .terminateNow
+    }
+
+    // MARK: Status item
+
+    private func setUpStatusItem() {
+        StatusItemDefaults.removeMenuBarExtraState()
+        StatusItemDefaults.repairImplausiblePreferredPosition(
+            autosaveName: Self.statusItemAutosaveName,
+            widestScreenWidth: NSScreen.screens
+                .map { Double($0.frame.width) }
+                .max() ?? 0
+        )
+
+        let item = NSStatusBar.system.statusItem(
+            withLength: NSStatusItem.variableLength
+        )
+        // Name the item before asserting visibility. AppKit keys the restored
+        // value off `autosaveName`, so naming it second would let a restored
+        // `false` win over the assignment below.
+        item.autosaveName = Self.statusItemAutosaveName
+        item.isVisible = true
+
+        statusItemShowsActiveTunnels = store.runningCount > 0
+        if let button = item.button {
+            button.image = Self.statusBarImage(
+                showsActiveTunnels: statusItemShowsActiveTunnels
+            )
+            // Image-only: the button must never lay out a title, whatever the
+            // image turns out to be.
+            button.imagePosition = .imageOnly
+            button.setAccessibilityTitle("RelayBar")
+            button.target = self
+            button.action = #selector(togglePopover)
+        }
+        statusItem = item
+    }
+
+    /// A fixed-size template glyph, as both reference menu-bar apps use. Two
+    /// things matter beyond appearance. The item is image-only and roughly 18
+    /// points wide rather than the ~100 the old `Label("RelayBar",
+    /// systemImage:)` took once SwiftUI drew the title beside the icon, and
+    /// width is what decides which items a crowded or notched menu bar drops.
+    /// And a symbol lookup can return nil, which would leave the button with no
+    /// image and nothing to click, so it falls back to a drawn glyph.
+    static func statusBarImage(showsActiveTunnels: Bool) -> NSImage {
+        let symbolName = showsActiveTunnels
+            ? "arrow.left.arrow.right.circle.fill"
+            : "arrow.left.arrow.right.circle"
+        if
+            let symbol = NSImage(
+                systemSymbolName: symbolName,
+                accessibilityDescription: "RelayBar"
+            )?.withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+            )
+        {
+            symbol.isTemplate = true
+            return symbol
+        }
+        return drawnStatusBarImage(showsActiveTunnels: showsActiveTunnels)
+    }
+
+    /// Two opposed arrows inside a circle, echoing the SF Symbol. Drawn as a
+    /// template image so the system tints it for light and dark menu bars.
+    private static func drawnStatusBarImage(
+        showsActiveTunnels: Bool
+    ) -> NSImage {
+        let image = NSImage(
+            size: NSSize(width: 18, height: 18),
+            flipped: false
+        ) { _ in
+            let circle = NSBezierPath(
+                ovalIn: NSRect(x: 1.5, y: 1.5, width: 15, height: 15)
+            )
+            if showsActiveTunnels {
+                NSColor.black.setFill()
+                circle.fill()
+            } else {
+                NSColor.black.setStroke()
+                circle.lineWidth = 1.4
+                circle.stroke()
+            }
+
+            let arrows = NSBezierPath()
+            arrows.move(to: NSPoint(x: 12, y: 11))
+            arrows.line(to: NSPoint(x: 6, y: 11))
+            arrows.move(to: NSPoint(x: 8.5, y: 13))
+            arrows.line(to: NSPoint(x: 6, y: 11))
+            arrows.line(to: NSPoint(x: 8.5, y: 9))
+            arrows.move(to: NSPoint(x: 6, y: 7))
+            arrows.line(to: NSPoint(x: 12, y: 7))
+            arrows.move(to: NSPoint(x: 9.5, y: 9))
+            arrows.line(to: NSPoint(x: 12, y: 7))
+            arrows.line(to: NSPoint(x: 9.5, y: 5))
+            arrows.lineWidth = 1.4
+            arrows.lineCapStyle = .round
+            arrows.lineJoinStyle = .round
+
+            // Knock the arrows out of the filled disc so they stay legible.
+            if showsActiveTunnels {
+                NSGraphicsContext.current?.compositingOperation = .destinationOut
+            }
+            NSColor.black.setStroke()
+            arrows.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// The icon distinguishes "a profile is starting, retrying, or running"
+    /// from "everything is stopped". `TunnelStore.runningCount` stays the one
+    /// definition of active; `objectWillChange` fires before the store mutates,
+    /// so the count is read on the next main-actor turn.
+    private func observeTunnelActivity() {
+        tunnelActivityObserver = store.objectWillChange
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshStatusItemImage()
+                }
+            }
+    }
+
+    private func refreshStatusItemImage() {
+        let showsActiveTunnels = store.runningCount > 0
+        guard showsActiveTunnels != statusItemShowsActiveTunnels else { return }
+        statusItemShowsActiveTunnels = showsActiveTunnels
+        statusItem?.button?.image = Self.statusBarImage(
+            showsActiveTunnels: showsActiveTunnels
+        )
+    }
+
+    /// Recreates the item if it is somehow gone and re-asserts visibility
+    /// otherwise, so every route that opens the menu also repairs the icon.
+    private func reassertStatusItem() {
+        guard let statusItem else {
+            setUpStatusItem()
+            return
+        }
+        statusItem.isVisible = true
+    }
+
+    // MARK: Menu
+
+    @objc private func togglePopover() {
+        if let popover, popover.isShown {
+            popover.performClose(nil)
+        } else {
+            presentPopover()
+        }
+    }
+
+    private func presentPopover() {
+        reassertStatusItem()
+        guard let button = statusItem?.button else { return }
+        let popover = menuPopover()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // The profile editor has text fields, so the popover has to take key
+        // status rather than merely appear.
+        popover.contentViewController?.view.window?.makeKey()
+        button.highlight(true)
+    }
+
+    /// Built once and reused, so the root view keeps its navigation state
+    /// between openings the way the `MenuBarExtra` window did.
+    private func menuPopover() -> NSPopover {
+        if let popover { return popover }
+        let popover = NSPopover()
+        popover.contentSize = NSSize(
+            width: RelayBarPopoverLayout.width,
+            height: RelayBarPopoverLayout.height
+        )
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(
+            rootView: RelayBarRootView(updateModel: updates)
+                .environmentObject(store)
+        )
+        self.popover = popover
+        return popover
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        statusItem?.button?.highlight(false)
+    }
+
+    /// An agent app has no menu bar of its own, so without a main menu the
+    /// standard editing key equivalents never reach the first responder and
+    /// ⌘X/⌘C/⌘V/⌘A do nothing in the profile editor or the Remote Files window.
+    /// The SwiftUI `App` scene used to supply this for free.
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "Quit RelayBar",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(
+            withTitle: "Undo",
+            action: Selector(("undo:")),
+            keyEquivalent: "z"
+        )
+        editMenu.addItem(
+            withTitle: "Redo",
+            action: Selector(("redo:")),
+            keyEquivalent: "Z"
+        )
+        editMenu.addItem(.separator())
+        // `NSText` is where AppKit declares these four, so `#selector` can name
+        // them. Undo and redo above have no declaration to point at — they only
+        // ever travel the responder chain — so they stay string selectors.
+        editMenu.addItem(
+            withTitle: "Cut",
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: "x"
+        )
+        editMenu.addItem(
+            withTitle: "Copy",
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: "c"
+        )
+        editMenu.addItem(
+            withTitle: "Paste",
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: "v"
+        )
+        editMenu.addItem(
+            withTitle: "Select All",
+            action: #selector(NSText.selectAll(_:)),
+            keyEquivalent: "a"
+        )
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(
+            withTitle: "Close Window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        windowItem.submenu = windowMenu
+        mainMenu.addItem(windowItem)
+        NSApplication.shared.windowsMenu = windowMenu
+
+        NSApplication.shared.mainMenu = mainMenu
     }
 
     #if DEBUG
@@ -298,6 +594,69 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         TunnelStore.shared.stopAll()
+    }
+}
+
+/// AppKit autosaves a status item's slot and visibility into the owning app's
+/// own defaults domain, and restores both on every later launch. That is the
+/// mechanism behind an icon that appears once and never again: nothing in the
+/// app re-asserts the item, so a single persisted `false` — or a slot beyond
+/// every attached screen — outlives the process, the rebuild, and the reinstall.
+/// These helpers keep that state honest at launch.
+enum StatusItemDefaults {
+    /// AppKit's creation-order name for an item that never set `autosaveName`,
+    /// which is what `MenuBarExtra` left RelayBar using.
+    static let menuBarExtraAutosaveName = "Item-0"
+
+    private static let preferredPositionPrefix = "NSStatusItem Preferred Position "
+    /// macOS 26 renamed the visibility key to `VisibleCC`; both spellings are
+    /// cleared so neither vintage can strand the item.
+    private static let visibilityPrefixes = [
+        "NSStatusItem Visible ",
+        "NSStatusItem VisibleCC "
+    ]
+    /// How far past the widest screen a saved slot may sit before it is treated
+    /// as junk rather than as an intentional position.
+    private static let implausiblePositionSlack: Double = 512
+
+    static func preferredPositionKey(autosaveName: String) -> String {
+        preferredPositionPrefix + autosaveName
+    }
+
+    static func visibilityKeys(autosaveName: String) -> [String] {
+        visibilityPrefixes.map { $0 + autosaveName }
+    }
+
+    /// Drops the state the old `MenuBarExtra` item left behind. Nothing reads
+    /// those keys now that the item is explicitly named, and a stale
+    /// `NSStatusItem Visible Item-0 = 0` is precisely the value that makes an
+    /// icon unrecoverable, so it is cleared rather than left to rot.
+    static func removeMenuBarExtraState(in defaults: UserDefaults = .standard) {
+        let keys = [preferredPositionKey(autosaveName: menuBarExtraAutosaveName)]
+            + visibilityKeys(autosaveName: menuBarExtraAutosaveName)
+        for key in keys {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    /// Clears a saved slot that no screen can display. AppKit restores the
+    /// value verbatim, so an item parked past the right edge — or at a
+    /// nonsensical zero or negative offset — stays undrawable until the key
+    /// goes away. Removing it lets the next launch place the item normally; a
+    /// plausible position is left alone so the user's arrangement survives.
+    static func repairImplausiblePreferredPosition(
+        autosaveName: String,
+        widestScreenWidth: Double,
+        defaults: UserDefaults = .standard
+    ) {
+        let key = preferredPositionKey(autosaveName: autosaveName)
+        guard let saved = defaults.object(forKey: key) as? Double else { return }
+        guard
+            saved <= 0 || saved > widestScreenWidth + implausiblePositionSlack
+        else {
+            return
+        }
+        defaults.removeObject(forKey: key)
     }
 }
 
