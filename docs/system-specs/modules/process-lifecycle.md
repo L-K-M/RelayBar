@@ -5,7 +5,7 @@
 ## Launch
 
 - The master runs with `-N`, `-T`, `BatchMode`, a 10-second connect timeout, forward-failure exit, server keepalives, `ControlPersist=no`, and `ClearAllForwardings=yes`.
-- Its private control socket is created below a random app-owned `0700` temporary directory and is not shared with unrelated SSH clients.
+- Its private control socket is created below a short, atomically created app-owned `0700` temporary directory and is not shared with unrelated SSH clients. The path budget reserves Darwin's terminating NUL and OpenSSH's temporary mux-listener suffix.
 - The master starts with no forwards. Each rule is installed in order by direct `/usr/bin/ssh -F none -S <socket> -O forward` arguments.
 - Control stdout and stderr are capped at 64 KiB and each helper times out after 10 seconds.
 - Each launch carries a generation identifier, and every control operation is keyed by its own identifier and tagged with the launch that owns it. A stopped or replaced launch's operation can neither block nor complete the launch that replaced it, so a restart issued while a previous helper is still being reaped installs its rules normally.

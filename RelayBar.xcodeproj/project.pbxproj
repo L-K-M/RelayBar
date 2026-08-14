@@ -35,6 +35,7 @@
 		40000000000000000000001C /* ApplicationAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001A /* ApplicationAbout.swift */; };
 		40000000000000000000001D /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000004 /* Sparkle */; };
 		40000000000000000000001E /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001B /* Updates.swift */; };
+		40000000000000000000001F /* SSHControlPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001C /* SSHControlPath.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +66,7 @@
 		300000000000000000000019 /* PopoverScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverScrollContainer.swift; sourceTree = "<group>"; };
 		30000000000000000000001A /* ApplicationAbout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationAbout.swift; sourceTree = "<group>"; };
 		30000000000000000000001B /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
+		30000000000000000000001C /* SSHControlPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHControlPath.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +115,7 @@
 				300000000000000000000002 /* RelayBarRootView.swift */,
 				300000000000000000000003 /* SSHArgumentPolicy.swift */,
 				300000000000000000000004 /* SSHCommandParser.swift */,
+				30000000000000000000001C /* SSHControlPath.swift */,
 				300000000000000000000005 /* Tunnel.swift */,
 				300000000000000000000006 /* TunnelEditorView.swift */,
 				300000000000000000000007 /* TunnelStore.swift */,
@@ -268,6 +271,7 @@
 				400000000000000000000002 /* RelayBarRootView.swift in Sources */,
 				400000000000000000000003 /* SSHArgumentPolicy.swift in Sources */,
 				400000000000000000000004 /* SSHCommandParser.swift in Sources */,
+				40000000000000000000001F /* SSHControlPath.swift in Sources */,
 				400000000000000000000005 /* Tunnel.swift in Sources */,
 				400000000000000000000006 /* TunnelEditorView.swift in Sources */,
 				400000000000000000000007 /* TunnelStore.swift in Sources */,
