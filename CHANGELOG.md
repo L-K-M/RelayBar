@@ -4,6 +4,12 @@ Notable RelayBar changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Profiles can be duplicated from the row menu. The copy gets fresh profile
+  and rule identities, lands right after the original, and starts stopped —
+  clone-then-tweak without retyping a connection.
+
 ### Fixed
 
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
