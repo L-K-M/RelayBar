@@ -35,7 +35,10 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The General card's second row is **Automatically Check for Updates**. It controls
   Sparkle's own persisted scheduled-check preference, defaults off, checks at
   a seven-day interval when enabled, and cannot enable automatic download or
-  installation. Settings and application activation do not initiate checks.
+  installation. Opening Settings does not issue a separate check. Enabling the
+  schedule resets Sparkle's cycle, and app launch starts that cycle; when no
+  prior check exists or the prior check is overdue, a scheduled background
+  check may therefore begin promptly.
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
 - A login launch opens the same menu-bar-only app; saved forwarding profiles stay stopped until the user starts them.
 - A quiet Settings footer reads version and build from the running bundle,

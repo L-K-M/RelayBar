@@ -21,6 +21,8 @@ update behavior, network contact, and dependencies accurately.
 - Name the Settings preference for the scheduled check it actually controls.
 - Correct the application-shell spec, security review, privacy policy, active
   task index, and system-spec review date.
+- Add Tasks 039 and 042 to the archived-task index, which had not recorded
+  their completion.
 - Record the pinned Sparkle boundary, update-request privacy behavior, and
   ordinary hosting metadata exposure without claiming that update checks are
   anonymous.
@@ -43,6 +45,12 @@ update behavior, network contact, and dependencies accurately.
   automatic downloads and installations.
 - The active-task index names Tasks 032 and 034, which are the two specs still
   marked `In Progress`.
+- Tasks 039 and 042 are `Complete` at their indexed archive paths, and the
+  active and archive task-index links resolve.
+- RelayBar starts Sparkle at launch and resets its cycle after the scheduled-
+  check preference changes. Pinned Sparkle 2.9.4 may run an overdue scheduled
+  check promptly, so the application spec and privacy policy allow for that
+  network timing without claiming every enable or launch makes a request.
 - `git diff --check` passed. Swift and Xcode are unavailable in this Linux
   environment; the only executable-code changes are the visible and
   accessibility-facing Settings label strings, and no updater behavior or
