@@ -2,6 +2,24 @@
 
 Notable RelayBar changes are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- The menu-bar icon no longer disappears after a launch. The item is now an
+  AppKit `NSStatusItem` the application delegate creates and holds, under the
+  explicit autosave name `com.lx2026.RelayBar.status`, so RelayBar can assert
+  its own visibility at every launch and discard a saved slot that no attached
+  screen can display. `MenuBarExtra` kept its status item private, leaving the
+  app no way to recover once the system had persisted the icon as hidden.
+- Re-launching a running RelayBar opens the menu and re-asserts the icon
+  instead of doing nothing, so an unreachable icon is no longer a dead end.
+- The menu-bar item is image-only. It previously drew the word "RelayBar" beside
+  the glyph, taking roughly three times the width and making the item the first
+  one a crowded or notched menu bar drops.
+- Standard editing shortcuts reach text fields in the profile editor and the
+  Remote Files window again, through a main menu the app now installs itself.
+
 ## [1.3.0] - 2026-07-30
 
 ### Added
