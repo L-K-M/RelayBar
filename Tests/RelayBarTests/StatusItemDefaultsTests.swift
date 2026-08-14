@@ -18,7 +18,11 @@ final class StatusItemDefaultsTests: XCTestCase {
     }
 
     override func tearDown() {
-        defaults?.removePersistentDomain(forName: suiteName)
+        // `setUpWithError` can throw before either is assigned, and tearDown
+        // still runs, so neither may be force-unwrapped here.
+        if let suiteName, let defaults {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
         defaults = nil
         suiteName = nil
         super.tearDown()
