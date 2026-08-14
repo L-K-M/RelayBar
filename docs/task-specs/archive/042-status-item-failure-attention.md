@@ -1,6 +1,6 @@
 # Task 042 — Status Item Failure Attention
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-08-14
 
@@ -37,3 +37,20 @@ give assistive technology an accurate compact status summary.
   status item or needlessly replacing its image.
 - Symbol lookup failure still leaves a distinct clickable issue glyph.
 - Relevant automated checks and `git diff --check` pass.
+
+## Evidence
+
+- [macOS CI](https://github.com/L-K-M/RelayBar/actions/runs/31847355773)
+  passed the full test suite, warnings-as-errors checks, and unsigned Release
+  build for the reviewed implementation on 2026-08-14.
+- The [follow-up GLM 5.3 review](https://github.com/L-K-M/RelayBar/actions/runs/31847354497)
+  completed successfully with no actionable suggestion after both knockout
+  paths gained graphics-state isolation, image replacement became directly
+  testable, and state transitions gained a non-chatty accessibility signal.
+- Focused fixtures cover stopped, active, and issue priority, pluralized counts,
+  and state-only image replacement. Source review confirmed the app retains its
+  single named status item and the drawn issue fallback remains clickable.
+- `git diff --check origin/main...HEAD` passed on 2026-08-14. Swift, Xcode, and
+  VoiceOver were unavailable on the Linux workspace; macOS CI is the build and
+  test authority, and packaged assistive-technology acceptance remains Task
+  032.
