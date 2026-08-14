@@ -463,6 +463,10 @@ final class RemoteFilesModel: ObservableObject {
                 let server = activeServer,
                 !currentPath.isEmpty
             {
+                // Consume the direct-file context: if the folder load fails,
+                // the error strip owns retry and the next Back leaves for
+                // the launcher instead of re-issuing the same failing load.
+                showsDirectFile = false
                 load(
                     path: currentPath,
                     server: server,

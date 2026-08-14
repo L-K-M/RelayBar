@@ -3505,6 +3505,38 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.currentPath, "/")
         XCTAssertEqual(model.selectedEntryID, entry.id)
         XCTAssertEqual(service.listRequests.map(\.path), ["/"])
+
+        // The root load must have cleared the direct-file state, so the
+        // next Back leaves the browser for the launcher.
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+    }
+
+    /// Task 038. When the containing-folder load fails, the direct-file
+    /// context is consumed: the error strip owns retry, and the next Back
+    /// leaves for the launcher instead of re-issuing the same failing load.
+    func testBackFromDirectFileAfterFailedParentLoadExitsToLauncher() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin")
+        service.pathResults[entry.path] = .file(entry)
+        service.errors[RemotePath.parent(of: entry.path)] =
+            RemoteFileError.commandFailed("Permission denied.")
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading && model.errorMessage == "Permission denied."
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
