@@ -71,6 +71,9 @@ case "$host" in
     invalidutf8)
         printf '\377\n'
         ;;
+    unreadable)
+        chmod 000 /dev/fd/1
+        ;;
     empty)
         ;;
     invaliddiagnostic)

@@ -18,8 +18,8 @@ valid UTF-8 instead of presenting it as an empty folder.
 ## Work
 
 - Preserve whether captured standard output decoded losslessly.
-- Reject a successful listing with a distinct typed error when its captured
-  standard output cannot be read.
+- Reject a successful listing with a distinct typed error when opening its
+  captured standard output for reading fails.
 - Surface invalid successful listing output as a typed user-facing error.
 - Decode bounded standard error with replacement characters before existing
   diagnostic normalization.

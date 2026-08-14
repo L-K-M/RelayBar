@@ -35,7 +35,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let status: Int32
         let output: CapturedStandardOutput
         let error: String
-        let exceededOutputLimit: Bool
+        /// True when either the output or diagnostics capture exceeds its byte cap.
+        let exceededCaptureLimit: Bool
     }
 
     private final class ProcessBox: @unchecked Sendable {
@@ -554,7 +555,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                             at: errorURL,
                             maximumBytes: errorLimit
                         )
-                        let exceededOutputLimit = outputLimitBox.hasExceeded
+                        let exceededCaptureLimit = outputLimitBox.hasExceeded
                             || capturedOutput.exceededLimit
                             || capturedError.exceededLimit
                         try? FileManager.default.removeItem(at: temporaryDirectory)
@@ -563,7 +564,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                                 status: status,
                                 output: capturedOutput.output,
                                 error: capturedError.text,
-                                exceededOutputLimit: exceededOutputLimit
+                                exceededCaptureLimit: exceededCaptureLimit
                             )
                         )
                     }
@@ -773,7 +774,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     private func validate(_ result: CommandResult) throws {
-        if result.exceededOutputLimit {
+        if result.exceededCaptureLimit {
             throw RemoteFileError.responseTooLarge
         }
         guard result.status == 0 else {

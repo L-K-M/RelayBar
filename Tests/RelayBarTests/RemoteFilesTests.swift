@@ -2715,15 +2715,11 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     }
 
     func testUnreadableListingCaptureDoesNotReturnAnEmptyFolder() async {
-        let service = SFTPRemoteFileService(
-            executableURL: fixtureExecutableURL,
-            standardOutputLimit: 0,
-            connectionSharing: false
-        )
+        let service = makeFixtureService()
 
         do {
             _ = try await service.list(
-                server: makeFixtureServer(host: "empty"),
+                server: makeFixtureServer(host: "unreadable"),
                 path: "/srv/app"
             )
             XCTFail("Expected an unreadable listing capture to fail.")
