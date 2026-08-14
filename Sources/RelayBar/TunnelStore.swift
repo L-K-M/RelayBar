@@ -391,8 +391,10 @@ final class TunnelStore: ObservableObject {
         }
     }
 
-    /// Routes through the application delegate, which confirms while any
-    /// tunnel is active and stops every managed process before termination.
+    /// Termination flow lives in `RelayBarAppDelegate`:
+    /// `applicationShouldTerminate` confirms while tunnels are active, and
+    /// `applicationWillTerminate` stops every managed process before exit.
+    /// Change those together with this path.
     func quit() {
         NSApplication.shared.terminate(nil)
     }

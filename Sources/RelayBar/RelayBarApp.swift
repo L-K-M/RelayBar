@@ -148,9 +148,36 @@ final class RelayBarAppDelegate:
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
-        UpdateServiceFactory.shared.prepareForApplicationTermination()
-            ? .terminateCancel
-            : .terminateNow
+        if UpdateServiceFactory.shared.prepareForApplicationTermination() {
+            return .terminateCancel
+        }
+        return confirmQuittingWithActiveTunnels()
+            ? .terminateNow
+            : .terminateCancel
+    }
+
+    /// Quitting SIGTERMs every live tunnel's SSH process. Rather than
+    /// dropping connections on a stray ⌘Q, ask once while any profile owns
+    /// lifecycle work. `runningCount` is the store's one definition of
+    /// active: starting, retrying, or running. A deferred update install
+    /// takes over termination first and asks its own question.
+    private func confirmQuittingWithActiveTunnels() -> Bool {
+        let activeCount = store.runningCount
+        guard activeCount > 0 else { return true }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = QuitConfirmation.messageText
+        alert.informativeText = QuitConfirmation.informativeText(
+            activeTunnelCount: activeCount
+        )
+        alert.addButton(
+            withTitle: QuitConfirmation.stopButtonTitle(
+                activeTunnelCount: activeCount
+            )
+        )
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     // MARK: Status item
