@@ -14,7 +14,7 @@ without adding search, indexing, mounting, or editing.
 - **Add SSH Host** accepts an optional local display name and a validated `user@server`-style SSH target. It saves Remote Files metadata only: it does not create a forwarding profile, add a forwarding rule, start SSH, or edit OpenSSH config.
 - A standalone saved host can be removed from the launcher after confirmation. Removal also drops its matching recent entry but does not change forwarding profiles or OpenSSH config.
 - Only successful folder or file opens are promoted to the recent section, which retains at most eight connections with the newest first. Failed opens do not change recents.
-- OpenSSH config discovery reads at most 1 MiB from `~/.ssh/config`, exposes at most 256 concrete `Host` aliases, and ignores wildcard, character-pattern, and negated aliases. Config aliases remain read-only and are not copied into RelayBar storage.
+- OpenSSH config discovery reads at most 1 MiB from `~/.ssh/config`, exposes at most 256 concrete `Host` aliases, and ignores wildcard, character-pattern, and negated aliases. `Include` lines are followed with glob expansion — relative patterns resolve against `~/.ssh`, unmatched patterns are ignored, and directories are skipped — under an eight-level depth cap, a 64-file budget, and visited-file cycle protection. Config aliases remain read-only and are not copied into RelayBar storage.
 - A successful open changes the compact launcher into a wider browser window.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.
 - When the launcher path identifies a supported image or Markdown file, RelayBar

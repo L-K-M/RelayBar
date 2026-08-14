@@ -19,6 +19,9 @@ Notable RelayBar changes are recorded here.
 - Remote Files remembers the last path each connection opened successfully
   and offers it in the launcher — on a fresh window and when switching
   servers with the field untouched.
+- Remote Files now follows `Include` lines in `~/.ssh/config` (glob
+  patterns, `~/` and `~/.ssh`-relative resolution, depth- and file-capped),
+  so hosts kept in included files appear in the server list.
 
 ### Fixed
 
