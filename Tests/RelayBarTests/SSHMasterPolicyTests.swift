@@ -152,27 +152,27 @@ final class SSHMasterPolicyTests: XCTestCase {
         masterArguments: [String]
     ) throws -> [String: [String]] {
         let process = Process()
-        let output = Pipe()
-        let error = Pipe()
+        // One pipe cannot deadlock while the parent drains it to EOF. Separate
+        // stdout and stderr pipes would require concurrent readers if either
+        // stream ever grew to the kernel pipe-buffer limit.
+        let response = Pipe()
         process.executableURL = executable
         process.arguments = [
             "-G",
             "-F", hostileConfigurationURL.path
         ] + masterArguments
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = error
+        process.standardOutput = response
+        process.standardError = response
 
         try process.run()
+        let responseData = response.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let outputData = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = error.fileHandleForReading.readDataToEndOfFile()
-        let errorText = String(decoding: errorData, as: UTF8.self)
-        XCTAssertEqual(process.terminationStatus, 0, errorText)
+        let responseText = String(decoding: responseData, as: UTF8.self)
+        XCTAssertEqual(process.terminationStatus, 0, responseText)
 
         var configuration: [String: [String]] = [:]
-        let outputText = String(decoding: outputData, as: UTF8.self)
-        for line in outputText.split(separator: "\n") {
+        for line in responseText.split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 1)
             guard fields.count == 2 else { continue }
             configuration[String(fields[0]), default: []].append(String(fields[1]))

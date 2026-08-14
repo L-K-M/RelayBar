@@ -42,7 +42,10 @@ arguments. Existing `-N`, `-T`, `ControlPersist=no`, and
 aliases, identity files, known-hosts policy, authentication through the user's
 agent, or jump/proxy hosts. An omitted local bind now reliably stays on
 loopback, while an explicit bind address remains authoritative. Server-side
-remote listener exposure remains controlled by the SSH server.
+remote listener exposure remains controlled by the SSH server. Configured
+`ProxyCommand` and `Match exec` still run local helpers as the connecting user;
+they remain part of the trusted connection-routing surface this policy
+intentionally preserves, unlike `LocalCommand`, which is forced off.
 
 ### SR-10 — Flexible forwarding expands network and filesystem authority (high)
 

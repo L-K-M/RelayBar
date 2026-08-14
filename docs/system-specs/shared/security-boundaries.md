@@ -3,7 +3,7 @@
 - RelayBar invokes `/usr/bin/ssh` directly and never invokes a shell.
 - Forwarding input becomes typed Local, Local SOCKS, Remote, or Remote SOCKS rules. Persisted profiles and structured settings are validated again immediately before launch.
 - Optional group tags are bounded, single-line local display metadata. They are never passed to SSH, SFTP, a shell, or Remote Files connection identity.
-- Both managed masters force foreground operation and disable SSH-config local commands, tun devices, agent forwarding, X11 forwarding, and implicit gateway binding. The forwarding master also clears SSH-config forwarding declarations, and its `-F none` control helpers add only the rules visible in RelayBar.
+- Both managed masters force foreground operation and disable SSH-config `LocalCommand` execution, tun devices, agent forwarding, X11 forwarding, and implicit gateway binding. The forwarding master also clears SSH-config forwarding declarations, and its `-F none` control helpers add only the rules visible in RelayBar.
 - Remote Files invokes one owned foreground `/usr/bin/ssh` master and bounded `/usr/bin/sftp` children directly with structured arguments and batch input; it also never invokes a shell.
 - Host values cannot be empty, option-shaped, whitespace-separated, or contain control characters.
 - Additional arguments must match the explicit allowlist in `SSHArgumentPolicy`; values must be nonempty and contain no control or newline characters.
@@ -14,6 +14,7 @@
 - The Remote Files master clears forwarding declarations, has no forwards of its own, uses `ControlPersist=no`, and accepts channels only through the exact socket path RelayBar passes to its SFTP children. It does not discover, reuse, or alter user-managed multiplexing or forwarding-profile runtime state.
 - Host-key verification and authentication occur when that master is established. Multiplexed SFTP children reuse the authenticated transport while retaining the existing path, output, staging, preview, and cancellation bounds.
 - Normal SSH connection and authentication configuration remains available, including aliases, known hosts, identity files, the user's SSH agent, and jump/proxy hosts. Disabling agent forwarding does not disable using the agent to authenticate the master.
+- Configured `ProxyCommand` and `Match exec` helpers remain part of that trusted connection-routing boundary and may execute locally as the connecting user.
 - Remote paths must be absolute, single-line, and no more than 32 KiB of UTF-8. SFTP batch values escape quotes and backslashes. Listing basenames containing path separators or control characters are ignored; absolute listing names are accepted only when they resolve to direct children of the requested folder.
 - Remote listings are capped at 10,000 supported entries, 32 KiB per line, and 4 KiB per entry name; negative sizes are rejected. Captured SFTP output is capped at 32 MiB, captured SFTP diagnostics at 1 MiB, image previews at 100 MiB, and Markdown previews at 2 MiB.
 - Command output and previews use private temporary directories. Downloads use a hidden `0700` staging directory beside the chosen destination and replace existing content only after success.
