@@ -210,6 +210,7 @@ enum RemoteFileError: LocalizedError, Equatable {
     case invalidMarkdownEncoding
     case imageDimensionsTooLarge
     case unsupportedImage
+    case invalidListingEncoding
     case malformedListing
     case commandFailed(String)
     case missingDownload
@@ -236,6 +237,8 @@ enum RemoteFileError: LocalizedError, Equatable {
             return "This image’s dimensions are too large to preview safely. Download it instead."
         case .unsupportedImage:
             return "This image could not be decoded safely."
+        case .invalidListingEncoding:
+            return "The remote server returned a folder listing that is not valid UTF-8."
         case .malformedListing:
             return "RelayBar could not read this folder listing."
         case .commandFailed(let message):

@@ -27,7 +27,7 @@ extension RemoteFileServing {
 final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private struct CommandResult {
         let status: Int32
-        let output: String
+        let output: String?
         let error: String
         let exceededOutputLimit: Bool
     }
@@ -281,7 +281,10 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
         )
         try validate(result)
-        return (result.output, normalizedPath)
+        guard let output = result.output else {
+            throw RemoteFileError.invalidListingEncoding
+        }
+        return (output, normalizedPath)
     }
 
     func download(
@@ -531,11 +534,11 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                         {
                             outputLimitBox.markExceeded()
                         }
-                        let output = Self.readString(
+                        let output = Self.readUTF8String(
                             at: outputURL,
                             maximumBytes: outputLimit
                         )
-                        let error = Self.readString(
+                        let error = Self.readDiagnosticString(
                             at: errorURL,
                             maximumBytes: errorLimit
                         )
@@ -857,22 +860,39 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
 
-    private static func readString(at url: URL, maximumBytes: Int64) -> String {
+    private static func readUTF8String(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> String? {
+        guard let data = readData(at: url, maximumBytes: maximumBytes) else {
+            return ""
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func readDiagnosticString(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> String {
+        guard let data = readData(at: url, maximumBytes: maximumBytes) else {
+            return ""
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func readData(at url: URL, maximumBytes: Int64) -> Data? {
         guard
             maximumBytes > 0,
             maximumBytes <= Int64(Int.max),
             let handle = try? FileHandle(forReadingFrom: url)
         else {
-            return ""
+            return nil
         }
         defer { try? handle.close() }
         do {
-            guard let data = try handle.read(upToCount: Int(maximumBytes)) else {
-                return ""
-            }
-            return String(data: data, encoding: .utf8) ?? ""
+            return try handle.read(upToCount: Int(maximumBytes)) ?? Data()
         } catch {
-            return ""
+            return nil
         }
     }
 }

@@ -2694,6 +2694,65 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
     }
 
+    func testRejectsInvalidUTF8ListingInsteadOfReturningAnEmptyFolder() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected invalid listing UTF-8 to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+            XCTAssertEqual(
+                error.errorDescription,
+                "The remote server returned a folder listing that is not valid UTF-8."
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testLossilyDecodesMalformedUTF8Diagnostics() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the command to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(
+                error,
+                .commandFailed("Permission was denied for this server or path.")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testMalformedUTF8DiagnosticsRemainByteBounded() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testRejectsProcessOutputBeyondTheConfiguredLimit() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/bin/echo"),
