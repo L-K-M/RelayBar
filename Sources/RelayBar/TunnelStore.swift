@@ -391,8 +391,9 @@ final class TunnelStore: ObservableObject {
         }
     }
 
+    /// Routes through the application delegate, which confirms while any
+    /// tunnel is active and stops every managed process before termination.
     func quit() {
-        stopAll()
         NSApplication.shared.terminate(nil)
     }
 

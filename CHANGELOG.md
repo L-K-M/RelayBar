@@ -22,6 +22,8 @@ Notable RelayBar changes are recorded here.
 - Remote Files now follows `Include` lines in `~/.ssh/config` (glob
   patterns, `~/` and `~/.ssh`-relative resolution, depth- and file-capped),
   so hosts kept in included files appear in the server list.
+- Quitting with tunnels running asks first — Stop and Quit, or Cancel — so a
+  stray ⌘Q no longer drops every live connection without warning.
 
 ### Fixed
 

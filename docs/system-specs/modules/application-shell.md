@@ -76,7 +76,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   on `127.0.0.1`, `localhost`, or `::1`. The override is process-scoped and is
   not persisted. An invalid requested override prevents the updater from
   starting; an ordinary launch uses the signed HTTPS production feed.
-- Quit stops all managed SSH processes before terminating the app.
+- Quit with any tunnel starting, retrying, or running asks once — Stop and Quit, or Cancel — before stopping all managed SSH processes and terminating; a deferred update install takes over termination first and asks its own question. With nothing active, Quit proceeds without a prompt.
 
 ## Ownership
 

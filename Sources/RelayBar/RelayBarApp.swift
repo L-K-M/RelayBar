@@ -818,6 +818,27 @@ struct PopoverToggleGuard {
     }
 }
 
+/// The user-facing copy of the active-tunnel quit confirmation, kept pure
+/// so the pluralization stays testable away from a modal alert.
+enum QuitConfirmation {
+    static let messageText = "Quit RelayBar?"
+    static let cancelButtonTitle = "Cancel"
+
+    static func informativeText(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1
+            ? "1 tunnel is running. Quitting stops it."
+            : "\(activeTunnelCount) tunnels are running. Quitting stops them."
+    }
+
+    static func stopButtonTitle(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1 ? "Stop Tunnel and Quit" : "Stop Tunnels and Quit"
+    }
+}
+
+/// AppKit autosaves a status item's slot and visibility into the owning app's
+    }
+}
+
 /// AppKit autosaves a status item's slot and visibility into the owning app's
 /// own defaults domain, and restores both on every later launch. That is the
 /// mechanism behind an icon that appears once and never again: nothing in the
