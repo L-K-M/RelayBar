@@ -241,7 +241,7 @@ enum RemoteFileError: LocalizedError, Equatable {
         case .invalidListingEncoding:
             return "The remote server returned a folder listing that is not valid UTF-8."
         case .unreadableListing:
-            return "RelayBar could not read the SFTP response for this folder."
+            return "RelayBar could not open the captured SFTP response for this folder."
         case .malformedListing:
             return "RelayBar could not read this folder listing."
         case .commandFailed(let message):

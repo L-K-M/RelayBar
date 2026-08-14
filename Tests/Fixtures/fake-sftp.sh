@@ -73,6 +73,7 @@ case "$host" in
         exit 0
         ;;
     unreadable)
+        # Requires a non-root test harness; root ignores the 000 mode.
         chmod 000 /dev/fd/1 || exit 1
         exit 0
         ;;

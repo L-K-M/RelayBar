@@ -44,8 +44,8 @@ valid UTF-8 instead of presenting it as an empty folder.
 
 ## Evidence
 
-- macOS 15 CI ran `swift test -Xswiftc -warnings-as-errors`: 260 tests passed
-  with 15 skipped and no failures on 2026-08-14.
+- macOS 15 CI ran the full suite with
+  `swift test -Xswiftc -warnings-as-errors` and no failures on 2026-08-14.
 - The same CI run completed the unsigned RelayBar Release build with
   `xcodebuild` on 2026-08-14.
 - Fixture syntax, raw invalid-byte assertions, unreadable-capture permissions,
