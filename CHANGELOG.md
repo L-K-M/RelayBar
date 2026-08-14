@@ -44,6 +44,8 @@ Notable RelayBar changes are recorded here.
   one a crowded or notched menu bar drops.
 - Standard editing shortcuts reach text fields in the profile editor and the
   Remote Files window again, through a main menu the app now installs itself.
+- A retrying profile now counts down to its next attempt. The row used to
+  freeze "Retrying in 30s" for the whole backoff, reading like a stuck UI.
 
 ## [1.3.0] - 2026-07-30
 

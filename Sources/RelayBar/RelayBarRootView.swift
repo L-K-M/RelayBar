@@ -156,6 +156,7 @@ private struct TunnelListView: View {
             tunnel: tunnel,
             phase: store.phase(for: tunnel),
             runtimePorts: store.runtimePorts(for: tunnel),
+            retryDeadline: store.retryDeadline(for: tunnel),
             availableGroups: availableGroups,
             onToggle: { store.toggle(tunnel) },
             onOpen: { store.openInBrowser(tunnel) },
@@ -316,6 +317,7 @@ private struct TunnelRow: View {
     let tunnel: Tunnel
     let phase: TunnelPhase
     let runtimePorts: [UUID: Int]
+    let retryDeadline: Date?
     let availableGroups: [String]
     let onToggle: () -> Void
     let onOpen: () -> Void
@@ -361,7 +363,7 @@ private struct TunnelRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    Text(errorOrHost)
+                    statusLine
                         .font(.system(size: 10.5))
                         .foregroundStyle(isFailure ? Color.red : Color.secondary)
                         .lineLimit(1)
@@ -607,6 +609,28 @@ private struct TunnelRow: View {
             return message
         case .stopped, .starting, .running:
             return "via \(tunnel.sshHost)"
+        }
+    }
+
+    /// The third row line. A retrying profile counts down to its next
+    /// attempt against the store-recorded deadline instead of freezing the
+    /// delay that was current when the retry was scheduled.
+    @ViewBuilder private var statusLine: some View {
+        switch phase {
+        case .retrying(_, _, _, let message):
+            if let retryDeadline {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(
+                        0,
+                        Int(ceil(retryDeadline.timeIntervalSince(context.date)))
+                    )
+                    Text("Retrying in \(remaining)s · \(message)")
+                }
+            } else {
+                Text(errorOrHost)
+            }
+        default:
+            Text(errorOrHost)
         }
     }
 
