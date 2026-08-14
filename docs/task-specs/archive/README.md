@@ -30,3 +30,4 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 030 — Show Version and Project Links](030-version-and-project-links.md)
 - [Task 031 — Fix Edit Profile Insets](031-fix-edit-profile-insets.md)
 - [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)
+- [Task 035 - Add GLM 5.3 PR Review](035-add-glm-5-3-pr-review.md)

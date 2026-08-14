@@ -15,6 +15,17 @@
 - Run `plutil -lint` against the application property list.
 - Run `git diff --check` before committing.
 
+## Pull request review automation
+
+Non-draft pull requests from branches in this repository trigger an optional
+GLM 5.3 review on open, reopen, synchronization, and transition out of draft.
+The workflow uses `pull_request_target` so it can read the `ZAI_API_KEY` secret
+and publish review feedback, but it never checks out or executes pull-request
+code and rejects fork pull requests. The review action is pinned to an
+immutable commit. Superseded runs for the same pull request are canceled, and
+the workflow exits successfully without a review when `ZAI_API_KEY` is not
+configured.
+
 ## Optional live check
 
 Set `RELAYBAR_LIVE_TEST=1` and `RELAYBAR_LIVE_SSH_HOST` to test a real SSH forward and HTTP response on local port 3000.
