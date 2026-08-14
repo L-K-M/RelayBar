@@ -955,6 +955,42 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.runningCount, 0)
     }
 
+    func testForwardingControlPathRejectsOverlongRootWithoutResidue() throws {
+        let root = URL(
+            fileURLWithPath:
+                "/tmp/RelayBarOverlong-"
+                + String(repeating: "x", count: 64)
+                + "-"
+                + String(UUID().uuidString.prefix(8)),
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            maxRetryAttempts: 0,
+            temporaryDirectory: root
+        )
+        let tunnel = makeLocalProfile()
+
+        store.start(tunnel)
+
+        guard case .failed(let message) = store.phase(for: tunnel) else {
+            return XCTFail("Expected an overlong forwarding control path to fail.")
+        }
+        XCTAssertTrue(message.contains("too long"))
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty,
+            "A rejected forwarding control path must not leave a private directory."
+        )
+    }
+
     func testManualStopCancelsPendingRetry() async throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
