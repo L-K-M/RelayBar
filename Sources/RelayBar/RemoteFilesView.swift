@@ -59,8 +59,11 @@ struct RemoteFilesView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Remote path")
                     .font(.system(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
                 TextField("/srv/app/output", text: $model.remotePath)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Remote path")
+                    .accessibilityHint("Absolute path on the selected SSH server")
                     .focused($isPathFocused)
                     .onSubmit {
                         if model.canOpen {
@@ -77,6 +80,7 @@ struct RemoteFilesView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Server")
                     .font(.system(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
                 HStack(spacing: 8) {
                     if model.servers.isEmpty {
                         Text("No SSH servers found")
@@ -105,6 +109,8 @@ struct RemoteFilesView: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Server")
+                        .accessibilityHint("SSH connection for Remote Files")
                     }
 
                     Button {
@@ -602,15 +608,21 @@ private struct AddRemoteServerView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Name · Optional")
                     .font(.system(size: 11, weight: .medium))
+                    .accessibilityHidden(true)
                 TextField("Development server", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Saved host name")
+                    .accessibilityHint("Optional display name")
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("SSH host")
                     .font(.system(size: 11, weight: .medium))
+                    .accessibilityHidden(true)
                 TextField("user@server", text: $sshHost)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Saved host SSH host")
+                    .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($isHostFocused)
                     .onSubmit(add)
                 Text("RelayBar uses your existing OpenSSH config, keys, and agent.")

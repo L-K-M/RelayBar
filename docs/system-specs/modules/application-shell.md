@@ -26,6 +26,11 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   horizontal scroll range or shift content against an edge. Field labels
   appear once; native picker labels are hidden where a custom field label is
   present.
+- Principal profile controls expose stable purpose-based accessibility labels,
+  including **Profile name** and **SSH host**, independently of their placeholder
+  or current value. Reusable forwarding endpoint controls similarly name the
+  endpoint role and type; purely visual field captions are hidden from the
+  accessibility tree so they are not announced twice.
 - The menu-bar icon indicates whether any tunnel is starting, retrying, or running.
 - The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
