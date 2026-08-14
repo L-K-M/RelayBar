@@ -388,13 +388,25 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
-        if
+        guard
             PopoverToggleGuard.shouldRecordClose(
                 eventType: NSApp.currentEvent?.type
             )
-        {
-            popoverToggleGuard.recordClose()
+        else {
+            return
         }
+        // A mouse-down close only races the toggle when the mouse-down
+        // landed on the icon itself; a dismissal click anywhere else
+        // (desktop, another window) must not disarm the next deliberate
+        // icon click. Unknown-event closes (app deactivation) skip the
+        // hit-test and record, the safer default.
+        if NSApp.currentEvent != nil, !isPointerOverStatusItem() { return }
+        popoverToggleGuard.recordClose()
+    }
+
+    private func isPointerOverStatusItem() -> Bool {
+        guard let buttonWindow = statusItem?.button?.window else { return false }
+        return buttonWindow.frame.contains(NSEvent.mouseLocation)
     }
 
     /// An agent app has no menu bar of its own, so without a main menu the
@@ -745,16 +757,19 @@ struct PopoverToggleGuard {
     /// inside this window; two deliberate clicks do not.
     static let suppressionWindow: TimeInterval = 0.35
 
-    /// Only a close caused by a mouse-down delivered outside the popover can
-    /// be the front half of the click whose mouse-up runs the toggle action;
-    /// Escape, in-popover, and programmatic `performClose` closes (which
-    /// arrive as key or mouse-up events) never race it, so they must not
-    /// disarm a deliberate following click. An unknown event context — a
-    /// close driven by app deactivation — records, the safer default for
-    /// never re-opening over a real icon click.
+    /// Only a close caused by a left mouse-down delivered outside the
+    /// popover can be the front half of the click whose mouse-up runs the
+    /// toggle action (the status button fires on left mouse-up only, so a
+    /// right-click close can never race it). Escape, in-popover, and
+    /// programmatic `performClose` closes (which arrive as key or mouse-up
+    /// events) never race it, so they must not disarm a deliberate following
+    /// click. An unknown event context — a close driven by app deactivation
+    /// — records, the safer default for never re-opening over a real icon
+    /// click. The delegate additionally hit-tests the mouse location against
+    /// the status item, so dismissal clicks elsewhere do not arm the guard.
     static func shouldRecordClose(eventType: NSEvent.EventType?) -> Bool {
         guard let eventType else { return true }
-        return eventType == .leftMouseDown || eventType == .rightMouseDown
+        return eventType == .leftMouseDown
     }
 
     /// Only a toggle fired by a mouse-up can be the tail of the click that

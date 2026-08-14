@@ -52,11 +52,13 @@ final class PopoverToggleGuardTests: XCTestCase {
 
     func testMouseDownAndUnknownEventClosesRecord() {
         XCTAssertTrue(PopoverToggleGuard.shouldRecordClose(eventType: .leftMouseDown))
-        XCTAssertTrue(PopoverToggleGuard.shouldRecordClose(eventType: .rightMouseDown))
         XCTAssertTrue(PopoverToggleGuard.shouldRecordClose(eventType: nil))
     }
 
-    func testKeyboardAndMouseUpClosesDoNotRecord() {
+    func testRightClickKeyboardAndMouseUpClosesDoNotRecord() {
+        // The status button fires its action on left mouse-up only, so a
+        // right-click close can never race the toggle either.
+        XCTAssertFalse(PopoverToggleGuard.shouldRecordClose(eventType: .rightMouseDown))
         XCTAssertFalse(PopoverToggleGuard.shouldRecordClose(eventType: .keyDown))
         XCTAssertFalse(PopoverToggleGuard.shouldRecordClose(eventType: .leftMouseUp))
         XCTAssertFalse(PopoverToggleGuard.shouldRecordClose(eventType: .leftMouseDragged))
