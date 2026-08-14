@@ -915,9 +915,18 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
         defer { try? handle.close() }
         do {
-            let data = try handle.read(upToCount: Int(maximumBytes)) ?? Data()
+            let byteLimit = Int(maximumBytes)
+            var data = Data()
+            while data.count < byteLimit {
+                let remaining = byteLimit - data.count
+                guard
+                    let chunk = try handle.read(upToCount: min(64 * 1_024, remaining)),
+                    !chunk.isEmpty
+                else { break }
+                data.append(chunk)
+            }
             let exceededLimit: Bool
-            if data.count == Int(maximumBytes) {
+            if data.count == byteLimit {
                 exceededLimit = try handle.read(upToCount: 1)?.isEmpty == false
             } else {
                 exceededLimit = false

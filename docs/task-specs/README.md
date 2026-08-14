@@ -32,6 +32,7 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 ## Active tasks
 
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
+- [Task 048 — Reject Invalid SFTP UTF-8](048-reject-invalid-sftp-utf8.md)
 
 ## Backlog
 

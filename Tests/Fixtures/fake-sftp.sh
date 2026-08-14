@@ -73,7 +73,7 @@ case "$host" in
         exit 0
         ;;
     unreadable)
-        chmod 000 /dev/fd/1
+        chmod 000 /dev/fd/1 || exit 1
         exit 0
         ;;
     empty)
