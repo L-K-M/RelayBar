@@ -8,9 +8,9 @@ task specifications, security and privacy documentation, committed screenshots,
 assets, and recent repository history.
 
 Document lifecycle: this is the review and implementation ledger requested for the
-current pass. Completed entries will not be copied into the durable `ANALYSIS.md`
-backlog; remaining work will be consolidated there after the implementation PRs
-reach steady state.
+current pass. Completed entries will not be copied into the durable
+[`ANALYSIS.md`](ANALYSIS.md) backlog; remaining work will be consolidated there
+after the implementation PRs reach steady state.
 
 ## Executive assessment
 

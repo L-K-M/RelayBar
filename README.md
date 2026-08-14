@@ -77,5 +77,6 @@ swift test
 
 The behavior and architecture archive starts at
 [`docs/system-specs`](docs/system-specs/README.md). Fork changes are recorded in
-[`CHANGELOG.md`](CHANGELOG.md). The current comprehensive review and implementation
-ledger is [`sol.md`](sol.md).
+[`CHANGELOG.md`](CHANGELOG.md). The 2026-08-14 point-in-time review of revision
+`1faa8d9` is [`sol.md`](sol.md); the durable consolidated backlog is
+[`ANALYSIS.md`](ANALYSIS.md).
