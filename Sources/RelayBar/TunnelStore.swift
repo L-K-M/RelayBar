@@ -206,6 +206,32 @@ final class TunnelStore: ObservableObject {
         save()
     }
 
+    /// Appends an independent copy of a saved profile right after the
+    /// original, with fresh profile and rule identities so editing, running,
+    /// or deleting the copy never touches the original. The copy inherits
+    /// the (already resolved) group tag and starts stopped.
+    @discardableResult
+    func duplicate(_ tunnel: Tunnel) -> Tunnel? {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return nil
+        }
+        let source = tunnels[index]
+        var copy = source
+        copy.id = UUID()
+        copy.rules = source.rules.map { original in
+            var rule = original
+            rule.id = UUID()
+            return rule
+        }
+        let trimmedName = source.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedName.isEmpty {
+            copy.name = "\(trimmedName) copy"
+        }
+        tunnels.insert(copy, at: index + 1)
+        save()
+        return copy
+    }
+
     func toggle(_ tunnel: Tunnel) {
         if desiredTunnels[tunnel.id] != nil {
             stop(tunnel)

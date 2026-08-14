@@ -230,6 +230,52 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.tunnels.count, 4)
     }
 
+    /// Task 039. Duplicating a profile appends an independent copy with fresh
+    /// identities right after the original and persists it.
+    func testDuplicateProfileCreatesIndependentCopyAfterTheOriginal() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        let first = makeGroupedProfile(name: "Web", port: 43_250, group: "Work")
+        let second = makeGroupedProfile(name: "Other", port: 43_251, group: nil)
+        store.add(first)
+        store.add(second)
+
+        let copy = try XCTUnwrap(store.duplicate(first))
+
+        XCTAssertEqual(store.tunnels.count, 3)
+        XCTAssertEqual(store.tunnels[1].id, copy.id)
+        XCTAssertNotEqual(copy.id, first.id)
+        XCTAssertEqual(copy.name, "Web copy")
+        XCTAssertEqual(copy.groupTag, "Work")
+        XCTAssertEqual(copy.sshHost, first.sshHost)
+        XCTAssertEqual(copy.rules.count, first.rules.count)
+        XCTAssertNotEqual(copy.rules[0].id, first.rules[0].id)
+        XCTAssertEqual(copy.rules[0].listen, first.rules[0].listen)
+        XCTAssertEqual(copy.rules[0].destination, first.rules[0].destination)
+        XCTAssertTrue(copy.isSafeToRun)
+        XCTAssertEqual(store.phase(for: copy), .stopped)
+
+        let reloaded = TunnelStore(defaults: defaults)
+        XCTAssertEqual(reloaded.tunnels.map(\.name), ["Web", "Web copy", "Other"])
+    }
+
+    /// Task 039. An unnamed profile's copy stays unnamed so its generated
+    /// display summary keeps showing; only explicit names gain the suffix.
+    func testDuplicateOfUnnamedProfileStaysUnnamed() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        var profile = makeLocalProfile()
+        profile.name = "  "
+        store.add(profile)
+
+        let copy = try XCTUnwrap(store.duplicate(profile))
+
+        XCTAssertEqual(copy.name, "  ")
+        XCTAssertEqual(copy.displayName, store.tunnels[0].displayName)
+    }
+
     /// Task 009. `grouping` is cached so the list body does not rebuild sections
     /// on every phase publish. Every mutation path must invalidate it.
     func testGroupingCacheInvalidatesOnEveryMutationPath() throws {

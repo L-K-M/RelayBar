@@ -4,7 +4,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 
 ## Contract
 
-- Users can add, edit, delete, start, and stop profiles.
+- Users can add, edit, duplicate, delete, start, and stop profiles. Duplicating inserts an independent copy with fresh profile and rule identities directly after the original; an explicitly named profile's copy gains a " copy" suffix, and the copy starts stopped.
 - Each profile may have one optional group tag. The editor places a native **Group · Optional** picker below Name, and Quick Add leaves the selected group unchanged.
 - When every profile is ungrouped, the saved list keeps its original flat presentation. Once any profile has a group, named sections use localized standard ordering, preserve saved order within each section, and place **Ungrouped** last when needed.
 - Row menus can move a profile to Ungrouped, an existing group, or a new inline-created group. Named section menus can rename the group or ungroup every member; no separate group records are stored.
