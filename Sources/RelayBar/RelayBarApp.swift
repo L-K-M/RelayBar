@@ -110,6 +110,8 @@ final class RelayBarAppDelegate:
         activeCount: 0,
         failedCount: 0
     )
+    private var popoverToggleGuard = PopoverToggleGuard()
+    private var statusItemShowsActiveTunnels = false
     private var tunnelActivityObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -343,7 +345,7 @@ final class RelayBarAppDelegate:
     @objc private func togglePopover() {
         if let popover, popover.isShown {
             popover.performClose(nil)
-        } else {
+        } else if popoverToggleGuard.shouldPresent() {
             presentPopover()
         }
     }
@@ -381,6 +383,7 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
+        popoverToggleGuard.recordClose()
     }
 
     /// An agent app has no menu bar of its own, so without a main menu the
@@ -713,6 +716,41 @@ final class RelayBarAppDelegate:
         }
         #endif
         TunnelStore.shared.stopAll()
+    }
+}
+
+/// Guards the status-item toggle against the dismissal the same click
+/// already caused. The popover's behavior is `.transient`, so clicking the
+/// menu-bar icon while the popover is open closes it on mouse-down — the
+/// click lands outside the popover window — and the button action only runs
+/// on mouse-up. Reading `isShown` in the action therefore always sees
+/// "closed" and would immediately re-present the popover, making the icon
+/// unable to dismiss it. The guard treats a toggle that lands inside a short
+/// window after any close as the tail of that same click and swallows it
+/// once.
+struct PopoverToggleGuard {
+    /// The mouse-down close and mouse-up action of one click arrive well
+    /// inside this window; two deliberate clicks do not.
+    static let suppressionWindow: TimeInterval = 0.35
+
+    private var lastClose: Date?
+
+    mutating func recordClose(now: Date = Date()) {
+        lastClose = now
+    }
+
+    /// Returns `false` exactly once when the toggle lands within the
+    /// suppression window of the recorded close, treating it as the click
+    /// that already dismissed the popover. A close recorded by an intentional
+    /// toggle-close is consumed the same way, so at worst one rapid re-click
+    /// is ignored and the next one opens the menu.
+    mutating func shouldPresent(now: Date = Date()) -> Bool {
+        guard let lastClose else { return true }
+        if now.timeIntervalSince(lastClose) < Self.suppressionWindow {
+            self.lastClose = nil
+            return false
+        }
+        return true
     }
 }
 
