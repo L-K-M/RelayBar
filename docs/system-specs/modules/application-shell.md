@@ -32,7 +32,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.
 - The settings screen's Launch at Login toggle registers or unregisters the main app as the current user's login item through `SMAppService.mainApp` — no helper executable, launch daemon, elevated privilege, or separate settings window.
-- The General card's second row is **Automatic Updates**. It controls
+- The General card's second row is **Automatically Check for Updates**. It controls
   Sparkle's own persisted scheduled-check preference, defaults off, checks at
   a seven-day interval when enabled, and cannot enable automatic download or
   installation. Settings and application activation do not initiate checks.
