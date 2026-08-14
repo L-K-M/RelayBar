@@ -892,6 +892,11 @@ final class RemoteFilesModel: ObservableObject {
         previewURL = nil
     }
 
+    private func prefillLastPathForSelectedServer() {
+        guard let server = selectedServer else { return }
+        remotePath = serverCatalog.lastOpenedPath(for: server) ?? ""
+    }
+
     private func refreshServers(
         preferredConnection: RemoteServer.ConnectionIdentity?
     ) {

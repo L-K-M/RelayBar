@@ -132,15 +132,23 @@ final class RemoteServerCatalog {
         }
     }
 
+    private struct LastPathRecord: Codable {
+        let key: String
+        let path: String
+    }
+
     private static let savedLimit = 128
     private static let recentLimit = 8
+    private static let lastPathLimit = 32
     private static let savedStorageKey = "remoteFiles.savedServers.v1"
     private static let recentStorageKey = "remoteFiles.recentServers.v1"
+    private static let lastPathStorageKey = "remoteFiles.lastPaths.v1"
 
     private let defaults: UserDefaults?
     private let sshConfigURL: URL?
     private var savedRecords: [Record]
     private var recentRecords: [Record]
+    private var lastPathRecords: [LastPathRecord]
 
     init(defaults: UserDefaults? = nil, sshConfigURL: URL? = nil) {
         self.defaults = defaults
@@ -155,6 +163,7 @@ final class RemoteServerCatalog {
             key: Self.recentStorageKey,
             limit: Self.recentLimit
         )
+        lastPathRecords = Self.loadLastPaths(from: defaults)
     }
 
     static func appDefault() -> RemoteServerCatalog {
@@ -249,6 +258,69 @@ final class RemoteServerCatalog {
         persist(recentRecords, key: Self.recentStorageKey)
     }
 
+    /// The last successfully opened remote path for this exact connection,
+    /// so the launcher can offer to continue where the user left off instead
+    /// of resetting to an empty field on every window.
+    func lastOpenedPath(for server: RemoteServer) -> String? {
+        let key = Self.lastPathKey(for: server.connectionIdentity)
+        return lastPathRecords.first { $0.key == key }?.path
+    }
+
+    func recordLastOpenedPath(_ path: String, for server: RemoteServer) {
+        let normalized = RemotePath.normalized(path)
+        guard RemotePath.validationMessage(for: normalized) == nil else { return }
+        let key = Self.lastPathKey(for: server.connectionIdentity)
+        if lastPathRecords.first?.key == key,
+           lastPathRecords.first?.path == normalized {
+            return
+        }
+        lastPathRecords.removeAll { $0.key == key }
+        lastPathRecords.insert(
+            LastPathRecord(key: key, path: normalized),
+            at: 0
+        )
+        if lastPathRecords.count > Self.lastPathLimit {
+            lastPathRecords.removeLast(lastPathRecords.count - Self.lastPathLimit)
+        }
+        persist(lastPathRecords, key: Self.lastPathStorageKey)
+    }
+
+    /// Newlines cannot appear in a validated host or option value, so one
+    /// key line per component is unambiguous.
+    private static func lastPathKey(
+        for identity: RemoteServer.ConnectionIdentity
+    ) -> String {
+        ([identity.sshHost] + identity.additionalArguments)
+            .joined(separator: "\n")
+    }
+
+    private static func loadLastPaths(
+        from defaults: UserDefaults?
+    ) -> [LastPathRecord] {
+        guard
+            let data = defaults?.data(forKey: lastPathStorageKey),
+            let decoded = try? JSONDecoder().decode(
+                [LastPathRecord].self,
+                from: data
+            )
+        else {
+            return []
+        }
+        var result: [LastPathRecord] = []
+        var seen: Set<String> = []
+        for record in decoded.prefix(lastPathLimit) {
+            guard
+                !record.key.isEmpty,
+                RemotePath.validationMessage(for: record.path) == nil,
+                seen.insert(record.key).inserted
+            else {
+                continue
+            }
+            result.append(record)
+        }
+        return result
+    }
+
     func recordSuccessfulOpen(_ server: RemoteServer) {
         if recentRecords.first?.connectionIdentity == server.connectionIdentity {
             return
@@ -263,7 +335,7 @@ final class RemoteServerCatalog {
         persist(recentRecords, key: Self.recentStorageKey)
     }
 
-    private func persist(_ records: [Record], key: String) {
+    private func persist<Records: Encodable>(_ records: [Records], key: String) {
         guard let defaults, let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: key)
     }

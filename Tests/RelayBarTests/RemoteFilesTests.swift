@@ -335,6 +335,89 @@ final class RemoteServerCatalogTests: XCTestCase {
         )
     }
 
+    /// Task 045. The last opened path persists per exact connection and
+    /// survives a catalog reload.
+    func testLastOpenedPathPersistsPerConnection() throws {
+        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let first = RemoteServer(
+            id: UUID(),
+            name: "First",
+            sshHost: "first.example.com",
+            additionalArguments: [],
+            source: .saved
+        )
+        let second = RemoteServer(
+            id: UUID(),
+            name: "Second",
+            sshHost: "first.example.com",
+            additionalArguments: ["-p", "2222"],
+            source: .saved
+        )
+
+        catalog.recordLastOpenedPath("/srv/app/", for: first)
+        catalog.recordLastOpenedPath("/var/log", for: second)
+
+        XCTAssertEqual(catalog.lastOpenedPath(for: first), "/srv/app")
+        XCTAssertEqual(catalog.lastOpenedPath(for: second), "/var/log")
+
+        let reloaded = RemoteServerCatalog(defaults: defaults)
+        XCTAssertEqual(reloaded.lastOpenedPath(for: first), "/srv/app")
+        XCTAssertEqual(reloaded.lastOpenedPath(for: second), "/var/log")
+
+        catalog.recordLastOpenedPath("relative/path", for: first)
+        catalog.recordLastOpenedPath("/srv/app", for: first)
+        let unchanged = RemoteServerCatalog(defaults: defaults)
+        XCTAssertEqual(unchanged.lastOpenedPath(for: first), "/srv/app")
+    }
+
+    /// Task 045. Last-path records stay bounded, most-recently used first.
+    func testLastOpenedPathStorageIsBounded() throws {
+        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+
+        for index in 0..<40 {
+            catalog.recordLastOpenedPath(
+                "/path-\(index)",
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S\(index)",
+                    sshHost: "server-\(index).example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
+        }
+
+        let reloaded = RemoteServerCatalog(defaults: defaults)
+        XCTAssertNotNil(
+            reloaded.lastOpenedPath(
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S39",
+                    sshHost: "server-39.example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
+        )
+        XCTAssertNil(
+            reloaded.lastOpenedPath(
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S0",
+                    sshHost: "server-0.example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
+        )
+    }
+
     func testPersistsStandaloneHostsAndRemovalAlsoDropsTheirRecentEntry() throws {
         let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -3349,6 +3432,71 @@ final class RemoteFilesModelTests: XCTestCase {
             ["first.example.com", "second.example.com"]
         )
         model.cancelAll()
+    }
+
+    /// Task 045. A reopened Remote Files window offers the last path that
+    /// server opened successfully.
+    func testLauncherPrefillsLastOpenedPathForInitialServer() async throws {
+        let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        service.listings["/srv/app"] = []
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            serverCatalog: catalog
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        let reopened = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: StubRemoteFileService(),
+            serverCatalog: catalog
+        )
+        XCTAssertEqual(reopened.remotePath, "/srv/app")
+        model.cancelAll()
+    }
+
+    /// Task 045. Switching the launcher server offers that server's last
+    /// path only while the field is untouched.
+    func testSwitchingServerPrefillsLastPathOnlyWhenFieldIsEmpty() throws {
+        let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let first = makeTunnel(name: "First", host: "first.example.com")
+        let second = makeTunnel(name: "Second", host: "second.example.com")
+        catalog.recordLastOpenedPath(
+            "/var/log",
+            for: RemoteServer(tunnel: second)
+        )
+        let model = RemoteFilesModel(
+            tunnels: [first, second],
+            service: StubRemoteFileService(),
+            serverCatalog: catalog
+        )
+        XCTAssertEqual(model.remotePath, "")
+
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "second.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "/var/log")
+
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "first.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "")
+
+        model.remotePath = "/typed"
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "second.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "/typed")
     }
 
     func testRemovingStandaloneHostLeavesForwardingProfilesAvailable() throws {
