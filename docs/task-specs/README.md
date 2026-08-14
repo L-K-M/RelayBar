@@ -32,6 +32,8 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 ## Active tasks
 
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
+- [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
+- [Task 042 — Status Item Failure Attention](042-status-item-failure-attention.md)
 
 ## Backlog
 

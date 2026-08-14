@@ -1,6 +1,58 @@
 import XCTest
 @testable import RelayBar
 
+final class StatusItemSummaryTests: XCTestCase {
+    func testStoppedActiveAndIssueFixturesProduceDistinctStates() {
+        let stopped = StatusItemSummary(phases: [TunnelPhase.stopped])
+        let active = StatusItemSummary(phases: [TunnelPhase.running])
+        let issue = StatusItemSummary(phases: [TunnelPhase.failed("Denied")])
+
+        XCTAssertEqual(stopped.state, .stopped)
+        XCTAssertEqual(active.state, .active)
+        XCTAssertEqual(issue.state, .issue)
+        XCTAssertEqual(Set([stopped.state, active.state, issue.state]).count, 3)
+    }
+
+    func testIssueWinsWhileRetainingActiveAndFailedCounts() {
+        let summary = StatusItemSummary(phases: [
+            TunnelPhase.running,
+            .retrying(attempt: 1, maxAttempts: 3, delay: 2, message: "retry"),
+            .failed("Denied"),
+            .failed("Timed out"),
+            .stopped
+        ])
+
+        XCTAssertEqual(summary.state, .issue)
+        XCTAssertEqual(summary.activeCount, 2)
+        XCTAssertEqual(summary.failedCount, 2)
+        XCTAssertEqual(
+            summary.accessibilityValue,
+            "2 profiles failed, 2 tunnels active"
+        )
+    }
+
+    func testAccessibilityValuePluralizesSingletonsAndZeroActiveIssues() {
+        XCTAssertEqual(
+            StatusItemSummary(phases: [TunnelPhase.starting]).accessibilityValue,
+            "1 tunnel active"
+        )
+        XCTAssertEqual(
+            StatusItemSummary(
+                phases: [TunnelPhase.failed("Denied")]
+            ).accessibilityValue,
+            "1 profile failed, no tunnels active"
+        )
+        XCTAssertEqual(
+            StatusItemSummary(phases: [TunnelPhase.stopped]).accessibilityValue,
+            "All tunnels stopped"
+        )
+        XCTAssertEqual(
+            StatusItemSummary(phases: [TunnelPhase.stopped]).toolTip,
+            "RelayBar — All tunnels stopped"
+        )
+    }
+}
+
 /// The literal key text matters more than usual here: AppKit owns these keys,
 /// so a typo would not fail — it would silently leave the stranded state in
 /// place and the menu-bar icon missing.

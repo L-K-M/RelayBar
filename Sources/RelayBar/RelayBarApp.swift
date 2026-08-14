@@ -23,6 +23,68 @@ enum RelayBarMain {
     }
 }
 
+struct StatusItemSummary: Equatable {
+    enum State: Hashable {
+        case stopped
+        case active
+        case issue
+    }
+
+    let activeCount: Int
+    let failedCount: Int
+
+    init(activeCount: Int, failedCount: Int) {
+        self.activeCount = activeCount
+        self.failedCount = failedCount
+    }
+
+    init<Phases: Sequence>(phases: Phases) where Phases.Element == TunnelPhase {
+        var activeCount = 0
+        var failedCount = 0
+        for phase in phases {
+            if phase.isLifecycleActive {
+                activeCount += 1
+            }
+            if case .failed = phase {
+                failedCount += 1
+            }
+        }
+        self.init(activeCount: activeCount, failedCount: failedCount)
+    }
+
+    var state: State {
+        if failedCount > 0 { return .issue }
+        if activeCount > 0 { return .active }
+        return .stopped
+    }
+
+    var accessibilityValue: String {
+        switch state {
+        case .stopped:
+            return "All tunnels stopped"
+        case .active:
+            return activeDescription
+        case .issue:
+            if activeCount == 0 {
+                return "\(failedDescription), no tunnels active"
+            }
+            return "\(failedDescription), \(activeDescription)"
+        }
+    }
+
+    var toolTip: String {
+        "RelayBar — \(accessibilityValue)"
+    }
+
+    private var activeDescription: String {
+        activeCount == 1 ? "1 tunnel active" : "\(activeCount) tunnels active"
+    }
+
+    private var failedDescription: String {
+        failedCount == 1 ? "1 profile failed" : "\(failedCount) profiles failed"
+    }
+}
+
 @MainActor
 final class RelayBarAppDelegate:
     NSObject, NSApplicationDelegate, NSPopoverDelegate
@@ -40,7 +102,10 @@ final class RelayBarAppDelegate:
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
-    private var statusItemShowsActiveTunnels = false
+    private var statusItemSummary = StatusItemSummary(
+        activeCount: 0,
+        failedCount: 0
+    )
     private var tunnelActivityObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -100,15 +165,17 @@ final class RelayBarAppDelegate:
         item.autosaveName = Self.statusItemAutosaveName
         item.isVisible = true
 
-        statusItemShowsActiveTunnels = store.runningCount > 0
+        statusItemSummary = currentStatusItemSummary
         if let button = item.button {
             button.image = Self.statusBarImage(
-                showsActiveTunnels: statusItemShowsActiveTunnels
+                state: statusItemSummary.state
             )
             // Image-only: the button must never lay out a title, whatever the
             // image turns out to be.
             button.imagePosition = .imageOnly
             button.setAccessibilityTitle("RelayBar")
+            button.setAccessibilityValue(statusItemSummary.accessibilityValue)
+            button.toolTip = statusItemSummary.toolTip
             button.target = self
             button.action = #selector(togglePopover)
         }
@@ -122,10 +189,16 @@ final class RelayBarAppDelegate:
     /// width is what decides which items a crowded or notched menu bar drops.
     /// And a symbol lookup can return nil, which would leave the button with no
     /// image and nothing to click, so it falls back to a drawn glyph.
-    static func statusBarImage(showsActiveTunnels: Bool) -> NSImage {
-        let symbolName = showsActiveTunnels
-            ? "arrow.left.arrow.right.circle.fill"
-            : "arrow.left.arrow.right.circle"
+    static func statusBarImage(state: StatusItemSummary.State) -> NSImage {
+        let symbolName: String
+        switch state {
+        case .stopped:
+            symbolName = "arrow.left.arrow.right.circle"
+        case .active:
+            symbolName = "arrow.left.arrow.right.circle.fill"
+        case .issue:
+            symbolName = "exclamationmark.circle.fill"
+        }
         if
             let symbol = NSImage(
                 systemSymbolName: symbolName,
@@ -137,14 +210,12 @@ final class RelayBarAppDelegate:
             symbol.isTemplate = true
             return symbol
         }
-        return drawnStatusBarImage(showsActiveTunnels: showsActiveTunnels)
+        return drawnStatusBarImage(state: state)
     }
 
-    /// Two opposed arrows inside a circle, echoing the SF Symbol. Drawn as a
-    /// template image so the system tints it for light and dark menu bars.
-    private static func drawnStatusBarImage(
-        showsActiveTunnels: Bool
-    ) -> NSImage {
+    /// Drawn status glyphs echo their SF Symbols and remain template images so
+    /// the system tints them for light and dark menu bars.
+    private static func drawnStatusBarImage(state: StatusItemSummary.State) -> NSImage {
         let image = NSImage(
             size: NSSize(width: 18, height: 18),
             flipped: false
@@ -152,13 +223,31 @@ final class RelayBarAppDelegate:
             let circle = NSBezierPath(
                 ovalIn: NSRect(x: 1.5, y: 1.5, width: 15, height: 15)
             )
-            if showsActiveTunnels {
-                NSColor.black.setFill()
-                circle.fill()
-            } else {
+            if state == .stopped {
                 NSColor.black.setStroke()
                 circle.lineWidth = 1.4
                 circle.stroke()
+            } else {
+                NSColor.black.setFill()
+                circle.fill()
+            }
+
+            if state == .issue {
+                NSGraphicsContext.current?.compositingOperation = .destinationOut
+                let stem = NSBezierPath()
+                stem.move(to: NSPoint(x: 9, y: 6.8))
+                stem.line(to: NSPoint(x: 9, y: 12.2))
+                stem.lineWidth = 1.7
+                stem.lineCapStyle = .round
+                NSColor.black.setStroke()
+                stem.stroke()
+
+                let dot = NSBezierPath(
+                    ovalIn: NSRect(x: 8.1, y: 4.1, width: 1.8, height: 1.8)
+                )
+                NSColor.black.setFill()
+                dot.fill()
+                return true
             }
 
             let arrows = NSBezierPath()
@@ -177,7 +266,7 @@ final class RelayBarAppDelegate:
             arrows.lineJoinStyle = .round
 
             // Knock the arrows out of the filled disc so they stay legible.
-            if showsActiveTunnels {
+            if state == .active {
                 NSGraphicsContext.current?.compositingOperation = .destinationOut
             }
             NSColor.black.setStroke()
@@ -188,10 +277,9 @@ final class RelayBarAppDelegate:
         return image
     }
 
-    /// The icon distinguishes "a profile is starting, retrying, or running"
-    /// from "everything is stopped". `TunnelStore.runningCount` stays the one
-    /// definition of active; `objectWillChange` fires before the store mutates,
-    /// so the count is read on the next main-actor turn.
+    /// The icon distinguishes stopped, active, and failed states.
+    /// `objectWillChange` fires before the store mutates, so the counts are read
+    /// on the next main-actor turn.
     private func observeTunnelActivity() {
         tunnelActivityObserver = store.objectWillChange
             .sink { [weak self] _ in
@@ -202,12 +290,21 @@ final class RelayBarAppDelegate:
     }
 
     private func refreshStatusItemImage() {
-        let showsActiveTunnels = store.runningCount > 0
-        guard showsActiveTunnels != statusItemShowsActiveTunnels else { return }
-        statusItemShowsActiveTunnels = showsActiveTunnels
-        statusItem?.button?.image = Self.statusBarImage(
-            showsActiveTunnels: showsActiveTunnels
-        )
+        let summary = currentStatusItemSummary
+        guard summary != statusItemSummary else { return }
+        let previousState = statusItemSummary.state
+        statusItemSummary = summary
+
+        guard let button = statusItem?.button else { return }
+        if summary.state != previousState {
+            button.image = Self.statusBarImage(state: summary.state)
+        }
+        button.setAccessibilityValue(summary.accessibilityValue)
+        button.toolTip = summary.toolTip
+    }
+
+    private var currentStatusItemSummary: StatusItemSummary {
+        StatusItemSummary(phases: store.phases.values)
     }
 
     /// Recreates the item if it is somehow gone and re-asserts visibility
