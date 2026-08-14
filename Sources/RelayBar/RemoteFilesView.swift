@@ -62,6 +62,7 @@ struct RemoteFilesView: View {
                 TextField("/srv/app/output", text: $model.remotePath)
                     .textFieldStyle(.roundedBorder)
                     .focused($isPathFocused)
+                    .disabled(model.isLoading)
                     .onSubmit {
                         if model.canOpen {
                             model.openRemotePath()
@@ -127,6 +128,7 @@ struct RemoteFilesView: View {
                         .accessibilityLabel("Remove saved host")
                     }
                 }
+                .disabled(model.isLoading)
 
                 Text("Includes recents, RelayBar profiles, and SSH config.")
                     .font(.system(size: 9.5))
@@ -138,22 +140,37 @@ struct RemoteFilesView: View {
                 ErrorMessage(message: errorMessage)
             }
 
-            Button {
-                model.openRemotePath()
-            } label: {
-                if model.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
+            HStack(spacing: 10) {
+                Button {
+                    model.openRemotePath()
+                } label: {
+                    if model.isLoading {
+                        HStack(spacing: 7) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Opening\u{2026}")
+                        }
                         .frame(maxWidth: .infinity)
-                } else {
-                    Text("Open")
-                        .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Open")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!model.canOpen)
+                .keyboardShortcut(.defaultAction)
+
+                if model.canCancelInitialOpen {
+                    Button("Cancel", role: .cancel) {
+                        model.cancelInitialOpen()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Cancel opening the remote path")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!model.canOpen)
-            .keyboardShortcut(.defaultAction)
         }
         .padding(24)
         .onAppear {

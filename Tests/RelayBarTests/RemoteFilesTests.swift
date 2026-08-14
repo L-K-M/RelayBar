@@ -3188,6 +3188,39 @@ final class RemoteDirectoryCacheTests: XCTestCase {
 
 @MainActor
 final class RemoteFilesModelTests: XCTestCase {
+    func testInitialOpenCanBeCancelledWithoutLosingLauncherInput() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        service.suspendedListPaths.insert("/srv/app")
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        let selectedServerID = model.selectedServerID
+
+        model.openRemotePath()
+        try await waitUntil { service.listRequests.count == 1 }
+
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertTrue(model.isLoading)
+        XCTAssertTrue(model.canCancelInitialOpen)
+
+        model.cancelInitialOpen()
+
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertFalse(model.canCancelInitialOpen)
+        XCTAssertNil(model.pendingPath)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.remotePath, "/srv/app")
+        XCTAssertEqual(model.selectedServerID, selectedServerID)
+        XCTAssertEqual(service.shutdownCount, 1)
+
+        await Task.yield()
+        XCTAssertNil(model.errorMessage, "A cancelled request must not publish an error.")
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.servers.first?.source, .forwardingProfile)
+    }
+
     func testDirectMarkdownPathOpensPreviewAndPreservesBackPath() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
