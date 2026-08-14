@@ -347,7 +347,7 @@ final class TunnelStore: ObservableObject {
         let process = Process()
         let errorPipe = Pipe()
         process.executableURL = sshExecutableURL
-        process.arguments = masterArguments(
+        process.arguments = Self.masterArguments(
             tunnel: tunnel,
             controlSocket: controlLocations.socket
         )
@@ -396,23 +396,22 @@ final class TunnelStore: ObservableObject {
         }
     }
 
-    private func masterArguments(tunnel: Tunnel, controlSocket: URL) -> [String] {
+    nonisolated static func masterArguments(
+        tunnel: Tunnel,
+        controlSocket: URL
+    ) -> [String] {
         var arguments = [
             "-N",
             "-T",
             "-M",
-            "-S", controlSocket.path,
-            "-o", "ControlPersist=no",
-            "-o", "ClearAllForwardings=yes",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
+            "-S", controlSocket.path
+        ]
+        arguments.append(contentsOf: SSHMasterPolicy.enforcedArguments)
+        arguments.append(contentsOf: [
             "-o", "StreamLocalBindMask=\(tunnel.streamLocalSettings.bindMaskArgument)",
             // RelayBar removes only sockets whose inode it recorded after creation.
             "-o", "StreamLocalBindUnlink=no"
-        ]
+        ])
 
         if tunnel.hasReverseSOCKS, let policy = tunnel.reverseSOCKSPolicy {
             arguments.append(contentsOf: ["-o", "PermitRemoteOpen=\(policy.sshValue)"])
