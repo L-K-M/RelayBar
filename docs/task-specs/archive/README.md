@@ -2,6 +2,8 @@
 
 Move a task spec into this directory only after its acceptance criteria pass and its status is `Complete`.
 
+A number missing from the list below is not a gap to be filled. It is either still an active spec in [`../`](../README.md) or a number that was allocated to a change that never landed. Check both before reusing one — this list covers accepted work only, so it is not by itself proof that a number is free.
+
 - [Task 001 — Remote Files](001-remote-files.md)
 - [Task 002 — Read-only Markdown](002-read-only-markdown.md)
 - [Task 003 — Flexible SSH Forwarding Profiles](003-flexible-ssh-forwarding.md)
