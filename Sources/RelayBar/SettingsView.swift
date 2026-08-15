@@ -55,14 +55,12 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onBack
+            )
 
             Text("Settings")
                 .font(.system(size: 15, weight: .semibold))
@@ -99,7 +97,7 @@ struct SettingsView: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
 
-            Text("A login launch opens the menu bar item only — saved profiles stay stopped until you start them.")
+            Text("A login launch opens RelayBar; profiles marked Start at Launch start automatically.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

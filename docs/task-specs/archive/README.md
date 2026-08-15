@@ -34,3 +34,7 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 039 — Duplicate Profile](039-duplicate-profile.md)
 - [Task 042 — Copy Profile as SSH Command](042-copy-ssh-command.md)
 - [Task 054 — Align Update UI and Documentation](054-update-documentation-truth.md)
+- [Task 047 — Force Safe SSH Master Invariants](047-force-safe-ssh-master-invariants.md)
+- [Task 037 — Atomic Forwarding Control Paths](037-atomic-forwarding-control-paths.md)
+- [Task 052 — Status Item Failure Attention](052-status-item-failure-attention.md)
+- [Task 049 — Confirm Profile Deletion](049-confirm-profile-deletion.md)

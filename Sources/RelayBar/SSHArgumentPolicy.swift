@@ -167,3 +167,32 @@ enum SSHArgumentPolicy {
             }
     }
 }
+
+/// Options RelayBar owns on every long-lived multiplexing master.
+///
+/// OpenSSH uses the first obtained value for these scalar settings. Keeping
+/// the forced values before the destination and user connection arguments
+/// means normal SSH configuration can still supply authentication and routing
+/// details without changing the master's process or forwarding authority.
+enum SSHMasterPolicy {
+    static let enforcedOptions = [
+        "ForkAfterAuthentication=no",
+        "PermitLocalCommand=no",
+        "Tunnel=no",
+        "GatewayPorts=no",
+        "ForwardAgent=no",
+        "ForwardX11=no",
+        "ForwardX11Trusted=no",
+        "ControlPersist=no",
+        "ClearAllForwardings=yes",
+        "BatchMode=yes",
+        "ConnectTimeout=10",
+        "ExitOnForwardFailure=yes",
+        "ServerAliveInterval=30",
+        "ServerAliveCountMax=3"
+    ]
+
+    static let enforcedArguments = enforcedOptions.flatMap { option in
+        ["-o", option]
+    }
+}

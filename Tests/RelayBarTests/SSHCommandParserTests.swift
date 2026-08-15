@@ -2,6 +2,23 @@ import XCTest
 @testable import RelayBar
 
 final class SSHCommandParserTests: XCTestCase {
+    /// Task 046. The clipboard suggestion only appears for complete,
+    /// importable commands, trimmed of surrounding whitespace.
+    func testClipboardCandidateRequiresACompleteImportableCommand() {
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: nil))
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: ""))
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: "   \n"))
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: "open https://example.com"))
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: "ssh -N -L 8080:localhost:3000"))
+        XCTAssertNil(ClipboardSSHCommand.candidate(from: "ssh -N user@host"))
+        XCTAssertEqual(
+            ClipboardSSHCommand.candidate(
+                from: "  ssh -N -L 8080:localhost:3000 dev@example.com \n"
+            ),
+            "ssh -N -L 8080:localhost:3000 dev@example.com"
+        )
+    }
+
     func testParsesBasicLocalForwardAndNormalizesLoopback() throws {
         let result = try SSHCommandParser.parse(
             "ssh -N -L 8080:localhost:3000 user@example.com"
