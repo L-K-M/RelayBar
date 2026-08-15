@@ -4,6 +4,15 @@ import Foundation
 protocol RemoteFileServing: AnyObject, Sendable {
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry]
+    /// Lists the target of a symbolic link as a directory. The trailing
+    /// slash makes the remote stat resolve the link, so this succeeds for a
+    /// symlink to a directory and fails for a link to a file or a dangling
+    /// link. A protocol requirement (not just an extension default) so
+    /// existential callers dispatch to the concrete implementation.
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry]
     func download(
         server: RemoteServer,
         entry: RemoteFileEntry,
@@ -12,6 +21,18 @@ protocol RemoteFileServing: AnyObject, Sendable {
     ) async throws
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL
     func shutdown()
+}
+
+extension RemoteFileServing {
+    /// Lists the target of a symbolic link. The trailing slash makes the
+    /// remote stat resolve the link, so this succeeds for a symlink to a
+    /// directory and fails for a link to a file or a dangling link.
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        throw RemoteFileError.commandFailed("Symbolic links are not supported.")
+    }
 }
 
 extension RemoteFileServing {
@@ -266,6 +287,33 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
         let (output, normalizedPath) = try await listingOutput(server: server, path: path)
         return try SFTPListingParser.parsePath(output, path: normalizedPath)
+    }
+
+    /// Lists the target of a symbolic link as a directory. The trailing
+    /// slash is significant: the remote side resolves `link/` through the
+    /// link to the directory it points at, while `link` alone would list the
+    /// link itself. A link to a file (or a dangling link) fails here, which
+    /// the model treats as "the link is a file".
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        guard RemotePath.validationMessage(for: path) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+        let normalizedPath = RemotePath.normalized(path)
+        let listingPath = normalizedPath == "/"
+            ? "/"
+            : normalizedPath + "/"
+        let result = try await run(
+            server: server,
+            batchInput: SFTPCommandBuilder.listCommand(path: listingPath)
+        )
+        try validate(result)
+        return try SFTPListingParser.parse(
+            result.output,
+            parentPath: normalizedPath
+        )
     }
 
     private func listingOutput(

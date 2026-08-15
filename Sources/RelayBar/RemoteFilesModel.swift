@@ -520,10 +520,82 @@ final class RemoteFilesModel: ObservableObject {
         if entry.isDirectory {
             guard let server = activeServer else { return }
             load(path: entry.path, server: server, previousPath: currentPath)
+        } else if entry.kind == .symbolicLink {
+            openSymbolicLink(entry)
         } else if entry.isPreviewable {
             preview(entry)
         } else {
             download(entry)
+        }
+    }
+
+    /// A symbolic link may point at a directory or a file; only the remote
+    /// side knows. Ask for a directory listing of `link/` — which resolves
+    /// the link — and fall back to file treatment (preview by extension,
+    /// otherwise download, both following the link server-side) when the
+    /// link turns out not to be a directory.
+    private func openSymbolicLink(_ entry: RemoteFileEntry) {
+        guard let server = activeServer, !isLoading else { return }
+        loadTask?.cancel()
+        let generation = UUID()
+        loadGeneration = generation
+        errorMessage = nil
+        isLoading = true
+        pendingPath = screen == .browser ? entry.path : nil
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let loadedEntries = try await service.listSymlinkTarget(
+                    server: server,
+                    path: entry.path
+                )
+                try Task.checkCancellation()
+                guard loadGeneration == generation else { return }
+                commitLoadedFolder(
+                    path: entry.path,
+                    entries: loadedEntries,
+                    previousPath: currentPath,
+                    isRefresh: false,
+                    popsHistory: false,
+                    selectionAfterLoad: nil
+                )
+                pendingPath = nil
+                isLoading = false
+                screen = .browser
+            } catch is CancellationError {
+                if loadGeneration == generation {
+                    pendingPath = nil
+                    isLoading = false
+                }
+            } catch {
+                guard loadGeneration == generation else { return }
+                pendingPath = nil
+                isLoading = false
+                errorMessage = nil
+                // A killed probe often surfaces as a command failure rather
+                // than CancellationError; never start file work for a probe
+                // the user already cancelled.
+                if Task.isCancelled { return }
+                treatSymlinkAsFile(entry)
+            }
+        }
+    }
+
+    private func treatSymlinkAsFile(_ entry: RemoteFileEntry) {
+        // Preview and download follow the link server-side, so the entry is
+        // reclassified as a regular file; the size on the link line is the
+        // link itself, so it is dropped and progress is indeterminate.
+        let resolved = RemoteFileEntry(
+            name: entry.name,
+            path: entry.path,
+            kind: .file,
+            size: nil,
+            modificationText: entry.modificationText
+        )
+        if resolved.isPreviewable {
+            preview(resolved)
+        } else {
+            download(resolved)
         }
     }
 
