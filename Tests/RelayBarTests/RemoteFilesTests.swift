@@ -3537,6 +3537,11 @@ final class RemoteFilesModelTests: XCTestCase {
 
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(
+            model.remotePath,
+            entry.path,
+            "The failed folder load never commits, so the launcher keeps the file path."
+        )
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
