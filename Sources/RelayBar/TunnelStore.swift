@@ -19,6 +19,7 @@ final class TunnelStore: ObservableObject {
     private let maxRetryAttempts: Int
     private let retryDelayProvider: (Int) -> TimeInterval
     private let browserOpener: (URL) -> Void
+    private let failureNotifier: (String, String) -> Void
     private let processEnvironment: [String: String]?
     private let controlOperationTimeout: TimeInterval
     private let processTerminationGracePeriod: TimeInterval
@@ -70,6 +71,7 @@ final class TunnelStore: ObservableObject {
         maxRetryAttempts: Int = 10,
         retryDelayProvider: @escaping (Int) -> TimeInterval = TunnelStore.retryDelay(for:),
         browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
+        failureNotifier: ((String, String) -> Void)? = nil,
         processEnvironment: [String: String]? = nil,
         controlOperationTimeout: TimeInterval = 10,
         processTerminationGracePeriod: TimeInterval = 5,
@@ -80,6 +82,11 @@ final class TunnelStore: ObservableObject {
         self.maxRetryAttempts = max(0, maxRetryAttempts)
         self.retryDelayProvider = retryDelayProvider
         self.browserOpener = browserOpener
+        // The default is resolved in this MainActor-isolated initializer body
+        // rather than as a default argument, which would reference a
+        // MainActor-isolated static from a nonisolated context.
+        self.failureNotifier = failureNotifier
+            ?? { TunnelFailureNotifier.shared.notify(profileName: $0, message: $1) }
         self.processEnvironment = processEnvironment
         self.controlOperationTimeout = max(0.1, controlOperationTimeout)
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
@@ -980,13 +987,15 @@ final class TunnelStore: ObservableObject {
 
         let attempt = (retryAttempts[id] ?? 0) + 1
         guard attempt <= maxRetryAttempts else {
+            let profileName = desiredTunnels[id]?.displayName ?? "A profile"
+            let failureMessage =
+                "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts."
             desiredTunnels[id] = nil
             retryAttempts[id] = nil
             retryDeadlines[id] = nil
             pendingBrowserURLs[id] = nil
-            phases[id] = .failed(
-                "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts."
-            )
+            phases[id] = .failed(failureMessage)
+            failureNotifier(profileName, failureMessage)
             return
         }
 

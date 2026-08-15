@@ -22,6 +22,8 @@ Notable RelayBar changes are recorded here.
 - Symbolic links in Remote Files now behave like what they point at: linked
   folders navigate, linked Markdown and images preview, and other linked
   files download — instead of failing as a download error.
+- A profile that exhausts automatic retries posts one system notification,
+  so a tunnel that gives up while the popover is closed is never silent.
 - Remote Files remembers the last path each connection opened successfully
   and offers it in the launcher — on a fresh window and when switching
   servers with the field untouched.
