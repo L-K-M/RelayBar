@@ -79,7 +79,7 @@ Empty folders show a single focused empty state with an explicit accessibility d
 ## Transport and lifecycle
 
 - RelayBar starts one foreground `/usr/bin/ssh` multiplexing master for the active Remote Files connection, then invokes `/usr/bin/sftp` directly for each listing, preview, and download. It never invokes a shell.
-- The master uses `-N`, `-T`, `-M`, `ControlPersist=no`, `ClearAllForwardings=yes`, `BatchMode=yes`, a 10-second connect timeout, forward-failure exit, and server keepalives. Its input and output are discarded and its last 16 KiB of standard error is retained for a normalized failure.
+- The master uses `-N`, `-T`, `-M`, `ControlPersist=no`, `ClearAllForwardings=yes`, `BatchMode=yes`, a 10-second connect timeout, forward-failure exit, and server keepalives. It shares the forwarding master's forced `ForkAfterAuthentication=no`, `PermitLocalCommand=no`, `Tunnel=no`, `GatewayPorts=no`, `ForwardAgent=no`, `ForwardX11=no`, and `ForwardX11Trusted=no` policy. Its input and output are discarded and its last 16 KiB of standard error is retained for a normalized failure.
 - A one-character control socket lives below a short app-owned directory that `mkdtemp(3)` creates atomically with `0700` permissions under the user's private macOS temporary directory. Its UTF-8 path budget reserves the terminating NUL and OpenSSH's 17-byte temporary mux-listener suffix instead of checking only the final socket name. SFTP children receive that exact `ControlPath` with `ControlMaster=no`; RelayBar neither discovers nor attaches to a user-managed socket or a forwarding profile's master.
 - Concurrent first operations serialize behind one master startup. Readiness is detected at 50-millisecond intervals with a bounded 120-second ceiling for high-latency and jump-host handshakes. Cancelling a startup waiter resumes it immediately without stopping the master, and cancelling an SFTP child leaves the healthy master running. An unexpected master exit cleans its socket and does not reconnect in the background; the next explicit operation creates a new master.
 - The session and directory cache end on connection change, launcher return, window close, or app quit. Delayed callbacks cannot revive the retired session.
@@ -95,7 +95,7 @@ Empty folders show a single focused empty state with an explicit accessibility d
   to its basename; out-of-folder absolute entries fail closed.
 - RelayBar does not add SFTP quiet mode implicitly, so bounded diagnostics retain actionable host-key, resolution, timeout, refusal, and connection-loss details for normalization. A user-saved `-q` option is still preserved.
 - The master receives validated SSH-native connection arguments. SFTP children receive the same validated connection behavior with SFTP-specific translation, including SSH `-p` to SFTP `-P` and SSH `-l` to `User=`.
-- The user's normal OpenSSH config, identities, agent, jump host, and host-key behavior remain in effect.
+- The user's normal OpenSSH connection and authentication config, identities, agent authentication, jump/proxy host, and host-key behavior remain in effect. Agent forwarding through the server is intentionally disabled.
 - Browsing is independent of the local-forward process state.
 - Closing the Remote Files window or quitting RelayBar cancels listing, preview, and transfer work, stops the owned master, clears the cache, and removes owned temporary state.
 

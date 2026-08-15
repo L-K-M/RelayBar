@@ -256,17 +256,9 @@ final class RemoteFileSSHSession: @unchecked Sendable {
             "-N",
             "-T",
             "-M",
-            "-S", controlSocket.path,
-            "-a",
-            "-x",
-            "-o", "ControlPersist=no",
-            "-o", "ClearAllForwardings=yes",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3"
+            "-S", controlSocket.path
         ]
+        arguments.append(contentsOf: SSHMasterPolicy.enforcedArguments)
         arguments.append(contentsOf: server.additionalArguments)
         arguments.append(server.sshHost)
         return arguments

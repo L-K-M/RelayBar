@@ -26,6 +26,27 @@ An imported `-L 0.0.0.0:...` or wildcard bind can expose a forwarded service to 
 
 Remediation: newly imported and manually created listeners default to explicit loopback. Every explicit non-loopback listener displays a rule-specific warning naming whether exposure occurs on the Mac or SSH server.
 
+### SR-11 — SSH configuration could expand master authority (high)
+
+The managed masters intentionally read normal SSH configuration so aliases,
+authentication, host-key policy, and jump hosts work like they do in Terminal.
+Before remediation, host configuration could also make a master detach, run a
+`LocalCommand`, request a tun device, forward the user's agent or X11 session,
+or implicitly widen a local listener through `GatewayPorts`.
+
+Remediation: both master command lines force `ForkAfterAuthentication=no`,
+`PermitLocalCommand=no`, `Tunnel=no`, `GatewayPorts=no`, `ForwardAgent=no`,
+`ForwardX11=no`, and `ForwardX11Trusted=no` before host and connection
+arguments. Existing `-N`, `-T`, `ControlPersist=no`, and
+`ClearAllForwardings=yes` protections remain. This policy does not disable
+aliases, identity files, known-hosts policy, authentication through the user's
+agent, or jump/proxy hosts. An omitted local bind now reliably stays on
+loopback, while an explicit bind address remains authoritative. Server-side
+remote listener exposure remains controlled by the SSH server. Configured
+`ProxyCommand` and `Match exec` still run local helpers as the connecting user;
+they remain part of the trusted connection-routing surface this policy
+intentionally preserves, unlike `LocalCommand`, which is forced off.
+
 ### SR-10 — Flexible forwarding expands network and filesystem authority (high)
 
 Local SOCKS can let other local-network clients request connections from the SSH server; Remote and Remote SOCKS can expose Mac-side services or network reachability to server-side clients. Unix listeners can also overwrite pathnames if OpenSSH's general unlink behavior is enabled without ownership checks.
@@ -74,10 +95,10 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 
 - Executable paths are fixed to `/usr/bin/ssh` and `/usr/bin/sftp`.
 - Arguments are passed through `Process` as an array; there is no shell expansion.
-- SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives.
+- SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives. Both managed masters are forced to stay in the foreground and cannot enable local commands, tun devices, agent/X11 forwarding, or implicit gateway binding through host configuration.
 - One private master owns each forwarding profile; visible rules are installed with bounded, time-limited control operations and all-or-nothing startup.
 - Standard input and output are closed where unused; master and control diagnostics are bounded.
-- Detached SSH (`-f`) is discarded, and tracked children are terminated on stop and app quit.
+- Detached SSH (`-f`) is discarded on import, configured `ForkAfterAuthentication` is forced off, and tracked children are terminated on stop and app quit.
 - Tunnel definitions contain no passwords and remain in local application preferences.
 - Remote paths are not persisted. RelayBar does not read or copy private-key contents.
 - Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.

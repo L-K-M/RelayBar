@@ -4,7 +4,8 @@
 
 ## Launch
 
-- The master runs with `-N`, `-T`, `BatchMode`, a 10-second connect timeout, forward-failure exit, server keepalives, `ControlPersist=no`, and `ClearAllForwardings=yes`.
+- The master runs with `-N`, `-T`, `BatchMode`, a 10-second connect timeout, forward-failure exit, server keepalives, `ControlPersist=no`, and `ClearAllForwardings=yes`. RelayBar also forces `ForkAfterAuthentication=no`, `PermitLocalCommand=no`, `Tunnel=no`, `GatewayPorts=no`, `ForwardAgent=no`, `ForwardX11=no`, and `ForwardX11Trusted=no` before host and connection arguments. OpenSSH therefore cannot detach the tracked child or acquire `LocalCommand`, tun, agent-forwarding, X11-forwarding, or implicit wildcard-listener authority from SSH configuration.
+- Aliases, identity files, host-key policy, authentication through the user's agent, ports, users, and jump/proxy hosts still come from validated arguments and normal SSH configuration. Forcing the client `GatewayPorts` default off keeps an omitted local bind on loopback without replacing an explicitly selected non-loopback address; remote listener exposure remains subject to the server's `GatewayPorts` policy.
 - Its private control socket is created below a short, atomically created app-owned `0700` temporary directory and is not shared with unrelated SSH clients. The path budget reserves Darwin's terminating NUL and OpenSSH's temporary mux-listener suffix.
 - The master starts with no forwards. Each rule is installed in order by direct `/usr/bin/ssh -F none -S <socket> -O forward` arguments.
 - Control stdout and stderr are capped at 64 KiB and each helper times out after 10 seconds.

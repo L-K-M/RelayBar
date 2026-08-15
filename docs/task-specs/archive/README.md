@@ -31,6 +31,7 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 031 — Fix Edit Profile Insets](031-fix-edit-profile-insets.md)
 - [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)
 - [Task 035 - Add GLM 5.3 PR Review](035-add-glm-5-3-pr-review.md)
+- [Task 047 — Force Safe SSH Master Invariants](047-force-safe-ssh-master-invariants.md)
 - [Task 037 — Atomic Forwarding Control Paths](037-atomic-forwarding-control-paths.md)
 - [Task 052 — Status Item Failure Attention](052-status-item-failure-attention.md)
 - [Task 049 — Confirm Profile Deletion](049-confirm-profile-deletion.md)
