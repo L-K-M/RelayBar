@@ -2,7 +2,7 @@
 
 Move a task spec into this directory only after its acceptance criteria pass and its status is `Complete`.
 
-A number missing from the list below is not a gap to be filled. It is either still an active spec in [`../`](../README.md) or a number that was allocated to a change that never landed. Check both before reusing one — this list covers accepted work only, so it is not by itself proof that a number is free.
+A number missing from the list below is not a gap to be filled, and this list is not by itself proof that a number is free — it covers accepted work only. Before claiming one, check the active specs in [`../`](../README.md) and the spec filenames on every open pull request. The second is the one that bites: a branch can hold a number for days before it merges, so two changes can each pick the "next free" value and only collide at merge time.
 
 - [Task 001 — Remote Files](001-remote-files.md)
 - [Task 002 — Read-only Markdown](002-read-only-markdown.md)
