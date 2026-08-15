@@ -151,12 +151,16 @@ final class RelayBarAppDelegate:
         if UpdateServiceFactory.shared.prepareForApplicationTermination() {
             return .terminateCancel
         }
-        // Prompt only for user-initiated quits. The updater's own
-        // post-install terminate re-enters this delegate, and asking again
-        // there double-prompts a decision the user already made; logout and
-        // shutdown must never be blocked by a modal either. Both arrive
-        // with no current event, so the event check is the gate.
-        guard NSApp.currentEvent != nil, store.runningCount > 0 else {
+        // Prompt only for quits the user asked for through RelayBar's own
+        // controls (the ⌘Q menu item or the footer button). The updater's
+        // post-install terminate re-enters this delegate — asking again
+        // would double-prompt a decision the user already made — and
+        // logout/shutdown quits must never be blocked by a modal. Both
+        // arrive without the flag.
+        guard
+            RelayBarAppDelegate.userInitiatedQuitRequested,
+            store.runningCount > 0
+        else {
             return .terminateNow
         }
         // `runningCount` is the store's one definition of active — starting,
@@ -164,6 +168,21 @@ final class RelayBarAppDelegate:
         // phases are covered, not just settled tunnels.
         presentQuitConfirmation()
         return .terminateLater
+    }
+
+    /// True from the moment the user asks to quit through RelayBar's own
+    /// controls until the confirmation (if any) completes, so termination
+    /// can tell deliberate quits apart from updater, logout, and shutdown
+    /// quits — which must never be prompted or blocked.
+    private(set) static var userInitiatedQuitRequested = false
+
+    static func requestUserQuit() {
+        userInitiatedQuitRequested = true
+        NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func quitFromMenu(_ sender: Any?) {
+        RelayBarAppDelegate.requestUserQuit()
     }
 
     /// Presenting a modal alert synchronously inside the terminate dispatch
@@ -203,6 +222,7 @@ final class RelayBarAppDelegate:
             stopButton.hasDestructiveAction = true
             alert.addButton(withTitle: QuitConfirmation.cancelButtonTitle)
             let confirmed = alert.runModal() == .alertFirstButtonReturn
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
             NSApplication.shared.reply(
                 toApplicationShouldTerminate: confirmed
             )
@@ -488,9 +508,10 @@ final class RelayBarAppDelegate:
         let appMenu = NSMenu()
         appMenu.addItem(
             withTitle: "Quit RelayBar",
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         )
+        appMenu.items.first?.target = self
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 

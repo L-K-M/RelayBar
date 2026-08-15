@@ -256,7 +256,7 @@ private struct TunnelListView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button("Quit") { store.quit() }
+            Button("Quit") { RelayBarAppDelegate.requestUserQuit() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
