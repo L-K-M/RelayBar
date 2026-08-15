@@ -9,8 +9,6 @@ import UserNotifications
 final class TunnelFailureNotifier {
     static let shared = TunnelFailureNotifier()
 
-    private var requestedAuthorization = false
-
     /// The SPM test runner links XCTest without a bundle proxy, and
     /// touching Bundle.main or UNUserNotificationCenter there aborts with
     /// an NSInternalInconsistencyException. XCTest's presence is the
