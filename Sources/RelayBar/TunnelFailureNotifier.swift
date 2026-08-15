@@ -11,10 +11,18 @@ final class TunnelFailureNotifier {
 
     private var requestedAuthorization = false
 
+    /// The SPM test runner sets this environment variable; the packaged app
+    /// never has it.
+    private static var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     func notify(profileName: String, message: String) {
-        // Test binaries have no bundle proxy; UNUserNotificationCenter
-        // aborts with an NSInternalInconsistencyException without one.
-        guard Bundle.main.bundleIdentifier != nil else { return }
+        // The SPM test runner has no bundle proxy: Bundle.main and
+        // UNUserNotificationCenter both abort with an
+        // NSInternalInconsistencyException there. Detect XCTest instead of
+        // touching either API.
+        guard TunnelFailureNotifier.isRunningUnderXCTest == false else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             switch settings.authorizationStatus {
