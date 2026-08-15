@@ -22,6 +22,7 @@ final class TunnelStore: ObservableObject {
     private let processEnvironment: [String: String]?
     private let controlOperationTimeout: TimeInterval
     private let processTerminationGracePeriod: TimeInterval
+    private let temporaryDirectory: URL
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
     private let controlOutputLimit = 64 * 1_024
@@ -36,6 +37,11 @@ final class TunnelStore: ObservableObject {
     private var desiredTunnels: [UUID: Tunnel] = [:]
     private var retryAttempts: [UUID: Int] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
+    /// When the pending retry of each profile fires, so the row can count
+    /// down live instead of showing a frozen "Retrying in Xs". Not
+    /// published: the row only reads it while the (published) retrying
+    /// phase is current, and the countdown ticks in the view.
+    private var retryDeadlines: [UUID: Date] = [:]
     private var startupTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingBrowserURLs: [UUID: URL] = [:]
     private var startupFailureMessages: [UUID: String] = [:]
@@ -57,7 +63,8 @@ final class TunnelStore: ObservableObject {
         browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
         processEnvironment: [String: String]? = nil,
         controlOperationTimeout: TimeInterval = 10,
-        processTerminationGracePeriod: TimeInterval = 5
+        processTerminationGracePeriod: TimeInterval = 5,
+        temporaryDirectory: URL? = nil
     ) {
         self.defaults = defaults
         self.sshExecutableURL = sshExecutableURL
@@ -67,6 +74,8 @@ final class TunnelStore: ObservableObject {
         self.processEnvironment = processEnvironment
         self.controlOperationTimeout = max(0.1, controlOperationTimeout)
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
+        self.temporaryDirectory = temporaryDirectory
+            ?? FileManager.default.temporaryDirectory
 
         if
             let data = defaults.data(forKey: storageKey),
@@ -105,6 +114,10 @@ final class TunnelStore: ObservableObject {
 
     func phase(for tunnel: Tunnel) -> TunnelPhase {
         phases[tunnel.id] ?? .stopped
+    }
+
+    func retryDeadline(for tunnel: Tunnel) -> Date? {
+        retryDeadlines[tunnel.id]
     }
 
     func runtimePorts(for tunnel: Tunnel) -> [UUID: Int] {
@@ -206,12 +219,79 @@ final class TunnelStore: ObservableObject {
         save()
     }
 
+    /// Appends an independent copy of a saved profile right after the
+    /// original, with fresh profile and rule identities so editing, running,
+    /// or deleting the copy never touches the original. The copy inherits
+    /// the (already resolved) group tag, starts stopped, and does not inherit
+    /// the source's Start at Launch preference.
+    @discardableResult
+    func duplicate(_ tunnel: Tunnel) -> Tunnel? {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return nil
+        }
+        let source = tunnels[index]
+        var copy = source
+        copy.id = UUID()
+        copy.startsAtLaunch = false
+        copy.rules = source.rules.map { original in
+            var rule = original
+            rule.id = UUID()
+            return rule
+        }
+        let trimmedName = source.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedName.isEmpty {
+            copy.name = availableDuplicatedName(for: trimmedName)
+        }
+        tunnels.insert(copy, at: index + 1)
+        save()
+        return copy
+    }
+
+    /// Finder-style copy naming: the first copy is "Web copy", and repeated
+    /// duplicates gain " copy 2", " copy 3", … instead of colliding.
+    private func availableDuplicatedName(for base: String) -> String {
+        let taken = Set(
+            tunnels.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+        )
+        var candidate = "\(base) copy"
+        var suffix = 2
+        while taken.contains(candidate) {
+            candidate = "\(base) copy \(suffix)"
+            suffix += 1
+        }
+        return candidate
+    }
+
     func toggle(_ tunnel: Tunnel) {
         if desiredTunnels[tunnel.id] != nil {
             stop(tunnel)
         } else {
             start(tunnel)
         }
+    }
+
+    /// Starts every saved profile whose **Start at Launch** preference is on.
+    /// Unsafe profiles fail on their own row through the normal start path,
+    /// and an already-active profile is left untouched.
+    func startProfilesMarkedForAutoStart() {
+        for tunnel in tunnels
+        where tunnel.startsAtLaunch && desiredTunnels[tunnel.id] == nil {
+            start(tunnel)
+        }
+    }
+
+    /// Toggles the persisted Start at Launch preference without touching the
+    /// profile's lifecycle, the same metadata-only treatment as group moves.
+    func setStartsAtLaunch(_ enabled: Bool, for tunnel: Tunnel) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return
+        }
+        guard tunnels[index].startsAtLaunch != enabled else { return }
+        tunnels[index].startsAtLaunch = enabled
+        if desiredTunnels[tunnel.id] != nil {
+            desiredTunnels[tunnel.id]?.startsAtLaunch = enabled
+        }
+        save()
     }
 
     func start(_ tunnel: Tunnel) {
@@ -311,8 +391,11 @@ final class TunnelStore: ObservableObject {
         }
     }
 
+    /// Termination flow lives in `RelayBarAppDelegate`:
+    /// `applicationShouldTerminate` confirms while tunnels are active, and
+    /// `applicationWillTerminate` stops every managed process before exit.
+    /// Change those together with this path.
     func quit() {
-        stopAll()
         NSApplication.shared.terminate(nil)
     }
 
@@ -333,7 +416,7 @@ final class TunnelStore: ObservableObject {
 
         let controlLocations: (directory: URL, socket: URL)
         do {
-            controlLocations = try makeControlLocations(for: id)
+            controlLocations = try makeControlLocations()
         } catch {
             scheduleRetry(for: id, message: error.localizedDescription)
             return
@@ -347,7 +430,7 @@ final class TunnelStore: ObservableObject {
         let process = Process()
         let errorPipe = Pipe()
         process.executableURL = sshExecutableURL
-        process.arguments = masterArguments(
+        process.arguments = Self.masterArguments(
             tunnel: tunnel,
             controlSocket: controlLocations.socket
         )
@@ -396,23 +479,22 @@ final class TunnelStore: ObservableObject {
         }
     }
 
-    private func masterArguments(tunnel: Tunnel, controlSocket: URL) -> [String] {
+    nonisolated static func masterArguments(
+        tunnel: Tunnel,
+        controlSocket: URL
+    ) -> [String] {
         var arguments = [
             "-N",
             "-T",
             "-M",
-            "-S", controlSocket.path,
-            "-o", "ControlPersist=no",
-            "-o", "ClearAllForwardings=yes",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
+            "-S", controlSocket.path
+        ]
+        arguments.append(contentsOf: SSHMasterPolicy.enforcedArguments)
+        arguments.append(contentsOf: [
             "-o", "StreamLocalBindMask=\(tunnel.streamLocalSettings.bindMaskArgument)",
             // RelayBar removes only sockets whose inode it recorded after creation.
             "-o", "StreamLocalBindUnlink=no"
-        ]
+        ])
 
         if tunnel.hasReverseSOCKS, let policy = tunnel.reverseSOCKSPolicy {
             arguments.append(contentsOf: ["-o", "PermitRemoteOpen=\(policy.sshValue)"])
@@ -886,6 +968,7 @@ final class TunnelStore: ObservableObject {
         guard attempt <= maxRetryAttempts else {
             desiredTunnels[id] = nil
             retryAttempts[id] = nil
+            retryDeadlines[id] = nil
             pendingBrowserURLs[id] = nil
             phases[id] = .failed(
                 "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts."
@@ -896,6 +979,7 @@ final class TunnelStore: ObservableObject {
         cancelRetry(for: id)
         retryAttempts[id] = attempt
         let delay = max(0, retryDelayProvider(attempt))
+        retryDeadlines[id] = Date().addingTimeInterval(delay)
         phases[id] = .retrying(
             attempt: attempt,
             maxAttempts: maxRetryAttempts,
@@ -919,6 +1003,7 @@ final class TunnelStore: ObservableObject {
             }
 
             self.retryTasks[id] = nil
+            self.retryDeadlines[id] = nil
             self.launchTunnel(id: id)
         }
     }
@@ -926,6 +1011,7 @@ final class TunnelStore: ObservableObject {
     private func cancelRetry(for id: UUID) {
         retryTasks[id]?.cancel()
         retryTasks[id] = nil
+        retryDeadlines[id] = nil
     }
 
     private func openPendingBrowserURL(for id: UUID) {
@@ -949,33 +1035,22 @@ final class TunnelStore: ObservableObject {
         cleanupControlDirectory(for: id)
     }
 
-    private func makeControlLocations(
-        for id: UUID
-    ) throws -> (directory: URL, socket: URL) {
-        let profile = id.uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
-        let launch = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RelayBar-SSH-\(profile)\(launch)", isDirectory: true)
-        if FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.removeItem(at: directory)
-        }
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
+    private func makeControlLocations() throws -> (directory: URL, socket: URL) {
+        let locations = try SSHControlPath.create(
+            in: temporaryDirectory,
+            fileManager: .default
         )
-        let socket = directory.appendingPathComponent("control")
-        guard socket.path.utf8.count <= localSocketPathLimit else {
-            try? FileManager.default.removeItem(at: directory)
-            throw TunnelStoreError.controlPathTooLong
-        }
-        return (directory, socket)
+        return (locations.directory, locations.socket)
     }
 
     private func cleanupControlDirectory(for id: UUID) {
         controlSocketURLs[id] = nil
         guard let directory = controlDirectories.removeValue(forKey: id) else { return }
-        guard directory.lastPathComponent.hasPrefix("RelayBar-SSH-") else { return }
+        guard
+            directory.lastPathComponent.hasPrefix(
+                SSHControlPath.privateDirectoryPrefix
+            )
+        else { return }
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -1219,16 +1294,5 @@ private struct ControlResult {
         return status == 0
             ? "The SSH forwarding request ended without a result."
             : "SSH could not install a forwarding rule (status \(status))."
-    }
-}
-
-private enum TunnelStoreError: LocalizedError {
-    case controlPathTooLong
-
-    var errorDescription: String? {
-        switch self {
-        case .controlPathTooLong:
-            "The private SSH control path is too long for macOS."
-        }
     }
 }

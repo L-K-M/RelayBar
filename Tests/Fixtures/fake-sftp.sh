@@ -68,6 +68,26 @@ case "$host" in
         printf 'ssh: connect to host 127.0.0.1 port 1: Connection refused\nConnection closed\n' >&2
         exit 1
         ;;
+    invalidutf8)
+        printf '\377\n'
+        exit 0
+        ;;
+    unreadable)
+        # Requires a non-root test harness; root ignores the 000 mode.
+        chmod 000 /dev/fd/1 || exit 1
+        exit 0
+        ;;
+    empty)
+        exit 0
+        ;;
+    invaliddiagnostic)
+        printf 'Permission denied: \377\n' >&2
+        exit 1
+        ;;
+    successdiagnostic)
+        printf 'warning\n' >&2
+        exit 0
+        ;;
     slow)
         mkdir -p "$(dirname "$local_path")"
         printf 'partial' > "$local_path"

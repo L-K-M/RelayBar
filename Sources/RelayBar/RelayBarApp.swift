@@ -23,6 +23,72 @@ enum RelayBarMain {
     }
 }
 
+struct StatusItemSummary: Equatable {
+    enum State: Hashable {
+        case stopped
+        case active
+        case issue
+    }
+
+    let activeCount: Int
+    let failedCount: Int
+
+    init(activeCount: Int, failedCount: Int) {
+        self.activeCount = activeCount
+        self.failedCount = failedCount
+    }
+
+    init<Phases: Sequence>(phases: Phases) where Phases.Element == TunnelPhase {
+        var activeCount = 0
+        var failedCount = 0
+        for phase in phases {
+            if phase.isLifecycleActive {
+                activeCount += 1
+            }
+            if case .failed = phase {
+                failedCount += 1
+            }
+        }
+        self.init(activeCount: activeCount, failedCount: failedCount)
+    }
+
+    var state: State {
+        if failedCount > 0 { return .issue }
+        if activeCount > 0 { return .active }
+        return .stopped
+    }
+
+    var accessibilityValue: String {
+        switch state {
+        case .stopped:
+            return "All tunnels stopped"
+        case .active:
+            return activeDescription
+        case .issue:
+            if activeCount == 0 {
+                return "\(failedDescription), no tunnels active"
+            }
+            return "\(failedDescription), \(activeDescription)"
+        }
+    }
+
+    var toolTip: String {
+        "RelayBar — \(accessibilityValue)"
+    }
+
+    func requiresImageReplacement(comparedTo previous: StatusItemSummary) -> Bool {
+        state != previous.state
+    }
+
+    private var activeDescription: String {
+        activeCount == 1 ? "1 tunnel active" : "\(activeCount) tunnels active"
+    }
+
+    private var failedDescription: String {
+        failedCount == 1 ? "1 profile failed" : "\(failedCount) profiles failed"
+    }
+}
+
 @MainActor
 final class RelayBarAppDelegate:
     NSObject, NSApplicationDelegate, NSPopoverDelegate
@@ -40,6 +106,11 @@ final class RelayBarAppDelegate:
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var statusItemSummary = StatusItemSummary(
+        activeCount: 0,
+        failedCount: 0
+    )
+    private var popoverToggleGuard = PopoverToggleGuard()
     private var statusItemShowsActiveTunnels = false
     private var tunnelActivityObserver: AnyCancellable?
 
@@ -48,7 +119,9 @@ final class RelayBarAppDelegate:
         setUpStatusItem()
         observeTunnelActivity()
         UpdateServiceFactory.shared.start()
-        configureDebugPreviewIfNeeded()
+        if !configureDebugPreviewIfNeeded() {
+            store.startProfilesMarkedForAutoStart()
+        }
     }
 
     /// Re-launching the app — double-clicking it in Finder, or `open -a
@@ -75,9 +148,92 @@ final class RelayBarAppDelegate:
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
-        UpdateServiceFactory.shared.prepareForApplicationTermination()
-            ? .terminateCancel
-            : .terminateNow
+        if UpdateServiceFactory.shared.prepareForApplicationTermination() {
+            // The updater takes over this quit; clear the flag so its own
+            // post-install terminate is never mistaken for a user quit.
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
+            return .terminateCancel
+        }
+        // Prompt only for quits the user asked for through RelayBar's own
+        // controls (the ⌘Q menu item or the footer button). The updater's
+        // post-install terminate re-enters this delegate — asking again
+        // would double-prompt a decision the user already made — and
+        // logout/shutdown quits must never be blocked by a modal. Both
+        // arrive without the flag.
+        guard
+            RelayBarAppDelegate.userInitiatedQuitRequested,
+            store.runningCount > 0
+        else {
+            return .terminateNow
+        }
+        // `runningCount` is the store's one definition of active — starting,
+        // retrying, or running (isLifecycleActive) — so connect and backoff
+        // phases are covered, not just settled tunnels.
+        return presentQuitConfirmation()
+    }
+
+    /// True from the moment the user asks to quit through RelayBar's own
+    /// controls until the confirmation (if any) completes, so termination
+    /// can tell deliberate quits apart from updater, logout, and shutdown
+    /// quits — which must never be prompted or blocked.
+    private(set) static var userInitiatedQuitRequested = false
+
+    static func requestUserQuit() {
+        userInitiatedQuitRequested = true
+        NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func quitFromMenu(_ sender: Any?) {
+        RelayBarAppDelegate.requestUserQuit()
+    }
+
+    /// Presenting a modal alert synchronously inside the terminate dispatch
+    /// spins a nested run loop mid-termination, where a second quit event or
+    /// a timer can re-enter this path. Apple's pattern for confirming during
+    /// termination is to answer later: present on the next turn, then reply.
+    private var quitConfirmationInFlight = false
+
+    /// Starts the confirmation and returns the reply the caller owes
+    /// AppKit. A duplicate terminate while the alert is already up is
+    /// cancelled: the in-flight confirmation's single reply resolves the
+    /// first request, and a second `.terminateLater` would wait forever for
+    /// a reply that never comes.
+    private func presentQuitConfirmation() -> NSApplication.TerminateReply {
+        guard !quitConfirmationInFlight else { return .terminateCancel }
+        quitConfirmationInFlight = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { quitConfirmationInFlight = false }
+            // The tunnels that triggered the prompt may have stopped while
+            // it was queued; confirm only against work still alive now.
+            let activeCount = store.runningCount
+            guard activeCount > 0 else {
+                NSApplication.shared.reply(
+                    toApplicationShouldTerminate: true
+                )
+                return
+            }
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = QuitConfirmation.messageText
+            alert.informativeText = QuitConfirmation.informativeText(
+                activeTunnelCount: activeCount
+            )
+            let stopButton = alert.addButton(
+                withTitle: QuitConfirmation.stopButtonTitle(
+                    activeTunnelCount: activeCount
+                )
+            )
+            // The default action kills every live SSH process; say so in red.
+            stopButton.hasDestructiveAction = true
+            alert.addButton(withTitle: QuitConfirmation.cancelButtonTitle)
+            let confirmed = alert.runModal() == .alertFirstButtonReturn
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
+            NSApplication.shared.reply(
+                toApplicationShouldTerminate: confirmed
+            )
+        }
     }
 
     // MARK: Status item
@@ -100,15 +256,17 @@ final class RelayBarAppDelegate:
         item.autosaveName = Self.statusItemAutosaveName
         item.isVisible = true
 
-        statusItemShowsActiveTunnels = store.runningCount > 0
+        statusItemSummary = currentStatusItemSummary
         if let button = item.button {
             button.image = Self.statusBarImage(
-                showsActiveTunnels: statusItemShowsActiveTunnels
+                state: statusItemSummary.state
             )
             // Image-only: the button must never lay out a title, whatever the
             // image turns out to be.
             button.imagePosition = .imageOnly
             button.setAccessibilityTitle("RelayBar")
+            button.setAccessibilityValue(statusItemSummary.accessibilityValue)
+            button.toolTip = statusItemSummary.toolTip
             button.target = self
             button.action = #selector(togglePopover)
         }
@@ -122,10 +280,16 @@ final class RelayBarAppDelegate:
     /// width is what decides which items a crowded or notched menu bar drops.
     /// And a symbol lookup can return nil, which would leave the button with no
     /// image and nothing to click, so it falls back to a drawn glyph.
-    static func statusBarImage(showsActiveTunnels: Bool) -> NSImage {
-        let symbolName = showsActiveTunnels
-            ? "arrow.left.arrow.right.circle.fill"
-            : "arrow.left.arrow.right.circle"
+    static func statusBarImage(state: StatusItemSummary.State) -> NSImage {
+        let symbolName: String
+        switch state {
+        case .stopped:
+            symbolName = "arrow.left.arrow.right.circle"
+        case .active:
+            symbolName = "arrow.left.arrow.right.circle.fill"
+        case .issue:
+            symbolName = "exclamationmark.circle.fill"
+        }
         if
             let symbol = NSImage(
                 systemSymbolName: symbolName,
@@ -137,14 +301,12 @@ final class RelayBarAppDelegate:
             symbol.isTemplate = true
             return symbol
         }
-        return drawnStatusBarImage(showsActiveTunnels: showsActiveTunnels)
+        return drawnStatusBarImage(state: state)
     }
 
-    /// Two opposed arrows inside a circle, echoing the SF Symbol. Drawn as a
-    /// template image so the system tints it for light and dark menu bars.
-    private static func drawnStatusBarImage(
-        showsActiveTunnels: Bool
-    ) -> NSImage {
+    /// Drawn status glyphs echo their SF Symbols and remain template images so
+    /// the system tints them for light and dark menu bars.
+    private static func drawnStatusBarImage(state: StatusItemSummary.State) -> NSImage {
         let image = NSImage(
             size: NSSize(width: 18, height: 18),
             flipped: false
@@ -152,13 +314,34 @@ final class RelayBarAppDelegate:
             let circle = NSBezierPath(
                 ovalIn: NSRect(x: 1.5, y: 1.5, width: 15, height: 15)
             )
-            if showsActiveTunnels {
-                NSColor.black.setFill()
-                circle.fill()
-            } else {
+            if state == .stopped {
                 NSColor.black.setStroke()
                 circle.lineWidth = 1.4
                 circle.stroke()
+            } else {
+                NSColor.black.setFill()
+                circle.fill()
+            }
+
+            if state == .issue {
+                let context = NSGraphicsContext.current
+                context?.saveGraphicsState()
+                context?.compositingOperation = .destinationOut
+                let stem = NSBezierPath()
+                stem.move(to: NSPoint(x: 9, y: 6.8))
+                stem.line(to: NSPoint(x: 9, y: 12.2))
+                stem.lineWidth = 1.7
+                stem.lineCapStyle = .round
+                NSColor.black.setStroke()
+                stem.stroke()
+
+                let dot = NSBezierPath(
+                    ovalIn: NSRect(x: 8.1, y: 4.1, width: 1.8, height: 1.8)
+                )
+                NSColor.black.setFill()
+                dot.fill()
+                context?.restoreGraphicsState()
+                return true
             }
 
             let arrows = NSBezierPath()
@@ -177,21 +360,26 @@ final class RelayBarAppDelegate:
             arrows.lineJoinStyle = .round
 
             // Knock the arrows out of the filled disc so they stay legible.
-            if showsActiveTunnels {
-                NSGraphicsContext.current?.compositingOperation = .destinationOut
+            let context = NSGraphicsContext.current
+            let knocksOutArrows = state == .active
+            if knocksOutArrows {
+                context?.saveGraphicsState()
+                context?.compositingOperation = .destinationOut
             }
             NSColor.black.setStroke()
             arrows.stroke()
+            if knocksOutArrows {
+                context?.restoreGraphicsState()
+            }
             return true
         }
         image.isTemplate = true
         return image
     }
 
-    /// The icon distinguishes "a profile is starting, retrying, or running"
-    /// from "everything is stopped". `TunnelStore.runningCount` stays the one
-    /// definition of active; `objectWillChange` fires before the store mutates,
-    /// so the count is read on the next main-actor turn.
+    /// The icon distinguishes stopped, active, and failed states.
+    /// `objectWillChange` fires before the store mutates, so the counts are read
+    /// on the next main-actor turn.
     private func observeTunnelActivity() {
         tunnelActivityObserver = store.objectWillChange
             .sink { [weak self] _ in
@@ -202,12 +390,27 @@ final class RelayBarAppDelegate:
     }
 
     private func refreshStatusItemImage() {
-        let showsActiveTunnels = store.runningCount > 0
-        guard showsActiveTunnels != statusItemShowsActiveTunnels else { return }
-        statusItemShowsActiveTunnels = showsActiveTunnels
-        statusItem?.button?.image = Self.statusBarImage(
-            showsActiveTunnels: showsActiveTunnels
+        let summary = currentStatusItemSummary
+        guard summary != statusItemSummary else { return }
+        let previousSummary = statusItemSummary
+        let stateChanged = summary.requiresImageReplacement(
+            comparedTo: previousSummary
         )
+        statusItemSummary = summary
+
+        guard let button = statusItem?.button else { return }
+        if stateChanged {
+            button.image = Self.statusBarImage(state: summary.state)
+        }
+        button.setAccessibilityValue(summary.accessibilityValue)
+        button.toolTip = summary.toolTip
+        if stateChanged {
+            NSAccessibility.post(element: button, notification: .valueChanged)
+        }
+    }
+
+    private var currentStatusItemSummary: StatusItemSummary {
+        StatusItemSummary(phases: store.phases.values)
     }
 
     /// Recreates the item if it is somehow gone and re-asserts visibility
@@ -225,7 +428,18 @@ final class RelayBarAppDelegate:
     @objc private func togglePopover() {
         if let popover, popover.isShown {
             popover.performClose(nil)
-        } else {
+        } else if
+            !PopoverToggleGuard.shouldSuppressToggle(
+                eventType: NSApp.currentEvent?.type
+            )
+                // Short-circuit is load-bearing: shouldPresent() consumes
+                // the recorded close, so only mouse-up toggles may call it;
+                // other toggles must present without disarming the guard.
+                || popoverToggleGuard.shouldPresent(
+                    now: NSApp.currentEvent?.timestamp
+                        ?? ProcessInfo.processInfo.systemUptime
+                )
+        {
             presentPopover()
         }
     }
@@ -263,6 +477,31 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
+        guard
+            PopoverToggleGuard.shouldRecordClose(
+                eventType: NSApp.currentEvent?.type
+            )
+        else {
+            return
+        }
+        // A mouse-down close only races the toggle when the mouse-down
+        // landed on the icon itself; a dismissal click anywhere else
+        // (desktop, another window) must not disarm the next deliberate
+        // icon click. Unknown-event closes (app deactivation) skip the
+        // hit-test and record, the safer default.
+        if NSApp.currentEvent != nil, !isPointerOverStatusItem() { return }
+        // Record in the gesture's own clock domain: NSEvent timestamps and
+        // system uptime share the monotonic boot clock, so the toggle's
+        // event timestamp measures the actual click hold time.
+        popoverToggleGuard.recordClose(
+            uptime: NSApp.currentEvent?.timestamp
+                ?? ProcessInfo.processInfo.systemUptime
+        )
+    }
+
+    private func isPointerOverStatusItem() -> Bool {
+        guard let buttonWindow = statusItem?.button?.window else { return false }
+        return buttonWindow.frame.contains(NSEvent.mouseLocation)
     }
 
     /// An agent app has no menu bar of its own, so without a main menu the
@@ -274,11 +513,12 @@ final class RelayBarAppDelegate:
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(
+        let quitItem = appMenu.addItem(
             withTitle: "Quit RelayBar",
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         )
+        quitItem.target = self
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
@@ -341,7 +581,7 @@ final class RelayBarAppDelegate:
     private var tunnelPreviewDefaultsSuite: String?
     private var remoteFilesPreviewPresenter: RemoteFilesPreviewPresenter?
 
-    private func configureDebugPreviewIfNeeded() {
+    private func configureDebugPreviewIfNeeded() -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--preview-dark") {
             NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
@@ -354,7 +594,7 @@ final class RelayBarAppDelegate:
         {
             let sshHost = arguments[livePreviewIndex + 1]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard SSHArgumentPolicy.isValidHostTarget(sshHost) else { return }
+            guard SSHArgumentPolicy.isValidHostTarget(sshHost) else { return false }
 
             NSApplication.shared.setActivationPolicy(.regular)
             let tunnel = Tunnel(
@@ -371,7 +611,7 @@ final class RelayBarAppDelegate:
                 presenter: presenter,
                 catalog: RemoteServerCatalog()
             )
-            return
+            return true
         }
         if arguments.contains("--remote-files-preview") {
             NSApplication.shared.setActivationPolicy(.regular)
@@ -413,9 +653,9 @@ final class RelayBarAppDelegate:
                 presenter: presenter,
                 catalog: RemoteServerCatalog()
             )
-            return
+            return true
         }
-        guard arguments.contains("--preview-window") else { return }
+        guard arguments.contains("--preview-window") else { return false }
         NSApplication.shared.setActivationPolicy(.regular)
 
         let previewStore: TunnelStore
@@ -578,9 +818,10 @@ final class RelayBarAppDelegate:
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
         previewWindow = window
+        return true
     }
     #else
-    private func configureDebugPreviewIfNeeded() {}
+    private func configureDebugPreviewIfNeeded() -> Bool { false }
     #endif
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -594,6 +835,87 @@ final class RelayBarAppDelegate:
         }
         #endif
         TunnelStore.shared.stopAll()
+    }
+}
+
+/// Guards the status-item toggle against the dismissal the same click
+/// already caused. The popover's behavior is `.transient`, so clicking the
+/// menu-bar icon while the popover is open closes it on mouse-down — the
+/// click lands outside the popover window — and the button action only runs
+/// on mouse-up. Reading `isShown` in the action therefore always sees
+/// "closed" and would immediately re-present the popover, making the icon
+/// unable to dismiss it. The guard treats a toggle that lands inside a short
+/// window after a close caused by an outside mouse-down as the tail of that
+/// same click and swallows it once. Timing uses the monotonic system uptime
+/// clock, not wall-clock time, so an NTP step cannot distort the window.
+struct PopoverToggleGuard {
+    /// The mouse-down close and mouse-up action of one click arrive well
+    /// inside this window, and deliberate clicks elsewhere no longer arm the
+    /// guard, so slow click-and-hold releases cost nothing to cover.
+    static let suppressionWindow: TimeInterval = 0.6
+
+    /// Only a close caused by a left mouse-down delivered outside the
+    /// popover can be the front half of the click whose mouse-up runs the
+    /// toggle action (the status button fires on left mouse-up only, so a
+    /// right-click close can never race it). Escape, in-popover, and
+    /// programmatic `performClose` closes (which arrive as key or mouse-up
+    /// events) never race it, so they must not disarm a deliberate following
+    /// click. An unknown event context — a close driven by app deactivation
+    /// — records, the safer default for never re-opening over a real icon
+    /// click. The delegate additionally hit-tests the mouse location against
+    /// the status item, so dismissal clicks elsewhere do not arm the guard.
+    static func shouldRecordClose(eventType: NSEvent.EventType?) -> Bool {
+        guard let eventType else { return true }
+        return eventType == .leftMouseDown
+    }
+
+    /// Only a toggle fired by a mouse-up can be the tail of the click that
+    /// closed the popover. Keyboard, accessibility, and programmatic toggles
+    /// always present, so the guard can never swallow the re-launch re-open
+    /// escape hatch or an assistive activation.
+    static func shouldSuppressToggle(eventType: NSEvent.EventType?) -> Bool {
+        eventType == .leftMouseUp
+    }
+
+    private var lastCloseUptime: TimeInterval?
+
+    mutating func recordClose(
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        lastCloseUptime = uptime
+    }
+
+    /// Returns `false` exactly once when the toggle lands within the
+    /// suppression window of the recorded close, treating it as the click
+    /// that already dismissed the popover. A close recorded by an intentional
+    /// toggle-close is consumed the same way, so at worst one rapid re-click
+    /// is ignored and the next one opens the menu.
+    mutating func shouldPresent(
+        now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        guard let lastCloseUptime else { return true }
+        if now - lastCloseUptime < Self.suppressionWindow {
+            self.lastCloseUptime = nil
+            return false
+        }
+        return true
+    }
+}
+
+/// The user-facing copy of the active-tunnel quit confirmation, kept pure
+/// so the pluralization stays testable away from a modal alert.
+enum QuitConfirmation {
+    static let messageText = "Quit RelayBar?"
+    static let cancelButtonTitle = "Cancel"
+
+    static func informativeText(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1
+            ? "1 tunnel is running. Quitting stops it."
+            : "\(activeTunnelCount) tunnels are running. Quitting stops them."
+    }
+
+    static func stopButtonTitle(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1 ? "Stop Tunnel and Quit" : "Stop Tunnels and Quit"
     }
 }
 
