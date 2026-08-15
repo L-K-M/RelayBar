@@ -1,4 +1,4 @@
-# Task 049 — Notify When a Profile Stops Retrying
+# Task 059 — Notify When a Profile Stops Retrying
 
 Status: Complete
 
