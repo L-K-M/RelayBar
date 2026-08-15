@@ -149,6 +149,9 @@ final class RelayBarAppDelegate:
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
         if UpdateServiceFactory.shared.prepareForApplicationTermination() {
+            // The updater takes over this quit; clear the flag so its own
+            // post-install terminate is never mistaken for a user quit.
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
             return .terminateCancel
         }
         // Prompt only for quits the user asked for through RelayBar's own
@@ -506,12 +509,12 @@ final class RelayBarAppDelegate:
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(
+        let quitItem = appMenu.addItem(
             withTitle: "Quit RelayBar",
             action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         )
-        appMenu.items.first?.target = self
+        quitItem.target = self
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
