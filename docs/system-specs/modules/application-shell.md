@@ -32,6 +32,11 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   horizontal scroll range or shift content against an edge. Field labels
   appear once; native picker labels are hidden where a custom field label is
   present.
+- Principal profile controls expose stable purpose-based accessibility labels,
+  including **Profile name** and **SSH host**, independently of their placeholder
+  or current value. Reusable forwarding endpoint controls similarly name the
+  endpoint role and type; purely visual field captions are hidden from the
+  accessibility tree so they are not announced twice.
 - The menu-bar icon has distinct static template shapes for all-stopped,
   lifecycle-active, and issue states. A failed profile takes precedence over
   active state, so retry exhaustion remains visible while the popover is
@@ -44,8 +49,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   without announcing routine count-only updates.
 - A retrying row counts down the seconds until the next attempt against the
   retry deadline the store records when scheduling it, instead of freezing
-  the delay that was current when the retry began.
-- The list header reports the active tunnel count.
+  the delay that was current when the retry began.- The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.

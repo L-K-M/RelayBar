@@ -199,6 +199,8 @@ struct TunnelEditorView: View {
 
             EditorField(label: "Name", hint: "Optional") {
                 TextField("Development access", text: $name)
+                    .accessibilityLabel("Profile name")
+                    .accessibilityHint("Optional display name")
                     .focused($focusedField, equals: .name)
             }
 
@@ -231,6 +233,8 @@ struct TunnelEditorView: View {
 
             EditorField(label: "SSH host", hint: "user@server") {
                 TextField("user@bastion.example.com", text: $sshHost)
+                    .accessibilityLabel("SSH host")
+                    .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($focusedField, equals: .sshHost)
             }
 
@@ -786,6 +790,7 @@ private struct ForwardingRuleEditor: View {
             HStack {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
+                    .accessibilityHidden(true)
                 Spacer()
                 if !kindLockedToTCP {
                     Picker("Endpoint type", selection: kind) {
@@ -795,6 +800,7 @@ private struct ForwardingRuleEditor: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 112)
+                    .accessibilityLabel("\(title) endpoint type")
                 }
             }
 
@@ -937,6 +943,7 @@ private struct EditorField<Content: View>: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            .accessibilityHidden(true)
             content
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11.5))
