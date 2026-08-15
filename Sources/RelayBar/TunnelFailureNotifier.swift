@@ -56,8 +56,10 @@ final class TunnelFailureNotifier {
         content.title = "\(profileName) stopped retrying"
         content.body = message
         content.sound = .default
+        // One identifier per profile: a newer exhaustion replaces the stale
+        // banner instead of stacking duplicates in Notification Center.
         let request = UNNotificationRequest(
-            identifier: "RelayBar.tunnelFailure.\(UUID().uuidString)",
+            identifier: "RelayBar.tunnelFailure.\(profileName)",
             content: content,
             trigger: nil
         )
