@@ -49,6 +49,10 @@ Notable RelayBar changes are recorded here.
   Remote Files window again, through a main menu the app now installs itself.
 - A retrying profile now counts down to its next attempt. The row used to
   freeze "Retrying in 30s" for the whole backoff, reading like a stuck UI.
+- Finished downloads now land with owner-only permissions (`0600` for files,
+  `0700` for folders). The staging directory was created locked down, but
+  the payload itself kept whatever permissions sftp left once the transfer
+  outlived the last poll.
 
 ## [1.3.0] - 2026-07-30
 

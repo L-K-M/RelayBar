@@ -3096,6 +3096,14 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "downloaded")
         XCTAssertGreaterThanOrEqual(progress.maximum, 10)
         XCTAssertTrue(partialItems(in: directory).isEmpty)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: destination.path
+        )
+        XCTAssertEqual(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue,
+            0o600,
+            "A finished download lands with owner-only permissions."
+        )
     }
 
     func testDownloadSupportsDestinationNamesNearFilesystemLimit() async throws {
