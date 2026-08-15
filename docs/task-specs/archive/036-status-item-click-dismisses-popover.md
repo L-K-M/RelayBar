@@ -20,7 +20,7 @@ re-opening.
 ## Work
 
 - Add a `PopoverToggleGuard` that records popover closes and swallows exactly
-  one toggle landing within a 350 ms window of the recorded close.
+  one toggle landing within a 600 ms window of the recorded close.
 - Wire it into the delegate's toggle action and `popoverDidClose`.
 - Add focused unit tests and update the application-shell system spec.
 

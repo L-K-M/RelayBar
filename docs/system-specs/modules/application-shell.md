@@ -17,7 +17,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The menu-bar item is image-only and never lays out a title.
 - Clicking the icon while the popover is open dismisses the popover. The
   popover is `.transient`, so that click already closes it on mouse-down;
-  the toggle action on mouse-up treats a toggle landing within 350 ms of the
+  the toggle action on mouse-up treats a toggle landing within 600 ms of the
   close as the tail of the same click and swallows it once rather than
   re-presenting the menu.
 - Re-launching the running app opens the menu and re-asserts the icon rather
