@@ -418,9 +418,18 @@ struct TunnelEditorView: View {
                     .controlSize(.large)
                     .disabled(!isValid)
                     .help(isValid ? "" : saveBlockingReason)
-                    .accessibilityHint(
-                        isValid ? nil : saveBlockingReason
-                    )
+                    // No nil-accepting overload is reachable here, so the
+                    // hint is emptied rather than removed. The compiler
+                    // rejects both spellings on this deployment target:
+                    // `isValid ? nil : saveBlockingReason` gives "'nil'
+                    // cannot be used in context expecting type 'String'",
+                    // and wrapping the other branch in Text gives the same
+                    // error for 'Text'. Branching the button instead would
+                    // clear the attribute, but the two branches would be
+                    // separate SwiftUI identities, so focus would move
+                    // whenever validity flipped. An empty hint is not
+                    // announced, so this is the cheaper of the two.
+                    .accessibilityHint(isValid ? "" : saveBlockingReason)
             }
         }
         .padding(.horizontal, 16)

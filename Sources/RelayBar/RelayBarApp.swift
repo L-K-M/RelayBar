@@ -202,7 +202,15 @@ final class RelayBarAppDelegate:
         guard !quitConfirmationInFlight else { return .terminateCancel }
         quitConfirmationInFlight = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                // Returning .terminateLater owes AppKit exactly one reply.
+                // The delegate outlives every quit today — main() holds it
+                // for the process lifetime — but a deallocated delegate
+                // here would strand termination with no way to quit but
+                // Force Quit, so answer rather than fall out silently.
+                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+                return
+            }
             defer { quitConfirmationInFlight = false }
             // The tunnels that triggered the prompt may have stopped while
             // it was queued; confirm only against work still alive now.
@@ -234,6 +242,9 @@ final class RelayBarAppDelegate:
                 toApplicationShouldTerminate: confirmed
             )
         }
+        // The alert is answered on a later turn, so AppKit must be told to
+        // wait for that reply rather than terminate now.
+        return .terminateLater
     }
 
     // MARK: Status item

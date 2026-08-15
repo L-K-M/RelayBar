@@ -1134,6 +1134,35 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.logURL.path))
     }
 
+    /// Task 049. Exhausting automatic retries posts one notification so a
+    /// tunnel that gives up while the popover is closed is never silent.
+    func testRetryExhaustionPostsAFailureNotification() async throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var notifications: [(name: String, message: String)] = []
+        let store = TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            maxRetryAttempts: 2,
+            retryDelayProvider: { _ in 0.01 },
+            failureNotifier: { name, message in
+                notifications.append((name, message))
+            }
+        )
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+
+        store.start(tunnel)
+        let retriesExhausted = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(retriesExhausted)
+        XCTAssertEqual(notifications.count, 1)
+        XCTAssertEqual(notifications[0].name, "Web")
+        XCTAssertTrue(notifications[0].message.contains("Automatic retry stopped after 2 attempts."))
+    }
+
     func testUnexpectedExitRetriesUntilLimit() async throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
