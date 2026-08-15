@@ -234,6 +234,9 @@ final class RelayBarAppDelegate:
                 toApplicationShouldTerminate: confirmed
             )
         }
+        // The alert is answered on a later turn, so AppKit must be told to
+        // wait for that reply rather than terminate now.
+        return .terminateLater
     }
 
     // MARK: Status item
