@@ -59,9 +59,13 @@ struct RemoteFilesView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Remote path")
                     .font(.system(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
                 TextField("/srv/app/output", text: $model.remotePath)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Remote path")
+                    .accessibilityHint("Absolute path on the selected SSH server")
                     .focused($isPathFocused)
+                    .disabled(model.isLoading)
                     .onSubmit {
                         if model.canOpen {
                             model.openRemotePath()
@@ -77,6 +81,7 @@ struct RemoteFilesView: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Server")
                     .font(.system(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
                 HStack(spacing: 8) {
                     if model.servers.isEmpty {
                         Text("No SSH servers found")
@@ -105,6 +110,8 @@ struct RemoteFilesView: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Server")
+                        .accessibilityHint("SSH connection for Remote Files")
                     }
 
                     Button {
@@ -127,6 +134,7 @@ struct RemoteFilesView: View {
                         .accessibilityLabel("Remove saved host")
                     }
                 }
+                .disabled(model.isLoading)
 
                 Text("Includes recents, RelayBar profiles, and SSH config.")
                     .font(.system(size: 9.5))
@@ -138,22 +146,37 @@ struct RemoteFilesView: View {
                 ErrorMessage(message: errorMessage)
             }
 
-            Button {
-                model.openRemotePath()
-            } label: {
-                if model.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
+            HStack(spacing: 10) {
+                Button {
+                    model.openRemotePath()
+                } label: {
+                    if model.isLoading {
+                        HStack(spacing: 7) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Opening\u{2026}")
+                        }
                         .frame(maxWidth: .infinity)
-                } else {
-                    Text("Open")
-                        .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Open")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!model.canOpen)
+                .keyboardShortcut(.defaultAction)
+
+                if model.canCancelInitialOpen {
+                    Button("Cancel", role: .cancel) {
+                        model.cancelInitialOpen()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Cancel opening the remote path")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!model.canOpen)
-            .keyboardShortcut(.defaultAction)
         }
         .padding(24)
         .onAppear {
@@ -602,15 +625,21 @@ private struct AddRemoteServerView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Name · Optional")
                     .font(.system(size: 11, weight: .medium))
+                    .accessibilityHidden(true)
                 TextField("Development server", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Name")
+                    .accessibilityHint("Optional display name")
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("SSH host")
                     .font(.system(size: 11, weight: .medium))
+                    .accessibilityHidden(true)
                 TextField("user@server", text: $sshHost)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("SSH host")
+                    .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($isHostFocused)
                     .onSubmit(add)
                 Text("RelayBar uses your existing OpenSSH config, keys, and agent.")

@@ -1,0 +1,26 @@
+Host guarded-master
+    HostName target.example.test
+    User config-user
+    Port 2207
+    IdentityFile /tmp/relaybar-test-identity
+    IdentityAgent /tmp/relaybar-test-agent.sock
+    UserKnownHostsFile /tmp/relaybar-test-known-hosts
+    StrictHostKeyChecking accept-new
+    ProxyJump jump.example.test
+    ForkAfterAuthentication yes
+    PermitLocalCommand yes
+    LocalCommand /usr/bin/false
+    Tunnel yes
+    GatewayPorts yes
+    ForwardAgent yes
+    ForwardX11 yes
+    ForwardX11Trusted yes
+    ControlMaster no
+    ControlPersist yes
+    ClearAllForwardings no
+    BatchMode no
+    ConnectTimeout 60
+    ExitOnForwardFailure no
+    ServerAliveInterval 0
+    ServerAliveCountMax 99
+    RequestTTY force

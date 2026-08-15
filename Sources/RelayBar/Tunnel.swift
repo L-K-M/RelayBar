@@ -484,6 +484,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     var reverseSOCKSPolicy: ReverseSOCKSPolicy?
     var streamLocalSettings: StreamLocalSettings
     var groupTag: String?
+    var startsAtLaunch: Bool
 
     init(
         id: UUID = UUID(),
@@ -493,7 +494,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         rules: [ForwardingRule],
         reverseSOCKSPolicy: ReverseSOCKSPolicy? = nil,
         streamLocalSettings: StreamLocalSettings = StreamLocalSettings(),
-        groupTag: String? = nil
+        groupTag: String? = nil,
+        startsAtLaunch: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -503,6 +505,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         self.reverseSOCKSPolicy = reverseSOCKSPolicy
         self.streamLocalSettings = streamLocalSettings
         self.groupTag = groupTag
+        self.startsAtLaunch = startsAtLaunch
     }
 
     init(
@@ -514,7 +517,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         sshHost: String,
         bindAddress: String? = nil,
         additionalArguments: [String] = [],
-        groupTag: String? = nil
+        groupTag: String? = nil,
+        startsAtLaunch: Bool = false
     ) {
         self.init(
             id: id,
@@ -529,7 +533,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
                     destinationPort: destinationPort
                 )
             ],
-            groupTag: groupTag
+            groupTag: groupTag,
+            startsAtLaunch: startsAtLaunch
         )
     }
 
@@ -542,6 +547,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         case reverseSOCKSPolicy
         case streamLocalSettings
         case groupTag
+        case startsAtLaunch
         case localPort
         case destinationHost
         case destinationPort
@@ -576,6 +582,11 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         } else {
             groupTag = nil
         }
+
+        startsAtLaunch = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .startsAtLaunch
+        ) ?? false
 
         if let decodedRules = try container.decodeIfPresent(
             [ForwardingRule].self,
@@ -618,6 +629,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(reverseSOCKSPolicy, forKey: .reverseSOCKSPolicy)
         try container.encode(streamLocalSettings, forKey: .streamLocalSettings)
         try container.encodeIfPresent(groupTag, forKey: .groupTag)
+        try container.encode(startsAtLaunch, forKey: .startsAtLaunch)
     }
 
     var displayName: String {
@@ -697,6 +709,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             && rules == other.rules
             && reverseSOCKSPolicy == other.reverseSOCKSPolicy
             && streamLocalSettings == other.streamLocalSettings
+            && startsAtLaunch == other.startsAtLaunch
     }
 
     var hasConflictingListeners: Bool {
