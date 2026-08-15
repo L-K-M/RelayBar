@@ -318,7 +318,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         )
         try validate(result)
         return try SFTPListingParser.parse(
-            decodedListing(result),
+            Self.decodedListing(result),
             parentPath: normalizedPath
         )
     }
@@ -336,14 +336,14 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
         )
         try validate(result)
-        return (try decodedListing(result), normalizedPath)
+        return (try Self.decodedListing(result), normalizedPath)
     }
 
     /// One decoding path for every listing, so a caller cannot bypass the
     /// invalid-UTF-8 and unreadable rejections by reading `result.output`
     /// directly — which is exactly how the symbolic-link listing came to
     /// hand a raw captured value to a parser expecting text.
-    private func decodedListing(_ result: CommandResult) throws -> String {
+    private static func decodedListing(_ result: CommandResult) throws -> String {
         switch result.output {
         case .text(let text):
             return text
