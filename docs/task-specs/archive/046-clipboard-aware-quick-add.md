@@ -25,9 +25,11 @@ click-add, click-field, paste, click-import.
 
 - Add the pure `ClipboardSSHCommand.candidate(from:)` gate over the existing
   parser.
-- Show a borderless chip in the Quick Add card with the command as its
-  tooltip and a ⇧⌘V shortcut; using it fills the field and runs the normal
-  import.
+- Show a borderless chip in the Quick Add card with a ⇧⌘V shortcut; the
+  clipboard is read only when the chip is clicked, so the macOS Sequoia
+  paste-permission prompt can never appear from opening the editor. Using it
+  fills the field and runs the normal import; unrelated contents show a
+  gentle message.
 - Add gate tests and update the ssh-command-import system spec.
 
 ## Acceptance
