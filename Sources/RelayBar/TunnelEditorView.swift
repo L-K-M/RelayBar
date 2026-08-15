@@ -330,7 +330,11 @@ struct TunnelEditorView: View {
 
     private var actionBar: some View {
         VStack(spacing: 8) {
-            if let issue = firstValidationIssue {
+            // Tied to the button's own gate: the caption only ever explains
+            // an actually-disabled Save, so a mirror drift the other way
+            // (an issue named for a gate that accepts) can never show a
+            // false blocking reason next to an enabled button.
+            if !isValid, let issue = firstValidationIssue {
                 Label(issue, systemImage: "info.circle")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
