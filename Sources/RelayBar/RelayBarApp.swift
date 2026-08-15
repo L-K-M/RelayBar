@@ -169,8 +169,7 @@ final class RelayBarAppDelegate:
         // `runningCount` is the store's one definition of active — starting,
         // retrying, or running (isLifecycleActive) — so connect and backoff
         // phases are covered, not just settled tunnels.
-        presentQuitConfirmation()
-        return .terminateLater
+        return presentQuitConfirmation()
     }
 
     /// True from the moment the user asks to quit through RelayBar's own
@@ -194,8 +193,13 @@ final class RelayBarAppDelegate:
     /// termination is to answer later: present on the next turn, then reply.
     private var quitConfirmationInFlight = false
 
-    private func presentQuitConfirmation() {
-        guard !quitConfirmationInFlight else { return }
+    /// Starts the confirmation and returns the reply the caller owes
+    /// AppKit. A duplicate terminate while the alert is already up is
+    /// cancelled: the in-flight confirmation's single reply resolves the
+    /// first request, and a second `.terminateLater` would wait forever for
+    /// a reply that never comes.
+    private func presentQuitConfirmation() -> NSApplication.TerminateReply {
+        guard !quitConfirmationInFlight else { return .terminateCancel }
         quitConfirmationInFlight = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
