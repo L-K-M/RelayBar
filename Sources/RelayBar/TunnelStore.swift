@@ -213,7 +213,8 @@ final class TunnelStore: ObservableObject {
     /// Appends an independent copy of a saved profile right after the
     /// original, with fresh profile and rule identities so editing, running,
     /// or deleting the copy never touches the original. The copy inherits
-    /// the (already resolved) group tag and starts stopped.
+    /// the (already resolved) group tag, starts stopped, and does not inherit
+    /// the source's Start at Launch preference.
     @discardableResult
     func duplicate(_ tunnel: Tunnel) -> Tunnel? {
         guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
@@ -222,6 +223,7 @@ final class TunnelStore: ObservableObject {
         let source = tunnels[index]
         var copy = source
         copy.id = UUID()
+        copy.startsAtLaunch = false
         copy.rules = source.rules.map { original in
             var rule = original
             rule.id = UUID()
@@ -257,6 +259,30 @@ final class TunnelStore: ObservableObject {
         } else {
             start(tunnel)
         }
+    }
+
+    /// Starts every saved profile whose **Start at Launch** preference is on.
+    /// Unsafe profiles fail on their own row through the normal start path,
+    /// and an already-active profile is left untouched.
+    func startProfilesMarkedForAutoStart() {
+        for tunnel in tunnels
+        where tunnel.startsAtLaunch && desiredTunnels[tunnel.id] == nil {
+            start(tunnel)
+        }
+    }
+
+    /// Toggles the persisted Start at Launch preference without touching the
+    /// profile's lifecycle, the same metadata-only treatment as group moves.
+    func setStartsAtLaunch(_ enabled: Bool, for tunnel: Tunnel) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return
+        }
+        guard tunnels[index].startsAtLaunch != enabled else { return }
+        tunnels[index].startsAtLaunch = enabled
+        if desiredTunnels[tunnel.id] != nil {
+            desiredTunnels[tunnel.id]?.startsAtLaunch = enabled
+        }
+        save()
     }
 
     func start(_ tunnel: Tunnel) {

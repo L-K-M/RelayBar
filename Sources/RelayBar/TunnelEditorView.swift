@@ -16,6 +16,7 @@ struct TunnelEditorView: View {
     @State private var reverseAllowedDestinations: String
     @State private var streamBindMask: String
     @State private var unlinkStaleSocket: Bool
+    @State private var startsAtLaunch: Bool
     @State private var importError: String?
     @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
@@ -67,6 +68,9 @@ struct TunnelEditorView: View {
         )
         _unlinkStaleSocket = State(
             initialValue: tunnel?.streamLocalSettings.unlinkStaleSocket ?? false
+        )
+        _startsAtLaunch = State(
+            initialValue: tunnel?.startsAtLaunch ?? false
         )
     }
 
@@ -171,6 +175,27 @@ struct TunnelEditorView: View {
                 hasPendingName: $hasPendingGroupName,
                 availableGroups: availableGroups
             )
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start at Launch")
+                        .font(.system(size: 10.5, weight: .medium))
+                    Text("Start this profile when RelayBar opens")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    "Start at Launch",
+                    isOn: $startsAtLaunch
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .accessibilityLabel("Start at Launch")
+            }
 
             EditorField(label: "SSH host", hint: "user@server") {
                 TextField("user@bastion.example.com", text: $sshHost)
@@ -388,7 +413,8 @@ struct TunnelEditorView: View {
                 bindMask: mask,
                 unlinkStaleSocket: unlinkStaleSocket
             ),
-            groupTag: groupTag
+            groupTag: groupTag,
+            startsAtLaunch: startsAtLaunch
         )
         return profile.isSafeToRun ? profile : nil
     }

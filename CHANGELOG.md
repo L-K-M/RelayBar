@@ -9,6 +9,8 @@ Notable RelayBar changes are recorded here.
 - Profiles can be duplicated from the row menu. The copy gets fresh profile
   and rule identities, lands right after the original, and starts stopped —
   clone-then-tweak without retyping a connection.
+- Profiles can be marked **Start at Launch** in the editor or row menu, and
+  RelayBar starts those profiles automatically when it launches.
 - Row menus can copy a profile as the `ssh` command RelayBar effectively
   runs — same grammar Quick Add imports, so the command pastes straight back
   or into a terminal.
