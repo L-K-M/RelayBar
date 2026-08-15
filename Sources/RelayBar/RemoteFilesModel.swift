@@ -257,6 +257,11 @@ final class RemoteFilesModel: ObservableObject {
     private var tunnels: [Tunnel]
     private var activeServer: RemoteServer?
     private var navigationHistory: [String] = []
+    /// Whether the browser currently shows a directly opened file as the only
+    /// entry. In that state Back has no folder history to pop, so it opens
+    /// the containing folder instead of abandoning the browser for the
+    /// launcher.
+    private var showsDirectFile = false
     private var directoryCache = RemoteDirectoryCache()
     private var loadTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
@@ -453,6 +458,23 @@ final class RemoteFilesModel: ObservableObject {
             return
         }
         guard let previousPath = navigationHistory.last, let server = activeServer else {
+            if
+                showsDirectFile,
+                let server = activeServer,
+                !currentPath.isEmpty
+            {
+                // Consume the direct-file context: if the folder load fails,
+                // the error strip owns retry and the next Back leaves for
+                // the launcher instead of re-issuing the same failing load.
+                showsDirectFile = false
+                load(
+                    path: currentPath,
+                    server: server,
+                    previousPath: nil,
+                    selectionAfterLoad: remotePath
+                )
+                return
+            }
             loadTask?.cancel()
             loadGeneration = UUID()
             loadTask = nil
@@ -467,6 +489,7 @@ final class RemoteFilesModel: ObservableObject {
             retryLoadRequest = nil
             activeServer = nil
             transfer = nil
+            showsDirectFile = false
             selectedServerID = servers.contains(where: { $0.id == selectedServerID })
                 ? selectedServerID
                 : servers.first?.id
@@ -801,6 +824,7 @@ final class RemoteFilesModel: ObservableObject {
         }
         currentPath = path
         remotePath = path
+        showsDirectFile = false
         entries = loadedEntries
         if
             let selectionAfterLoad,
@@ -818,6 +842,7 @@ final class RemoteFilesModel: ObservableObject {
     private func commitLoadedFile(_ entry: RemoteFileEntry) {
         currentPath = RemotePath.parent(of: entry.path)
         remotePath = entry.path
+        showsDirectFile = true
         entries = [entry]
         selectedEntryID = entry.id
     }

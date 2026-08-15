@@ -3440,6 +3440,7 @@ final class RemoteFilesModelTests: XCTestCase {
             parentPath: "/home/linxy97/workspace/2026/youtube-video-transcript"
         )
         service.pathResults[entry.path] = .file(entry)
+        service.listings[RemotePath.parent(of: entry.path)] = [entry]
         let previewDirectory = try makeTemporaryDirectory()
         let previewURL = previewDirectory.appendingPathComponent(entry.name)
         try Data("# Transcription learnings\n\nDirect preview.".utf8).write(to: previewURL)
@@ -3463,9 +3464,92 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         XCTAssertEqual(model.screen, .browser)
         XCTAssertEqual(model.entries, [entry])
+
+        // Task 038. With no folder history, Back from a directly opened file
+        // opens the containing folder with the file selected instead of
+        // abandoning the browser for the launcher.
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && service.listRequests.count == 1
+                && model.currentPath == RemotePath.parent(of: entry.path)
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(
+            service.listRequests.map(\.path),
+            [RemotePath.parent(of: entry.path)]
+        )
+
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
-        XCTAssertEqual(model.remotePath, entry.path)
+        XCTAssertEqual(model.remotePath, RemotePath.parent(of: entry.path))
+    }
+
+    /// Task 038. A directly opened file at the root still has a containing
+    /// folder: Back lists `/` with the file selected.
+    func testBackFromRootLevelDirectFileListsRoot() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin", parentPath: "")
+        service.pathResults[entry.path] = .file(entry)
+        service.listings["/"] = [entry]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && service.listRequests.count == 1
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(service.listRequests.map(\.path), ["/"])
+
+        // The root load must have cleared the direct-file state, so the
+        // next Back leaves the browser for the launcher.
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+    }
+
+    /// Task 038. When the containing-folder load fails, the direct-file
+    /// context is consumed: the error strip owns retry, and the next Back
+    /// leaves for the launcher instead of re-issuing the same failing load.
+    func testBackFromDirectFileAfterFailedParentLoadExitsToLauncher() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin")
+        service.pathResults[entry.path] = .file(entry)
+        service.errors[RemotePath.parent(of: entry.path)] =
+            RemoteFileError.commandFailed("Permission denied.")
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading && model.errorMessage == "Permission denied."
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(
+            model.remotePath,
+            entry.path,
+            "The failed folder load never commits, so the launcher keeps the file path."
+        )
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
