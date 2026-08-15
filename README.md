@@ -3,14 +3,13 @@
 A fork of [lx2026/RelayBar](https://github.com/lx2026/RelayBar), a tiny native macOS
 menu-bar app for structured SSH forwarding profiles and exact-path remote file access.
 
-Every feature and every released build comes from upstream. Start at the
+Start at the
 [upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
-to install a release, and the full documentation. This fork exists for one reason.
+to install a release, and the full documentation.
 
 ## Why this fork exists
 
-Upstream RelayBar's menu-bar icon can disappear and never come back. The app keeps
-running, but there is nothing left to click.
+This fork improves how reliably the app is able to show its menubar icon.
 
 RelayBar is an `LSUIElement` agent, so it has no Dock icon and no window, and its only
 surface was a SwiftUI `MenuBarExtra`. `MenuBarExtra` owns its `NSStatusItem` privately
@@ -18,9 +17,7 @@ and exposes neither `autosaveName` nor `isVisible`. macOS persists that item's m
 slot and its visibility into the app's own preferences, under a name it assigns by
 creation order, and restores both on every later launch. So once the icon had been
 recorded as hidden — by a stray ⌘-drag, a menu-bar manager, or a slot no attached display
-can draw — the app could neither detect it nor undo it. What was left was a process in
-Activity Monitor with no way in, and no way out either: the only Quit button lived inside
-the popover that had become unreachable.
+can draw — the app could neither detect it nor undo it.
 
 ## What this fork changes
 
@@ -34,21 +31,15 @@ name `com.lx2026.RelayBar.status`. At every launch RelayBar asserts its visibili
 discards a saved slot that no attached screen can display, and clears the stale keys the
 old `MenuBarExtra` item left behind.
 
-**The item is icon-only.** It previously drew the word "RelayBar" beside the glyph,
-because a `Label` in `MenuBarExtra`'s label closure renders both title and icon. At
-roughly three times the width, it was the first thing a crowded or notched menu bar drops.
-
 **Re-launching the app is an escape hatch.** Opening RelayBar while it is already running
 re-asserts the icon and opens the menu, instead of doing nothing.
 
 **The app installs its own main menu,** so ⌘X/⌘C/⌘V/⌘A still reach the text fields in the
 profile editor and the Remote Files window after leaving the SwiftUI scene.
 
-One deliberate trade-off: because visibility is asserted at every launch, ⌘-dragging the
+This change comes with a trade-off: because visibility is asserted at every launch, ⌘-dragging the
 icon off the menu bar does not persist. For an app whose only surface is that icon,
 coming back is the safer default.
-
-Everything else tracks upstream.
 
 ## Build
 
@@ -72,9 +63,3 @@ Bundled third-party license text is in
 ```bash
 swift test
 ```
-
-## Architecture
-
-The behavior and architecture archive starts at
-[`docs/system-specs`](docs/system-specs/README.md). Fork changes are recorded in
-[`CHANGELOG.md`](CHANGELOG.md).

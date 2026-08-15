@@ -227,7 +227,14 @@ final class RemoteFilesModel: ObservableObject {
 
     @Published private(set) var screen: Screen = .launcher
     @Published private(set) var servers: [RemoteServer]
-    @Published var selectedServerID: UUID?
+    @Published var selectedServerID: UUID? {
+        didSet {
+            // Offer the selected server's last opened path in an untouched
+            // launcher field; never clobber text the user typed.
+            guard screen == .launcher, remotePath.isEmpty else { return }
+            prefillLastPathForSelectedServer()
+        }
+    }
     @Published var remotePath = ""
     @Published private(set) var currentPath = ""
     @Published private(set) var pendingPath: String?
@@ -250,6 +257,11 @@ final class RemoteFilesModel: ObservableObject {
     private var tunnels: [Tunnel]
     private var activeServer: RemoteServer?
     private var navigationHistory: [String] = []
+    /// Whether the browser currently shows a directly opened file as the only
+    /// entry. In that state Back has no folder history to pop, so it opens
+    /// the containing folder instead of abandoning the browser for the
+    /// launcher.
+    private var showsDirectFile = false
     private var directoryCache = RemoteDirectoryCache()
     private var loadTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
@@ -288,6 +300,9 @@ final class RemoteFilesModel: ObservableObject {
         self.imageDecoder = imageDecoder
         self.markdownDecoder = markdownDecoder
         self.tunnels = tunnels
+        if let firstServer = initialServers.first {
+            remotePath = catalog.lastOpenedPath(for: firstServer) ?? ""
+        }
     }
 
     var pathValidationMessage: String? {
@@ -443,6 +458,23 @@ final class RemoteFilesModel: ObservableObject {
             return
         }
         guard let previousPath = navigationHistory.last, let server = activeServer else {
+            if
+                showsDirectFile,
+                let server = activeServer,
+                !currentPath.isEmpty
+            {
+                // Consume the direct-file context: if the folder load fails,
+                // the error strip owns retry and the next Back leaves for
+                // the launcher instead of re-issuing the same failing load.
+                showsDirectFile = false
+                load(
+                    path: currentPath,
+                    server: server,
+                    previousPath: nil,
+                    selectionAfterLoad: remotePath
+                )
+                return
+            }
             loadTask?.cancel()
             loadGeneration = UUID()
             loadTask = nil
@@ -457,6 +489,7 @@ final class RemoteFilesModel: ObservableObject {
             retryLoadRequest = nil
             activeServer = nil
             transfer = nil
+            showsDirectFile = false
             selectedServerID = servers.contains(where: { $0.id == selectedServerID })
                 ? selectedServerID
                 : servers.first?.id
@@ -487,10 +520,82 @@ final class RemoteFilesModel: ObservableObject {
         if entry.isDirectory {
             guard let server = activeServer else { return }
             load(path: entry.path, server: server, previousPath: currentPath)
+        } else if entry.kind == .symbolicLink {
+            openSymbolicLink(entry)
         } else if entry.isPreviewable {
             preview(entry)
         } else {
             download(entry)
+        }
+    }
+
+    /// A symbolic link may point at a directory or a file; only the remote
+    /// side knows. Ask for a directory listing of `link/` — which resolves
+    /// the link — and fall back to file treatment (preview by extension,
+    /// otherwise download, both following the link server-side) when the
+    /// link turns out not to be a directory.
+    private func openSymbolicLink(_ entry: RemoteFileEntry) {
+        guard let server = activeServer, !isLoading else { return }
+        loadTask?.cancel()
+        let generation = UUID()
+        loadGeneration = generation
+        errorMessage = nil
+        isLoading = true
+        pendingPath = screen == .browser ? entry.path : nil
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let loadedEntries = try await service.listSymlinkTarget(
+                    server: server,
+                    path: entry.path
+                )
+                try Task.checkCancellation()
+                guard loadGeneration == generation else { return }
+                commitLoadedFolder(
+                    path: entry.path,
+                    entries: loadedEntries,
+                    previousPath: currentPath,
+                    isRefresh: false,
+                    popsHistory: false,
+                    selectionAfterLoad: nil
+                )
+                pendingPath = nil
+                isLoading = false
+                screen = .browser
+            } catch is CancellationError {
+                if loadGeneration == generation {
+                    pendingPath = nil
+                    isLoading = false
+                }
+            } catch {
+                guard loadGeneration == generation else { return }
+                pendingPath = nil
+                isLoading = false
+                errorMessage = nil
+                // A killed probe often surfaces as a command failure rather
+                // than CancellationError; never start file work for a probe
+                // the user already cancelled.
+                if Task.isCancelled { return }
+                treatSymlinkAsFile(entry)
+            }
+        }
+    }
+
+    private func treatSymlinkAsFile(_ entry: RemoteFileEntry) {
+        // Preview and download follow the link server-side, so the entry is
+        // reclassified as a regular file; the size on the link line is the
+        // link itself, so it is dropped and progress is indeterminate.
+        let resolved = RemoteFileEntry(
+            name: entry.name,
+            path: entry.path,
+            kind: .file,
+            size: nil,
+            modificationText: entry.modificationText
+        )
+        if resolved.isPreviewable {
+            preview(resolved)
+        } else {
+            download(resolved)
         }
     }
 
@@ -754,6 +859,7 @@ final class RemoteFilesModel: ObservableObject {
                 isRefreshing = false
                 retryLoadRequest = nil
                 serverCatalog.recordSuccessfulOpen(server)
+                serverCatalog.recordLastOpenedPath(remotePath, for: server)
                 refreshServers(preferredConnection: server.connectionIdentity)
                 if case .file(let entry) = result, entry.isPreviewable {
                     preview(entry)
@@ -790,6 +896,7 @@ final class RemoteFilesModel: ObservableObject {
         }
         currentPath = path
         remotePath = path
+        showsDirectFile = false
         entries = loadedEntries
         if
             let selectionAfterLoad,
@@ -807,6 +914,7 @@ final class RemoteFilesModel: ObservableObject {
     private func commitLoadedFile(_ entry: RemoteFileEntry) {
         currentPath = RemotePath.parent(of: entry.path)
         remotePath = entry.path
+        showsDirectFile = true
         entries = [entry]
         selectedEntryID = entry.id
     }
@@ -890,6 +998,11 @@ final class RemoteFilesModel: ObservableObject {
             try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent())
         }
         previewURL = nil
+    }
+
+    private func prefillLastPathForSelectedServer() {
+        guard let server = selectedServer else { return }
+        remotePath = serverCatalog.lastOpenedPath(for: server) ?? ""
     }
 
     private func refreshServers(

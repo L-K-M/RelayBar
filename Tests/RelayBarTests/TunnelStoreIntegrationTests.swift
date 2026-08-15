@@ -230,6 +230,77 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.tunnels.count, 4)
     }
 
+    /// Task 039. Duplicating a profile appends an independent copy with fresh
+    /// identities right after the original and persists it.
+    func testDuplicateProfileCreatesIndependentCopyAfterTheOriginal() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        var first = makeGroupedProfile(name: "Web", port: 43_250, group: "Work")
+        first.startsAtLaunch = true
+        let second = makeGroupedProfile(name: "Other", port: 43_251, group: nil)
+        store.add(first)
+        store.add(second)
+
+        let copy = try XCTUnwrap(store.duplicate(first))
+
+        XCTAssertEqual(store.tunnels.count, 3)
+        XCTAssertEqual(store.tunnels[1].id, copy.id)
+        XCTAssertNotEqual(copy.id, first.id)
+        XCTAssertEqual(copy.name, "Web copy")
+        XCTAssertEqual(copy.groupTag, "Work")
+        XCTAssertFalse(copy.startsAtLaunch)
+        XCTAssertEqual(copy.sshHost, first.sshHost)
+        XCTAssertEqual(copy.rules.count, first.rules.count)
+        XCTAssertNotEqual(copy.rules[0].id, first.rules[0].id)
+        XCTAssertEqual(copy.rules[0].listen, first.rules[0].listen)
+        XCTAssertEqual(copy.rules[0].destination, first.rules[0].destination)
+        XCTAssertTrue(copy.isSafeToRun)
+        XCTAssertEqual(store.phase(for: copy), .stopped)
+
+        let reloaded = TunnelStore(defaults: defaults)
+        XCTAssertEqual(reloaded.tunnels.map(\.name), ["Web", "Web copy", "Other"])
+    }
+
+    /// Task 039. An unnamed profile's copy stays unnamed so its generated
+    /// display summary keeps showing; only explicit names gain the suffix.
+    func testDuplicateOfUnnamedProfileStaysUnnamed() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        var profile = makeLocalProfile()
+        profile.name = "  "
+        store.add(profile)
+
+        let copy = try XCTUnwrap(store.duplicate(profile))
+
+        XCTAssertEqual(copy.name, "  ")
+        XCTAssertEqual(copy.displayName, store.tunnels[0].displayName)
+    }
+
+    /// Task 039. Repeated duplicates gain Finder-style numbered names
+    /// instead of colliding on one " copy" row.
+    func testRepeatedDuplicatesGainNumberedNames() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(defaults: defaults)
+        let profile = makeGroupedProfile(name: "Web", port: 43_252, group: nil)
+        store.add(profile)
+
+        let firstCopy = try XCTUnwrap(store.duplicate(profile))
+        let secondCopy = try XCTUnwrap(store.duplicate(profile))
+        let copyOfCopy = try XCTUnwrap(store.duplicate(firstCopy))
+
+        XCTAssertEqual(firstCopy.name, "Web copy")
+        XCTAssertEqual(secondCopy.name, "Web copy 2")
+        XCTAssertEqual(copyOfCopy.name, "Web copy copy")
+        // Each copy lands directly after its own source.
+        XCTAssertEqual(
+            store.tunnels.map(\.name),
+            ["Web", "Web copy 2", "Web copy", "Web copy copy"]
+        )
+    }
+
     /// Task 009. `grouping` is cached so the list body does not rebuild sections
     /// on every phase publish. Every mutation path must invalidate it.
     func testGroupingCacheInvalidatesOnEveryMutationPath() throws {
@@ -249,6 +320,17 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         renamedDashboard.name = "Renamed"
         store.update(renamedDashboard)
         XCTAssertEqual(store.grouping.sections.first?.tunnels.first?.name, "Renamed")
+
+        let duplicated = try XCTUnwrap(store.duplicate(store.tunnels[0]))
+        XCTAssertEqual(
+            store.grouping.sections.first?.tunnels.map(\.name),
+            ["Renamed", "Renamed copy"]
+        )
+        store.delete(duplicated)
+        XCTAssertEqual(
+            store.grouping.sections.first?.tunnels.map(\.name),
+            ["Renamed"]
+        )
 
         store.move(store.tunnels[0], toGroup: "Personal")
         XCTAssertEqual(store.grouping.groupNames, ["Personal"])
@@ -955,6 +1037,42 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.runningCount, 0)
     }
 
+    func testForwardingControlPathRejectsOverlongRootWithoutResidue() throws {
+        let root = URL(
+            fileURLWithPath:
+                "/tmp/RelayBarOverlong-"
+                + String(repeating: "x", count: 64)
+                + "-"
+                + String(UUID().uuidString.prefix(8)),
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            maxRetryAttempts: 0,
+            temporaryDirectory: root
+        )
+        let tunnel = makeLocalProfile()
+
+        store.start(tunnel)
+
+        guard case .failed(let message) = store.phase(for: tunnel) else {
+            return XCTFail("Expected an overlong forwarding control path to fail.")
+        }
+        XCTAssertTrue(message.contains("too long"))
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty,
+            "A rejected forwarding control path must not leave a private directory."
+        )
+    }
+
     func testManualStopCancelsPendingRetry() async throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -978,6 +1096,32 @@ final class TunnelStoreIntegrationTests: XCTestCase {
 
         XCTAssertEqual(store.phase(for: tunnel), .stopped)
         XCTAssertEqual(store.runningCount, 0)
+    }
+
+    /// Task 040. The store records when a pending retry fires so the row can
+    /// count down live; stopping the profile clears the deadline.
+    func testRetryDeadlineTracksScheduledRetryAndClearsOnStop() async throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            retryDelayProvider: { _ in 5 }
+        )
+        let tunnel = makeLocalProfile()
+        store.start(tunnel)
+
+        let enteredRetry = await waitUntil {
+            if case .retrying = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(enteredRetry)
+        let deadline = try XCTUnwrap(store.retryDeadline(for: tunnel))
+        XCTAssertGreaterThan(deadline.timeIntervalSinceNow, 3)
+        XCTAssertLessThan(deadline.timeIntervalSinceNow, 6)
+
+        store.stop(tunnel)
+        XCTAssertNil(store.retryDeadline(for: tunnel))
     }
 
     func testStopTracksMasterUntilItsTerminationCallbackArrives() async throws {
@@ -1060,6 +1204,106 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(openedURLs, [try XCTUnwrap(tunnel.unambiguousBrowserURL)])
         XCTAssertEqual(store.phase(for: tunnel), .running)
         store.stop(tunnel)
+    }
+
+    func testStartProfilesMarkedForAutoStartStartsMarkedProfilesAndSkipsOthers() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+
+        var marked = makeLocalProfile()
+        marked.startsAtLaunch = true
+        store.add(marked)
+        let unmarked = makeGroupedProfile(
+            name: "Stays stopped",
+            port: 43_211,
+            group: nil
+        )
+        store.add(unmarked)
+
+        store.startProfilesMarkedForAutoStart()
+
+        let finished = await waitUntil {
+            if case .running = store.phase(for: marked) { return true }
+            if case .failed = store.phase(for: marked) { return true }
+            return false
+        }
+        guard finished else {
+            return XCTFail("The marked profile never finished startup.")
+        }
+        guard store.phase(for: marked) == .running else {
+            return XCTFail(
+                "The marked profile did not start: \(store.phase(for: marked))"
+            )
+        }
+
+        XCTAssertEqual(store.phase(for: unmarked), .stopped)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL)),
+            1
+        )
+        store.stopAll()
+    }
+
+    func testSetStartsAtLaunchPersistsWithoutChangingRunningPhase() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let tunnel = makeLocalProfile()
+
+        store.add(tunnel)
+        store.start(tunnel)
+
+        let finished = await waitUntil {
+            if case .running = store.phase(for: tunnel) { return true }
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        guard finished, store.phase(for: tunnel) == .running else {
+            return XCTFail(
+                "The profile did not start: \(store.phase(for: tunnel))"
+            )
+        }
+
+        store.setStartsAtLaunch(true, for: tunnel)
+
+        XCTAssertTrue(store.tunnels[0].startsAtLaunch)
+        XCTAssertEqual(store.phase(for: tunnel), .running)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL)),
+            1
+        )
+
+        let reloaded = TunnelStore(defaults: defaults)
+        XCTAssertTrue(reloaded.tunnels[0].startsAtLaunch)
+        store.stopAll()
+    }
+
+    func testDecodesSavedProfilesWithoutAutoStartPreferenceAsFalse() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var tunnel = makeLocalProfile()
+        tunnel.startsAtLaunch = true
+        let encoded = try JSONEncoder().encode([tunnel])
+        var objects = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [[String: Any]]
+        )
+        for index in objects.indices {
+            objects[index].removeValue(forKey: "startsAtLaunch")
+        }
+        defaults.set(
+            try JSONSerialization.data(withJSONObject: objects),
+            forKey: "savedTunnels.v2"
+        )
+
+        let store = TunnelStore(defaults: defaults)
+
+        XCTAssertEqual(store.tunnels.count, 1)
+        XCTAssertFalse(store.tunnels[0].startsAtLaunch)
     }
 
     private func makeLocalProfile() -> Tunnel {
