@@ -151,8 +151,12 @@ final class RelayBarAppDelegate:
         if UpdateServiceFactory.shared.prepareForApplicationTermination() {
             return .terminateCancel
         }
-        guard store.runningCount > 0 else { return .terminateNow }
-        presentQuitConfirmation()
+        let activeCount = store.runningCount
+        // `runningCount` is the store's one definition of active — starting,
+        // retrying, or running (isLifecycleActive) — so connect and backoff
+        // phases are covered, not just settled tunnels.
+        guard activeCount > 0 else { return .terminateNow }
+        presentQuitConfirmation(activeCount: activeCount)
         return .terminateLater
     }
 
@@ -162,7 +166,7 @@ final class RelayBarAppDelegate:
     /// termination is to answer later: present on the next turn, then reply.
     private var quitConfirmationInFlight = false
 
-    private func presentQuitConfirmation() {
+    private func presentQuitConfirmation(activeCount: Int) {
         guard !quitConfirmationInFlight else { return }
         quitConfirmationInFlight = true
         DispatchQueue.main.async { [weak self] in
@@ -191,7 +195,7 @@ final class RelayBarAppDelegate:
             )
             // The default action kills every live SSH process; say so in red.
             stopButton.hasDestructiveAction = true
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: QuitConfirmation.cancelButtonTitle)
             let confirmed = alert.runModal() == .alertFirstButtonReturn
             NSApplication.shared.reply(
                 toApplicationShouldTerminate: confirmed
