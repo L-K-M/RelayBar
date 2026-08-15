@@ -313,6 +313,12 @@ final class RemoteFilesModel: ObservableObject {
         selectedServer != nil && pathValidationMessage == nil && !isLoading
     }
 
+    var canCancelInitialOpen: Bool {
+        // `isLoading` is set on the launcher only by the explicit initial
+        // path open; browser loads use the same flag on `.browser`.
+        screen == .launcher && isLoading
+    }
+
     var presentedPath: String {
         pendingPath ?? currentPath
     }
@@ -411,6 +417,22 @@ final class RemoteFilesModel: ObservableObject {
             previousPath: nil,
             resolvesFile: true
         )
+    }
+
+    func cancelInitialOpen() {
+        guard canCancelInitialOpen else { return }
+
+        loadTask?.cancel()
+        loadGeneration = UUID()
+        loadTask = nil
+        pendingPath = nil
+        isLoading = false
+        isRefreshing = false
+        errorMessage = nil
+        retryLoadRequest = nil
+        activeServer = nil
+        directoryCache.removeAll()
+        service.shutdown()
     }
 
     func refresh() {

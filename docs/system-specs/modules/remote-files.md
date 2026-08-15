@@ -16,6 +16,13 @@ without adding search, indexing, mounting, or editing.
 - Only successful folder or file opens are promoted to the recent section, which retains at most eight connections with the newest first. Failed opens do not change recents.
 - OpenSSH config discovery reads at most 1 MiB from `~/.ssh/config`, exposes at most 256 concrete `Host` aliases, and ignores wildcard, character-pattern, and negated aliases. `Include` lines are followed with glob expansion — relative patterns resolve against `~/.ssh`, tilde forms expand (including `~user`), unmatched patterns are ignored, and directories are skipped — under an eight-level depth cap, a 64-file budget, and visited-file cycle protection. Config aliases remain read-only and are not copied into RelayBar storage.
 - A successful open changes the compact launcher into a wider browser window.
+- While the initial folder or file open is pending, the launcher keeps a visible
+  progress label and offers **Cancel** with the standard cancel keyboard action.
+  Cancelling retires the pending load and owned SSH session immediately, stays
+  on the launcher, preserves the entered path and server selection, and neither
+  reports an error nor records a recent connection. A delayed success or
+  failure from the cancelled generation is discarded, and a later explicit
+  Open starts a clean request.
 - Missing-path output from SFTP is normalized to a short user-facing error while preserving the entered path and server for retry.
 - When the launcher path identifies a supported image or Markdown file, RelayBar
   opens the existing bounded preview with that exact file selected. Back returns
