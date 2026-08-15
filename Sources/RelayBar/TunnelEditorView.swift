@@ -331,15 +331,16 @@ struct TunnelEditorView: View {
     private var actionBar: some View {
         VStack(spacing: 8) {
             // Tied to the button's own gate: the caption only ever explains
-            // an actually-disabled Save, so a mirror drift the other way
-            // (an issue named for a gate that accepts) can never show a
-            // false blocking reason next to an enabled button.
-            if !isValid, let issue = firstValidationIssue {
-                Label(issue, systemImage: "info.circle")
+            // an actually-disabled Save. If the mirror ever drifts so the
+            // gate rejects something the mirror accepts, the generic
+            // fallback still names a reason — the specific reasons can be
+            // wrong, but "check the fields" never is.
+            if !isValid {
+                Label(saveBlockingReason, systemImage: "info.circle")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel("Before you can save: \(issue)")
+                    .accessibilityLabel("Before you can save: \(saveBlockingReason)")
             }
             HStack {
                 Button("Cancel", action: onCancel)
@@ -350,12 +351,19 @@ struct TunnelEditorView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(!isValid)
-                    .help(firstValidationIssue ?? "")
+                    .help(isValid ? "" : saveBlockingReason)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(minHeight: 56)
+    }
+
+    /// The caption and tooltip text for a disabled Save: the mirror's first
+    /// issue, or a generic fallback if the mirror ever misses one.
+    private var saveBlockingReason: String {
+        firstValidationIssue
+            ?? "Check the fields above; one value is not valid."
     }
 
     /// The single reason Save is disabled, so a rejected form explains
