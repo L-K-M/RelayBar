@@ -20,6 +20,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - A main menu supplies the standard editing key equivalents, which an
   `LSUIElement` app otherwise never routes to the first responder.
 - The popover is a 380 × 440 point window containing the tunnel list, the profile editor, or the settings screen.
+- Round icon buttons share one hover-tinted circle treatment, the per-row action menu matches its siblings at 28 points, and truncated row error text expands in a hover tooltip.
 - The profile editor and Settings use one viewport-constrained vertical-scroll
   container. Its document width is the viewport minus balanced 16-point
   insets, so focus rings and intrinsically wide controls cannot create a
