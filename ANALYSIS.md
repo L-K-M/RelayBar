@@ -1,13 +1,14 @@
 # RelayBar — analysis and delivery backlog
 
-Updated: 2026-08-14
+Updated: 2026-08-15
 
 This is the durable backlog produced by consolidating the repository's earlier
-`glm.md` review with the point-in-time [`sol.md` audit in PR #11](https://github.com/L-K-M/RelayBar/pull/11).
-The latter audited revision `1faa8d9`; this consolidation was reconciled against
-`origin/main` at `e6196c9` and open pull requests through #29 at 23:29 UTC on
-2026-08-14. Source remains authoritative when the repository changes after that
-snapshot.
+`glm.md` review, the point-in-time [`sol.md` audit in PR #11](https://github.com/L-K-M/RelayBar/pull/11),
+and the independent k3 review (merged into this document). It was reconciled
+against `origin/main` at `0fdb129` (2026-08-15) with all delivery PRs from the
+k3 wave merged (#5, #8, #10, #12, #13, #19, #22, #25, #26, #27, #28, #29, #31,
+#32, #33, plus the parallel #9, #14, #17, #18, #23, #30). Source remains
+authoritative when the repository changes after this snapshot.
 
 `RB-###` identifiers below are stable analysis IDs, not task-spec numbers. Create a
 new numbered file under `docs/task-specs/` only when an entry is selected for
@@ -48,15 +49,26 @@ boundary by default.
 
 ## Reconciled delivery status
 
-Completed work is intentionally omitted from this backlog. Use the archived task
-specifications and Git history for that record; do not re-add an accepted outcome
-unless current source proves a distinct regression.
+Completed work is intentionally omitted from the backlog body; use the archived
+task specifications and Git history for the record. What landed in this wave:
 
-### Audit implementations still in pull requests
+- Lifecycle and shell: own the menu-bar item instead of `MenuBarExtra` (#1),
+  dismiss the popover on icon click (#5), restart an active profile after a
+  connection-changing edit (#6/PR 6 branch), confirm quit with active tunnels
+  (#13), expose tunnel failures in the status item (#23), and Stop-and-Quit
+  semantics via the archived task specs 036-050.
+- Profiles: duplicate (#10), copy as ssh command (#19), per-profile Start at
+  Launch (#30), delete confirmation (#18), retry countdown (#12), and editor
+  validation reasons (#28).
+- Remote Files: Back to containing folder (#8), last path per connection
+  (#26), ssh_config Include traversal (#22), download payload permissions
+  (#25), clipboard Quick Add (#27), and symlink navigation (#32).
+- Reliability: safe SSH master invariants (#17), atomic control paths (#14),
+  and the copy-confirmation deflake (#9).
 
-These are implemented and reviewed or actively finishing their final review cycle.
-Do not pick them up as new backlog work; verify their live status and overlap before
-merging.
+The RB analysis-to-delivery mapping from the previous snapshot, now landed
+(PR numbers are the live record; task specs archived under
+`docs/task-specs/archive/`):
 
 | Analysis | Task | Pull request | Delivered outcome |
 | --- | --- | --- | --- |
@@ -71,43 +83,16 @@ merging.
 | RB-008 | 053 | [#24](https://github.com/L-K-M/RelayBar/pull/24) | Stable labels for principal tunnel and Remote Files forms |
 | RB-009 | 054 | [#15](https://github.com/L-K-M/RelayBar/pull/15) | Truthful updater, privacy, security, and task-index documentation |
 
-Task 047 also appears in PR #28 and Task 048 also appears in PR #29. The code PRs are
-independent, but those documentation identifiers must be made unique before either
-pair can merge.
+The k3 wave's task specs (036-050, archived) map to their PRs in the commit
+messages; several overlap the RB entries above (RB-034/050 symlink
+navigation, RB-035/045 recent paths, RB-019/037+041 lifecycle decisions,
+RB-020/047 validation).
 
-Two overlaps need an explicit merge choice: PR #20's truthful static retry copy and
-[PR #12](https://github.com/L-K-M/RelayBar/pull/12)'s real live countdown both replace
-the same misleading row text; PR #18 and the deletion portion of
-[PR #4](https://github.com/L-K-M/RelayBar/pull/4) address the same destructive path.
-Do not try to combine both implementations mechanically.
+### Open at this snapshot
 
-### Other open work to account for
-
-- [PR #4](https://github.com/L-K-M/RelayBar/pull/4): bundled delete confirmation,
-  status summary, SSH-config cache, corrupt-payload backup, and readiness-window
-  hardening. Its broad scope partially overlaps RB-012, RB-018, RB-004, and RB-007.
-- [PR #5](https://github.com/L-K-M/RelayBar/pull/5): click-open-status-item popover
-  dismissal.
-- [PR #6](https://github.com/L-K-M/RelayBar/pull/6): restart an active profile after
-  a connection-changing edit.
-- [PR #8](https://github.com/L-K-M/RelayBar/pull/8): Back from a direct remote file
-  opens its containing folder.
-- [PR #12](https://github.com/L-K-M/RelayBar/pull/12): live retry countdown.
-- [PR #13](https://github.com/L-K-M/RelayBar/pull/13): confirm explicit Quit while
-  tunnels are active.
-- [PR #22](https://github.com/L-K-M/RelayBar/pull/22): bounded `Include` traversal
-  while discovering SSH-config hosts.
-- [PR #25](https://github.com/L-K-M/RelayBar/pull/25): secure final permissions for
-  downloaded payloads.
-- [PR #26](https://github.com/L-K-M/RelayBar/pull/26): remember the last remote path
-  per connection.
-- [PR #27](https://github.com/L-K-M/RelayBar/pull/27): clipboard-aware Quick Add.
-- [PR #28](https://github.com/L-K-M/RelayBar/pull/28): show the editor's first
-  blocking validation reason. This partially delivers RB-020 and currently collides
-  with PR #17 on Task 047.
-- [PR #29](https://github.com/L-K-M/RelayBar/pull/29): shared hover-responsive icon
-  buttons, row-menu treatment, and full error help. It overlaps PR #20 and part of
-  RB-028, and currently collides with PR #16 on Task 048.
+- #4 (glm/review-hardening), #6 (glm/auto-restart-on-edit), #11 (audit ledger),
+  #15, #16, #20, #21, #24 (rb-003/005/006/008/009). Verify each before
+  picking up new work; several overlap the RB entries below.
 
 ## Priority map
 
@@ -121,13 +106,13 @@ Do not try to combine both implementations mechanically.
 | RB-015 | P1 | Preserve final SSH diagnostics on fast exit | **Ready after RB-010** |
 | RB-016 | P1 | Bound importer, model, and payload complexity | **Design first**; choose limits |
 | RB-017 | P1 | Fix the measured large-Markdown bottleneck | **Measure first** on macOS |
-| RB-018 | P1 | Move/cache SSH-config discovery off the main actor | **Re-scope** after PRs #4/#22 |
-| RB-019 | P1 | Make lifecycle-changing decisions explicit | **Re-scope** after PRs #6/#13/RB-010 |
-| RB-020 | P1 | Complete actionable editor validation | **Re-scope** after PR #28 |
+| RB-018 | P1 | Move/cache SSH-config discovery off the main actor | **Ready**: #22 landed bounded Include traversal; scope is now off-main I/O + caching |
+| RB-019 | P1 | Make lifecycle-changing decisions explicit | **Ready after RB-010**: #6 (Save & Restart) and #13 (quit confirmation) landed |
+| RB-020 | P1 | Complete actionable editor validation | **Ready after #28**: first blocking reason landed; field/rule placement and focus remain |
 | RB-021 | P1 | Inspect and safely edit imported SSH options | **Ready**; strict option policy |
 | RB-022 | P1 | Add bounded inspector, history, diagnostics, and recovery | **Design first**; privacy/redaction |
 | RB-023 | P1 | Make 50–100 profile sets fast to operate | **Split first** into listed children |
-| RB-024 | P1 | Add opt-in autostart and network-aware recovery | **Design first**; desired-active policy |
+| RB-024 | P1 | Network-aware recovery for autostart | **Ready**: per-profile Start at Launch landed (#30); wake/VPN/captive-portal behavior remains |
 | RB-025 | P1 | Make Remote Files a focused native browser | **Split/re-scope** after open PRs |
 | RB-026 | P1 | Finish accessibility and localization foundations | **Split first**; packaged Mac evidence |
 | RB-027 | P1 | Choose one coherent fork/update identity | **Blocked** on owner decision |
@@ -137,8 +122,8 @@ Do not try to combine both implementations mechanically.
 | RB-031 | P2 | Remove duplicated unnamed-row information | **Prototype first** with snapshots |
 | RB-032 | P1 | Fail fast on cross-profile listener conflicts | **Ready** |
 | RB-033 | P1 | Keep the Remote Files server catalog live | **Ready** |
-| RB-034 | P1 | Follow remote directory symlinks truthfully | **Ready** |
-| RB-035 | P2 | Add bounded per-connection recent path history | **Ready after PR #26** |
+| RB-034 | P1 | Follow remote directory symlinks truthfully | **Delivered by #32**; verify then remove |
+| RB-035 | P2 | Add bounded per-connection recent path history | **Ready**: #26 landed the one-path version; extend to N paths |
 
 ## P0 lifecycle and data-integrity work
 
@@ -547,7 +532,7 @@ controllable.
 
 ### RB-027 — Choose one coherent fork/update identity
 
-This repository identifies itself as an L-K-M fork while the bundle ID, Sparkle feed
+Thi's repository.identifies itself as an L-K-M fork while the bundle ID, Sparkle feed
 and public key, website, repository links, and release documentation remain upstream.
 A future upstream update can replace the fork-specific behavior.
 
@@ -645,8 +630,9 @@ These are not sufficiently proven by source and must not trigger code changes wi
 a Mac reproduction:
 
 - Rapid status-item click, outside-click, Escape, action, and reopen sequences may
-  expose `.transient` popover close/action ordering. Exercise macOS 13 and current
-  macOS, including PR #5 if it lands.
+  expose `.transient` popover close/action ordering. PR #5 landed the suppression
+  guard with monotonic event timestamps; re-verify on macOS 13 and current macOS
+  (slow click-and-hold, Escape-then-click, deactivation closes) before release.
 - A starting/retrying row shows a spinner inside a Stop button. Verify hover, cursor,
   focus, help, and VoiceOver make cancellation discoverable; if not, test a progress
   ring around an explicit stop/xmark.
@@ -683,7 +669,16 @@ small task spec rather than direct implementation.
   eligible Local TCP profile instead of burying it in per-rule endpoint actions.
 - **Drag/paste/batch import:** drop an SSH command, accept one command per line, or
   support a validated `relaybar://` import link; every route must use the same safe
-  transactional review as Quick Add.
+  transactional review as Quick Add (which already reads the clipboard only on an
+  explicit chip click, #27).
+- **Test connection in the editor:** a quiet button that runs a bounded
+  `ssh -o BatchMode=yes -o ConnectTimeout=5 -T host true` probe and reports
+  reachable/auth-ok/unreachable before saving, so configuration stops being
+  guess-and-check.
+- **Import ssh_config snippets:** the Quick Add grammar accepts `ssh` command lines;
+  ssh_config blocks (`Host x` + `LocalForward …`) are the other place tunnel
+  commands live, but need a small dedicated parser behind the same transactional
+  review.
 - **Per-rule enable/disable:** retain a rule without installing it and show the state
   clearly in editor, copied command, summary, and validation.
 - **Route diagrams:** `This Mac :3000 → SSH server → db.internal:5432`, with flags
@@ -757,15 +752,16 @@ treat visual preference alone as proof.
 
 ## Recommended sequence
 
-1. Let the open audit and overlapping feature PRs reach a deliberate merge/close
-   decision; do not stack new work on competing implementations.
+1. Close out the remaining open PRs listed under "Open at this snapshot" with a
+   deliberate merge/close decision; do not stack new work on competing
+   implementations.
 2. Design RB-010 and RB-013 together, then RB-030; they are one ownership/reaping
    problem.
 3. Deliver RB-011 and RB-012 before portability, sync, or broad autostart magnifies
    orphan and storage risk.
 4. Fix retry flapping/permanent classification and measured Markdown latency.
-5. Deliver validation, imported-option transparency, and diagnostics before adding
-   broad automation.
+5. Finish RB-020 (field-level validation placement) and RB-021 (imported-option
+   transparency) before adding broad automation.
 6. Resolve fork identity before enabling or publishing any fork-owned release path.
 7. Then scale profile workflows, deepen Remote Files, add onboarding, and execute the
    reviewed visual/accessibility foundation.
