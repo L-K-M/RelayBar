@@ -4,6 +4,15 @@ import Foundation
 protocol RemoteFileServing: AnyObject, Sendable {
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry]
+    /// Lists the target of a symbolic link as a directory. The trailing
+    /// slash makes the remote stat resolve the link, so this succeeds for a
+    /// symlink to a directory and fails for a link to a file or a dangling
+    /// link. A protocol requirement (not just an extension default) so
+    /// existential callers dispatch to the concrete implementation.
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry]
     func download(
         server: RemoteServer,
         entry: RemoteFileEntry,
