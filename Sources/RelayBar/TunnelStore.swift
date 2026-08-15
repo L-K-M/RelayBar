@@ -22,6 +22,7 @@ final class TunnelStore: ObservableObject {
     private let processEnvironment: [String: String]?
     private let controlOperationTimeout: TimeInterval
     private let processTerminationGracePeriod: TimeInterval
+    private let temporaryDirectory: URL
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
     private let controlOutputLimit = 64 * 1_024
@@ -57,7 +58,8 @@ final class TunnelStore: ObservableObject {
         browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
         processEnvironment: [String: String]? = nil,
         controlOperationTimeout: TimeInterval = 10,
-        processTerminationGracePeriod: TimeInterval = 5
+        processTerminationGracePeriod: TimeInterval = 5,
+        temporaryDirectory: URL? = nil
     ) {
         self.defaults = defaults
         self.sshExecutableURL = sshExecutableURL
@@ -67,6 +69,8 @@ final class TunnelStore: ObservableObject {
         self.processEnvironment = processEnvironment
         self.controlOperationTimeout = max(0.1, controlOperationTimeout)
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
+        self.temporaryDirectory = temporaryDirectory
+            ?? FileManager.default.temporaryDirectory
 
         if
             let data = defaults.data(forKey: storageKey),
@@ -374,7 +378,7 @@ final class TunnelStore: ObservableObject {
 
         let controlLocations: (directory: URL, socket: URL)
         do {
-            controlLocations = try makeControlLocations(for: id)
+            controlLocations = try makeControlLocations()
         } catch {
             scheduleRetry(for: id, message: error.localizedDescription)
             return
@@ -990,33 +994,22 @@ final class TunnelStore: ObservableObject {
         cleanupControlDirectory(for: id)
     }
 
-    private func makeControlLocations(
-        for id: UUID
-    ) throws -> (directory: URL, socket: URL) {
-        let profile = id.uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
-        let launch = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6)
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RelayBar-SSH-\(profile)\(launch)", isDirectory: true)
-        if FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.removeItem(at: directory)
-        }
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
+    private func makeControlLocations() throws -> (directory: URL, socket: URL) {
+        let locations = try SSHControlPath.create(
+            in: temporaryDirectory,
+            fileManager: .default
         )
-        let socket = directory.appendingPathComponent("control")
-        guard socket.path.utf8.count <= localSocketPathLimit else {
-            try? FileManager.default.removeItem(at: directory)
-            throw TunnelStoreError.controlPathTooLong
-        }
-        return (directory, socket)
+        return (locations.directory, locations.socket)
     }
 
     private func cleanupControlDirectory(for id: UUID) {
         controlSocketURLs[id] = nil
         guard let directory = controlDirectories.removeValue(forKey: id) else { return }
-        guard directory.lastPathComponent.hasPrefix("RelayBar-SSH-") else { return }
+        guard
+            directory.lastPathComponent.hasPrefix(
+                SSHControlPath.privateDirectoryPrefix
+            )
+        else { return }
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -1260,16 +1253,5 @@ private struct ControlResult {
         return status == 0
             ? "The SSH forwarding request ended without a result."
             : "SSH could not install a forwarding rule (status \(status))."
-    }
-}
-
-private enum TunnelStoreError: LocalizedError {
-    case controlPathTooLong
-
-    var errorDescription: String? {
-        switch self {
-        case .controlPathTooLong:
-            "The private SSH control path is too long for macOS."
-        }
     }
 }

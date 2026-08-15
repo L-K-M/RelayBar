@@ -1756,6 +1756,43 @@ final class SFTPCommandBuilderTests: XCTestCase {
 }
 
 final class RemoteFileSSHSessionTests: XCTestCase {
+    func testSharedControlLocationCreationIsAtomicallyUniqueAndPrivate() async throws {
+        let root = try shortTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let locations = try await withThrowingTaskGroup(
+            of: SSHControlLocations.self
+        ) { group in
+            for _ in 0..<32 {
+                group.addTask {
+                    try SSHControlPath.create(in: root)
+                }
+            }
+            var result: [SSHControlLocations] = []
+            for try await location in group {
+                result.append(location)
+            }
+            return result
+        }
+
+        XCTAssertEqual(locations.count, 32)
+        XCTAssertEqual(Set(locations.map(\.directory.path)).count, 32)
+        for location in locations {
+            XCTAssertEqual(location.socket.lastPathComponent, "s")
+            XCTAssertLessThanOrEqual(
+                location.socket.path.utf8.count,
+                SSHControlPath.maximumControlSocketPathByteCount
+            )
+            let attributes = try FileManager.default.attributesOfItem(
+                atPath: location.directory.path
+            )
+            XCTAssertEqual(
+                (attributes[.posixPermissions] as? NSNumber)?.intValue,
+                0o700
+            )
+        }
+    }
+
     func testBuildsForegroundMasterArgumentsWithoutSFTPTranslation() throws {
         let server = RemoteServer(
             id: UUID(),
