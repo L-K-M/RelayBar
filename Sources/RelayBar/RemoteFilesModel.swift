@@ -549,6 +549,10 @@ final class RemoteFilesModel: ObservableObject {
                 pendingPath = nil
                 isLoading = false
                 errorMessage = nil
+                // A killed probe often surfaces as a command failure rather
+                // than CancellationError; never start file work for a probe
+                // the user already cancelled.
+                if Task.isCancelled { return }
                 treatSymlinkAsFile(entry)
             }
         }
