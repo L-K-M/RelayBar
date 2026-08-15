@@ -337,7 +337,7 @@ struct TunnelEditorView: View {
             // wrong, but "check the fields" never is.
             if !isValid {
                 Label(saveBlockingReason, systemImage: "info.circle")
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Before you can save: \(saveBlockingReason)")
