@@ -14,6 +14,9 @@ Notable RelayBar changes are recorded here.
 - Row menus can copy a profile as the `ssh` command RelayBar effectively
   runs — same grammar Quick Add imports, so the command pastes straight back
   or into a terminal.
+- The profile editor says exactly why Save is disabled — the first blocking
+  issue, next to the button and as its tooltip — instead of making you hunt
+  a dozen fields.
 - Round icon buttons deepen on hover, the row's ⋯ menu matches its sibling
   buttons, and truncated SSH errors expand in a hover tooltip.
 - Symbolic links in Remote Files now behave like what they point at: linked
