@@ -29,6 +29,11 @@ A task may be marked `Complete` only after:
 
 Completion does not authorize a commit, push, release, or deployment. Follow [`AGENTS.md`](../../AGENTS.md) and obtain explicit deployment approval.
 
+`scripts/check-task-spec-registry.sh` runs in CI and fails when the accepted
+list drifts from the files beside it, when an entry's label number disagrees
+with the file it links to, or when two specs claim the same number across the
+active and accepted directories. Run it before claiming a number.
+
 ## Active tasks
 
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
