@@ -148,9 +148,92 @@ final class RelayBarAppDelegate:
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
-        UpdateServiceFactory.shared.prepareForApplicationTermination()
-            ? .terminateCancel
-            : .terminateNow
+        if UpdateServiceFactory.shared.prepareForApplicationTermination() {
+            // The updater takes over this quit; clear the flag so its own
+            // post-install terminate is never mistaken for a user quit.
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
+            return .terminateCancel
+        }
+        // Prompt only for quits the user asked for through RelayBar's own
+        // controls (the ⌘Q menu item or the footer button). The updater's
+        // post-install terminate re-enters this delegate — asking again
+        // would double-prompt a decision the user already made — and
+        // logout/shutdown quits must never be blocked by a modal. Both
+        // arrive without the flag.
+        guard
+            RelayBarAppDelegate.userInitiatedQuitRequested,
+            store.runningCount > 0
+        else {
+            return .terminateNow
+        }
+        // `runningCount` is the store's one definition of active — starting,
+        // retrying, or running (isLifecycleActive) — so connect and backoff
+        // phases are covered, not just settled tunnels.
+        return presentQuitConfirmation()
+    }
+
+    /// True from the moment the user asks to quit through RelayBar's own
+    /// controls until the confirmation (if any) completes, so termination
+    /// can tell deliberate quits apart from updater, logout, and shutdown
+    /// quits — which must never be prompted or blocked.
+    private(set) static var userInitiatedQuitRequested = false
+
+    static func requestUserQuit() {
+        userInitiatedQuitRequested = true
+        NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func quitFromMenu(_ sender: Any?) {
+        RelayBarAppDelegate.requestUserQuit()
+    }
+
+    /// Presenting a modal alert synchronously inside the terminate dispatch
+    /// spins a nested run loop mid-termination, where a second quit event or
+    /// a timer can re-enter this path. Apple's pattern for confirming during
+    /// termination is to answer later: present on the next turn, then reply.
+    private var quitConfirmationInFlight = false
+
+    /// Starts the confirmation and returns the reply the caller owes
+    /// AppKit. A duplicate terminate while the alert is already up is
+    /// cancelled: the in-flight confirmation's single reply resolves the
+    /// first request, and a second `.terminateLater` would wait forever for
+    /// a reply that never comes.
+    private func presentQuitConfirmation() -> NSApplication.TerminateReply {
+        guard !quitConfirmationInFlight else { return .terminateCancel }
+        quitConfirmationInFlight = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            defer { quitConfirmationInFlight = false }
+            // The tunnels that triggered the prompt may have stopped while
+            // it was queued; confirm only against work still alive now.
+            let activeCount = store.runningCount
+            guard activeCount > 0 else {
+                NSApplication.shared.reply(
+                    toApplicationShouldTerminate: true
+                )
+                return
+            }
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = QuitConfirmation.messageText
+            alert.informativeText = QuitConfirmation.informativeText(
+                activeTunnelCount: activeCount
+            )
+            let stopButton = alert.addButton(
+                withTitle: QuitConfirmation.stopButtonTitle(
+                    activeTunnelCount: activeCount
+                )
+            )
+            // The default action kills every live SSH process; say so in red.
+            stopButton.hasDestructiveAction = true
+            alert.addButton(withTitle: QuitConfirmation.cancelButtonTitle)
+            let confirmed = alert.runModal() == .alertFirstButtonReturn
+            RelayBarAppDelegate.userInitiatedQuitRequested = false
+            NSApplication.shared.reply(
+                toApplicationShouldTerminate: confirmed
+            )
+        }
     }
 
     // MARK: Status item
@@ -430,11 +513,12 @@ final class RelayBarAppDelegate:
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(
+        let quitItem = appMenu.addItem(
             withTitle: "Quit RelayBar",
-            action: #selector(NSApplication.terminate(_:)),
+            action: #selector(quitFromMenu(_:)),
             keyEquivalent: "q"
         )
+        quitItem.target = self
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
 
@@ -815,6 +899,23 @@ struct PopoverToggleGuard {
             return false
         }
         return true
+    }
+}
+
+/// The user-facing copy of the active-tunnel quit confirmation, kept pure
+/// so the pluralization stays testable away from a modal alert.
+enum QuitConfirmation {
+    static let messageText = "Quit RelayBar?"
+    static let cancelButtonTitle = "Cancel"
+
+    static func informativeText(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1
+            ? "1 tunnel is running. Quitting stops it."
+            : "\(activeTunnelCount) tunnels are running. Quitting stops them."
+    }
+
+    static func stopButtonTitle(activeTunnelCount: Int) -> String {
+        activeTunnelCount == 1 ? "Stop Tunnel and Quit" : "Stop Tunnels and Quit"
     }
 }
 
