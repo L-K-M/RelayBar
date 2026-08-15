@@ -3606,7 +3606,7 @@ final class RemoteFilesModelTests: XCTestCase {
         model.selectedServerID = model.servers.first {
             $0.sshHost == "first.example.com"
         }?.id
-        XCTAssertEqual(model.remotePath, "")
+        XCTAssertEqual(model.remotePath, "/var/log", "Switching again never clobbers a non-empty field.")
 
         model.remotePath = "/typed"
         model.selectedServerID = model.servers.first {
