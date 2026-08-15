@@ -352,6 +352,9 @@ struct TunnelEditorView: View {
                     .controlSize(.large)
                     .disabled(!isValid)
                     .help(isValid ? "" : saveBlockingReason)
+                    .accessibilityHint(
+                        isValid ? nil : saveBlockingReason
+                    )
             }
         }
         .padding(.horizontal, 16)
