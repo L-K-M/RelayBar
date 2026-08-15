@@ -110,6 +110,8 @@ final class RelayBarAppDelegate:
         activeCount: 0,
         failedCount: 0
     )
+    private var popoverToggleGuard = PopoverToggleGuard()
+    private var statusItemShowsActiveTunnels = false
     private var tunnelActivityObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -343,7 +345,18 @@ final class RelayBarAppDelegate:
     @objc private func togglePopover() {
         if let popover, popover.isShown {
             popover.performClose(nil)
-        } else {
+        } else if
+            !PopoverToggleGuard.shouldSuppressToggle(
+                eventType: NSApp.currentEvent?.type
+            )
+                // Short-circuit is load-bearing: shouldPresent() consumes
+                // the recorded close, so only mouse-up toggles may call it;
+                // other toggles must present without disarming the guard.
+                || popoverToggleGuard.shouldPresent(
+                    now: NSApp.currentEvent?.timestamp
+                        ?? ProcessInfo.processInfo.systemUptime
+                )
+        {
             presentPopover()
         }
     }
@@ -381,6 +394,31 @@ final class RelayBarAppDelegate:
 
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
+        guard
+            PopoverToggleGuard.shouldRecordClose(
+                eventType: NSApp.currentEvent?.type
+            )
+        else {
+            return
+        }
+        // A mouse-down close only races the toggle when the mouse-down
+        // landed on the icon itself; a dismissal click anywhere else
+        // (desktop, another window) must not disarm the next deliberate
+        // icon click. Unknown-event closes (app deactivation) skip the
+        // hit-test and record, the safer default.
+        if NSApp.currentEvent != nil, !isPointerOverStatusItem() { return }
+        // Record in the gesture's own clock domain: NSEvent timestamps and
+        // system uptime share the monotonic boot clock, so the toggle's
+        // event timestamp measures the actual click hold time.
+        popoverToggleGuard.recordClose(
+            uptime: NSApp.currentEvent?.timestamp
+                ?? ProcessInfo.processInfo.systemUptime
+        )
+    }
+
+    private func isPointerOverStatusItem() -> Bool {
+        guard let buttonWindow = statusItem?.button?.window else { return false }
+        return buttonWindow.frame.contains(NSEvent.mouseLocation)
     }
 
     /// An agent app has no menu bar of its own, so without a main menu the
@@ -713,6 +751,70 @@ final class RelayBarAppDelegate:
         }
         #endif
         TunnelStore.shared.stopAll()
+    }
+}
+
+/// Guards the status-item toggle against the dismissal the same click
+/// already caused. The popover's behavior is `.transient`, so clicking the
+/// menu-bar icon while the popover is open closes it on mouse-down — the
+/// click lands outside the popover window — and the button action only runs
+/// on mouse-up. Reading `isShown` in the action therefore always sees
+/// "closed" and would immediately re-present the popover, making the icon
+/// unable to dismiss it. The guard treats a toggle that lands inside a short
+/// window after a close caused by an outside mouse-down as the tail of that
+/// same click and swallows it once. Timing uses the monotonic system uptime
+/// clock, not wall-clock time, so an NTP step cannot distort the window.
+struct PopoverToggleGuard {
+    /// The mouse-down close and mouse-up action of one click arrive well
+    /// inside this window, and deliberate clicks elsewhere no longer arm the
+    /// guard, so slow click-and-hold releases cost nothing to cover.
+    static let suppressionWindow: TimeInterval = 0.6
+
+    /// Only a close caused by a left mouse-down delivered outside the
+    /// popover can be the front half of the click whose mouse-up runs the
+    /// toggle action (the status button fires on left mouse-up only, so a
+    /// right-click close can never race it). Escape, in-popover, and
+    /// programmatic `performClose` closes (which arrive as key or mouse-up
+    /// events) never race it, so they must not disarm a deliberate following
+    /// click. An unknown event context — a close driven by app deactivation
+    /// — records, the safer default for never re-opening over a real icon
+    /// click. The delegate additionally hit-tests the mouse location against
+    /// the status item, so dismissal clicks elsewhere do not arm the guard.
+    static func shouldRecordClose(eventType: NSEvent.EventType?) -> Bool {
+        guard let eventType else { return true }
+        return eventType == .leftMouseDown
+    }
+
+    /// Only a toggle fired by a mouse-up can be the tail of the click that
+    /// closed the popover. Keyboard, accessibility, and programmatic toggles
+    /// always present, so the guard can never swallow the re-launch re-open
+    /// escape hatch or an assistive activation.
+    static func shouldSuppressToggle(eventType: NSEvent.EventType?) -> Bool {
+        eventType == .leftMouseUp
+    }
+
+    private var lastCloseUptime: TimeInterval?
+
+    mutating func recordClose(
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        lastCloseUptime = uptime
+    }
+
+    /// Returns `false` exactly once when the toggle lands within the
+    /// suppression window of the recorded close, treating it as the click
+    /// that already dismissed the popover. A close recorded by an intentional
+    /// toggle-close is consumed the same way, so at worst one rapid re-click
+    /// is ignored and the next one opens the menu.
+    mutating func shouldPresent(
+        now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        guard let lastCloseUptime else { return true }
+        if now - lastCloseUptime < Self.suppressionWindow {
+            self.lastCloseUptime = nil
+            return false
+        }
+        return true
     }
 }
 

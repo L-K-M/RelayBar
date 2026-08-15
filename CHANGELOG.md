@@ -25,6 +25,10 @@ Notable RelayBar changes are recorded here.
 
 ### Fixed
 
+- Clicking the menu-bar icon while the popover is open now dismisses the
+  popover. The click already closed the transient popover on mouse-down, and
+  the toggle action on mouse-up used to re-open it immediately, so the icon
+  could never dismiss its own menu.
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
   ssh exit when a forward cannot be established — it runs nothing and reads
   nothing — and RelayBar already sets it on every connection it launches, so
