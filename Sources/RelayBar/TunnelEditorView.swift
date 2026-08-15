@@ -413,6 +413,12 @@ struct TunnelEditorView: View {
                     .controlSize(.large)
                     .disabled(!isValid)
                     .help(isValid ? "" : saveBlockingReason)
+                    // accessibilityHint has no optional overload, so the
+                    // hint cannot be removed by passing nil. Branching the
+                    // button on isValid would clear it properly but give the
+                    // two branches different SwiftUI identities, so focus
+                    // would move every time validity flipped. An empty hint
+                    // is not announced, which is the cheaper trade.
                     .accessibilityHint(isValid ? "" : saveBlockingReason)
             }
         }
