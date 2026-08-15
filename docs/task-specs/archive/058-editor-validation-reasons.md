@@ -1,4 +1,4 @@
-# Task 047 — The Editor Explains Why Save Is Disabled
+# Task 058 — The Editor Explains Why Save Is Disabled
 
 Status: Complete
 
