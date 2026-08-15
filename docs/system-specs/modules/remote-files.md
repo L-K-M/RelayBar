@@ -26,7 +26,7 @@ without adding search, indexing, mounting, or editing.
 ## Folder browser
 
 - The top bar contains **Back**, the exact current path, and **Refresh**.
-- The list shows supported folders, regular files, and symbolic links with modified text and size.
+- The list shows supported folders, regular files, and symbolic links with modified text and size. Activating a symbolic link probes its target with a trailing-slash listing: a link to a directory navigates through it, a link to a Markdown or image previews it, and any other linked file downloads — the link's own size is never treated as the file's size, so linked-file transfers show indeterminate progress.
 - Folders sort before other items; each group uses localized name ordering.
 - Activating a folder presents its target path immediately. An uncached folder shows a content-local **Opening folder…** state; rows and Refresh are disabled, while Back remains available to cancel the open and restore the exact prior folder and selection.
 - Successful listings enter a session-only LRU cache keyed by exact SSH connection identity and normalized absolute path. The cache retains at most 20,000 aggregate entry units, charges an empty snapshot one unit, and evicts whole least-recently-used snapshots.

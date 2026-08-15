@@ -16,6 +16,9 @@ Notable RelayBar changes are recorded here.
   or into a terminal.
 - Round icon buttons deepen on hover, the row's ⋯ menu matches its sibling
   buttons, and truncated SSH errors expand in a hover tooltip.
+- Symbolic links in Remote Files now behave like what they point at: linked
+  folders navigate, linked Markdown and images preview, and other linked
+  files download — instead of failing as a download error.
 - Remote Files remembers the last path each connection opened successfully
   and offers it in the launcher — on a fresh window and when switching
   servers with the field untouched.
@@ -24,6 +27,10 @@ Notable RelayBar changes are recorded here.
   so hosts kept in included files appear in the server list.
 - Quitting with tunnels running asks first — Stop and Quit, or Cancel — so a
   stray ⌘Q no longer drops every live connection without warning.
+- Quick Add notices a complete SSH command on the clipboard and offers
+  one-click import (or ⇧⌘V) — copy a command anywhere, open RelayBar, done.
+  The clipboard is read only when the chip is clicked, so the system's
+  paste-permission prompt can never appear from opening the editor.
 
 ### Fixed
 
