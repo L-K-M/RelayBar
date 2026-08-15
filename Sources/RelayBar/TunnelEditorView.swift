@@ -362,70 +362,16 @@ struct TunnelEditorView: View {
     /// The caption and tooltip text for a disabled Save: the mirror's first
     /// issue, or a generic fallback if the mirror ever misses one.
     private var saveBlockingReason: String {
-        firstValidationIssue
+        TunnelEditorValidation.firstIssue(
+            hasPendingGroupName: hasPendingGroupName,
+            rules: rules,
+            streamBindMask: streamBindMask,
+            reversePolicyChoice: reversePolicyChoice,
+            hasReverseSOCKS: hasReverseSOCKS,
+            reverseAllowedDestinations: reverseAllowedDestinations,
+            sshHost: sshHost
+        )
             ?? "Check the fields above; one value is not valid."
-    }
-
-    /// The single reason Save is disabled, so a rejected form explains
-    /// itself instead of making the user hunt a dozen fields. Checks mirror
-    /// `builtTunnel` in the same order and stop at the first problem.
-    private var firstValidationIssue: String? {
-        if hasPendingGroupName {
-            return "Finish naming the new group."
-        }
-        if rules.isEmpty {
-            return "Add at least one forwarding rule."
-        }
-        for (index, rule) in rules.enumerated() {
-            if let issue = rule.validationIssue {
-                return "Rule \(index + 1): \(issue)"
-            }
-        }
-        guard
-            let mask = UInt16(streamBindMask, radix: 8),
-            mask <= 0o777
-        else {
-            return "Enter a valid octal socket bind mask such as 0177."
-        }
-        if hasReverseSOCKS {
-            switch reversePolicyChoice {
-            case .unspecified:
-                return "Choose a destination policy for Remote SOCKS."
-            case .restricted:
-                let destinations = reverseAllowedDestinations
-                    .split(whereSeparator: { $0.isWhitespace || $0 == "," })
-                    .map(String.init)
-                if destinations.isEmpty {
-                    return "List at least one allowed host:port destination."
-                }
-                if !destinations.allSatisfy(
-                    SSHArgumentPolicy.isValidPermitRemoteOpenDestination
-                ) {
-                    return "Allowed destinations must be host:port entries."
-                }
-            case .any, .none:
-                break
-            }
-        }
-        let host = sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        if host.isEmpty {
-            return "Enter an SSH host such as user@server."
-        }
-        if !SSHArgumentPolicy.isValidHostTarget(host) {
-            return "The SSH host cannot contain spaces or start with a dash."
-        }
-        let builtRules = rules.compactMap(\.forwardingRule)
-        if builtRules.count != rules.count {
-            // A draft passed the per-rule copy but still failed the hard
-            // gate: the mirror drifted. Surface that instead of leaving
-            // Save silently disabled.
-            return "A rule could not be built; check every field."
-        }
-        let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
-        if probe.hasConflictingListeners {
-            return "Two rules listen on the same address and port."
-        }
-        return nil
     }
 
     private var builtTunnel: Tunnel? {
@@ -999,7 +945,8 @@ struct ForwardingRuleDraft: Identifiable {
     }
 }
 
-private enum ReversePolicyChoice: String, CaseIterable {
+/// Internal so the editor-level validation copy is unit-testable.
+enum ReversePolicyChoice: String, CaseIterable {
     case unspecified
     case any
     case restricted
@@ -1035,5 +982,78 @@ private struct EditorField<Content: View>: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11.5))
         }
+    }
+}
+
+/// The editor-level validation mirror, extracted from the view so the copy
+/// can be tested against the same fixtures the hard `builtTunnel` gate
+/// accepts and rejects. Checks run in the same order as `builtTunnel` and
+/// stop at the first problem.
+enum TunnelEditorValidation {
+    static func firstIssue(
+        hasPendingGroupName: Bool,
+        rules: [ForwardingRuleDraft],
+        streamBindMask: String,
+        reversePolicyChoice: ReversePolicyChoice,
+        hasReverseSOCKS: Bool,
+        reverseAllowedDestinations: String,
+        sshHost: String
+    ) -> String? {
+        if hasPendingGroupName {
+            return "Finish naming the new group."
+        }
+        if rules.isEmpty {
+            return "Add at least one forwarding rule."
+        }
+        for (index, rule) in rules.enumerated() {
+            if let issue = rule.validationIssue {
+                return "Rule \(index + 1): \(issue)"
+            }
+        }
+        guard
+            let mask = UInt16(streamBindMask, radix: 8),
+            mask <= 0o777
+        else {
+            return "Enter a valid octal socket bind mask such as 0177."
+        }
+        if hasReverseSOCKS {
+            switch reversePolicyChoice {
+            case .unspecified:
+                return "Choose a destination policy for Remote SOCKS."
+            case .restricted:
+                let destinations = reverseAllowedDestinations
+                    .split(whereSeparator: { $0.isWhitespace || $0 == "," })
+                    .map(String.init)
+                if destinations.isEmpty {
+                    return "List at least one allowed host:port destination."
+                }
+                if !destinations.allSatisfy(
+                    SSHArgumentPolicy.isValidPermitRemoteOpenDestination
+                ) {
+                    return "Allowed destinations must be host:port entries."
+                }
+            case .any, .none:
+                break
+            }
+        }
+        let host = sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        if host.isEmpty {
+            return "Enter an SSH host such as user@server."
+        }
+        if !SSHArgumentPolicy.isValidHostTarget(host) {
+            return "The SSH host cannot contain spaces or start with a dash."
+        }
+        let builtRules = rules.compactMap(\.forwardingRule)
+        if builtRules.count != rules.count {
+            // A draft passed the per-rule copy but still failed the hard
+            // gate: the mirror drifted. Surface that instead of leaving
+            // Save silently disabled.
+            return "A rule could not be built; check every field."
+        }
+        let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
+        if probe.hasConflictingListeners {
+            return "Two rules listen on the same address and port."
+        }
+        return nil
     }
 }

@@ -110,4 +110,103 @@ final class ForwardingRuleDraftValidationTests: XCTestCase {
         XCTAssertNotNil(invalid.validationIssue)
         XCTAssertNil(invalid.forwardingRule)
     }
+
+    // MARK: Editor-level mirror
+
+    private func validRule() -> ForwardingRuleDraft {
+        var draft = ForwardingRuleDraft(kind: .local)
+        draft.listenPort = "8080"
+        draft.destinationHost = "localhost"
+        draft.destinationPort = "3000"
+        return draft
+    }
+
+    private func issue(
+        hasPendingGroupName: Bool = false,
+        rules: [ForwardingRuleDraft],
+        streamBindMask: String = "0177",
+        reversePolicyChoice: ReversePolicyChoice = .unspecified,
+        hasReverseSOCKS: Bool = false,
+        reverseAllowedDestinations: String = "",
+        sshHost: String = "dev@example.com"
+    ) -> String? {
+        TunnelEditorValidation.firstIssue(
+            hasPendingGroupName: hasPendingGroupName,
+            rules: rules,
+            streamBindMask: streamBindMask,
+            reversePolicyChoice: reversePolicyChoice,
+            hasReverseSOCKS: hasReverseSOCKS,
+            reverseAllowedDestinations: reverseAllowedDestinations,
+            sshHost: sshHost
+        )
+    }
+
+    /// Task 047. The editor-level mirror stops at the first problem in
+    /// builtTunnel's order and stays silent for a fully valid form.
+    func testEditorLevelIssuesCoverEveryGateRejection() {
+        XCTAssertEqual(
+            issue(hasPendingGroupName: true, rules: [validRule()]),
+            "Finish naming the new group."
+        )
+        XCTAssertEqual(issue(rules: []), "Add at least one forwarding rule.")
+        XCTAssertEqual(
+            issue(rules: [validRule()], streamBindMask: "999"),
+            "Enter a valid octal socket bind mask such as 0177."
+        )
+        XCTAssertEqual(
+            issue(
+                rules: [validRule()],
+                reversePolicyChoice: .unspecified,
+                hasReverseSOCKS: true
+            ),
+            "Choose a destination policy for Remote SOCKS."
+        )
+        XCTAssertEqual(
+            issue(
+                rules: [validRule()],
+                reversePolicyChoice: .restricted,
+                hasReverseSOCKS: true,
+                reverseAllowedDestinations: "not-a-host:port"
+            ),
+            "Allowed destinations must be host:port entries."
+        )
+        XCTAssertEqual(
+            issue(rules: [validRule()], sshHost: "  "),
+            "Enter an SSH host such as user@server."
+        )
+        XCTAssertEqual(
+            issue(rules: [validRule()], sshHost: "bad host"),
+            "The SSH host cannot contain spaces or start with a dash."
+        )
+        XCTAssertNil(
+            issue(rules: [validRule()]),
+            "A valid form names no blocking issue."
+        )
+    }
+
+    /// Task 047. Conflicting listeners are named before the mirror runs out
+    /// of specific reasons.
+    func testEditorLevelMirrorNamesConflictingListeners() {
+        var first = validRule()
+        first.listenAddress = "localhost"
+        var second = validRule()
+        second.listenAddress = "127.0.0.1"
+        XCTAssertEqual(
+            issue(rules: [first, second]),
+            "Two rules listen on the same address and port."
+        )
+    }
+
+    /// Task 047. A restricted allowlist with only valid entries passes the
+    /// editor-level mirror.
+    func testEditorLevelMirrorAcceptsValidReverseAllowlist() {
+        XCTAssertNil(
+            issue(
+                rules: [validRule()],
+                reversePolicyChoice: .restricted,
+                hasReverseSOCKS: true,
+                reverseAllowedDestinations: "api.example.com:443\n*.internal:8443"
+            )
+        )
+    }
 }
