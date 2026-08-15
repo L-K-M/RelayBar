@@ -285,6 +285,122 @@ final class SSHConfigHostReaderTests: XCTestCase {
 
         XCTAssertTrue(SSHConfigHostReader.load(from: configURL).isEmpty)
     }
+
+    /// Task 043. Hosts in included files load like top-level hosts, relative
+    /// patterns resolve against ~/.ssh, unmatched patterns are ignored, and
+    /// non-matching extensions and directories are skipped. The nested
+    /// include resolves against ~/.ssh as OpenSSH does, so `delta` can only
+    /// arrive through it — the outer glob never matches that file.
+    func testFollowsIncludesWithGlobAndNestedFiles() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        let hostsDirectory = sshDirectory.appendingPathComponent("hosts.d")
+        try FileManager.default.createDirectory(
+            at: hostsDirectory,
+            withIntermediateDirectories: true
+        )
+        try write("Host top\n Include hosts.d/*.conf\nInclude missing/*.conf\n", to: sshDirectory.appendingPathComponent("config"))
+        try write("Host alpha beta\n", to: hostsDirectory.appendingPathComponent("a.conf"))
+        try write("Host gamma\nInclude nested.conf\n", to: hostsDirectory.appendingPathComponent("b.conf"))
+        try write("Host delta\n", to: sshDirectory.appendingPathComponent("nested.conf"))
+        try write("Host not-included\n", to: hostsDirectory.appendingPathComponent("ignore.txt"))
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "alpha", "beta", "gamma", "delta"])
+    }
+
+    /// Task 043. Include cycles terminate: each file is processed once.
+    func testIncludeCyclesAreVisitedOnce() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        let configURL = sshDirectory.appendingPathComponent("config")
+        let loopURL = sshDirectory.appendingPathComponent("loop.conf")
+        try write("Host top\nInclude loop.conf\n", to: configURL)
+        try write("Host looped\nInclude config\n", to: loopURL)
+
+        let aliases = SSHConfigHostReader.load(
+            from: configURL,
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "looped"])
+    }
+
+    /// Task 043. Include recursion is depth-capped, so a chain deeper than
+    /// the cap stops contributing hosts instead of recursing without bound.
+    func testIncludeDepthIsCapped() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        let chainLength = SSHConfigHostReader.maximumIncludeDepth + 4
+        for depth in 0...chainLength {
+            let nextLine = depth < chainLength
+                ? "Include chain-\(depth + 1).conf\n"
+                : ""
+            try write(
+                "Host host-\(depth)\n\(nextLine)",
+                to: sshDirectory.appendingPathComponent("chain-\(depth).conf")
+            )
+        }
+        try write("Host root\nInclude chain-0.conf\n", to: sshDirectory.appendingPathComponent("config"))
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        // chain-N is read at depth N+1, so the chain member exactly at the
+        // cap still loads and the next one is refused.
+        XCTAssertEqual(
+            aliases,
+            ["root"] + (0..<SSHConfigHostReader.maximumIncludeDepth).map { "host-\($0)" }
+        )
+    }
+
+    /// Task 043. `~/` Include patterns resolve against the same home the
+    /// config came from, not a process-global home.
+    func testTildeSlashIncludeResolvesAgainstTheConfigHome() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        try write(
+            "Host top\nInclude ~/extra.conf\n",
+            to: sshDirectory.appendingPathComponent("config")
+        )
+        try write(
+            "Host tilde-host\n",
+            to: home.appendingPathComponent("extra.conf")
+        )
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "tilde-host"])
+    }
+
+    private func write(_ contents: String, to url: URL) throws {
+        try Data(contents.utf8).write(to: url)
+    }
 }
 
 @MainActor

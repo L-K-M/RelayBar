@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum RemoteServerCatalogError: LocalizedError, Equatable {
@@ -23,10 +24,180 @@ enum RemoteServerCatalogError: LocalizedError, Equatable {
 enum SSHConfigHostReader {
     static let maximumFileSize = 1 * 1_024 * 1_024
     static let maximumHostCount = 256
+    /// Include traversal stays cheap even for careless or hostile include
+    /// chains: bounded depth, bounded file count, and visited-file cycles.
+    static let maximumIncludeDepth = 8
+    static let maximumIncludedFileCount = 64
 
     static func load(from url: URL) -> [String] {
+        load(
+            from: url,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+    }
+
+    static func load(from url: URL, homeDirectory: URL) -> [String] {
+        var state = LoadState()
+        collect(
+            from: url,
+            homeDirectory: homeDirectory,
+            depth: 0,
+            state: &state
+        )
+        return state.hosts
+    }
+
+    static func parse(_ contents: String) -> [String] {
+        var state = LoadState()
+        appendHosts(
+            from: contents,
+            homeDirectory: nil,
+            depth: 0,
+            state: &state
+        )
+        return state.hosts
+    }
+
+    private struct LoadState {
+        var hosts: [String] = []
+        var seenHosts: Set<String> = []
+        var visitedFiles: Set<String> = []
+        var filesRead = 0
+    }
+
+    private static func collect(
+        from url: URL,
+        homeDirectory: URL,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        guard
+            depth <= maximumIncludeDepth,
+            state.filesRead < maximumIncludedFileCount,
+            state.hosts.count < maximumHostCount
+        else {
+            return
+        }
+        let fileKey = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard state.visitedFiles.insert(fileKey).inserted else { return }
+        guard let contents = readBoundedString(from: url) else { return }
+        state.filesRead += 1
+        appendHosts(
+            from: contents,
+            homeDirectory: homeDirectory,
+            depth: depth,
+            state: &state
+        )
+    }
+
+    private static func appendHosts(
+        from contents: String,
+        homeDirectory: URL?,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        for rawLine in contents.split(whereSeparator: \.isNewline) {
+            guard state.hosts.count < maximumHostCount else { return }
+            let line = rawLine
+                .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+
+            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count > 1 else { continue }
+
+            if fields[0].caseInsensitiveCompare("Host") == .orderedSame {
+                for rawHost in fields.dropFirst() {
+                    let host = unquoted(rawHost)
+                    guard
+                        !host.hasPrefix("!"),
+                        !host.contains(where: { "*?[".contains($0) }),
+                        host.utf8.count <= 1_024,
+                        SSHArgumentPolicy.isValidHostTarget(host)
+                    else {
+                        continue
+                    }
+
+                    let key = host.lowercased()
+                    guard state.seenHosts.insert(key).inserted else { continue }
+                    state.hosts.append(host)
+                    if state.hosts.count == maximumHostCount { return }
+                }
+            } else if
+                let homeDirectory,
+                fields[0].caseInsensitiveCompare("Include") == .orderedSame
+            {
+                for rawPattern in fields.dropFirst() {
+                    include(
+                        pattern: unquoted(rawPattern),
+                        homeDirectory: homeDirectory,
+                        depth: depth,
+                        state: &state
+                    )
+                }
+            }
+        }
+    }
+
+    /// OpenSSH resolves patterns without a leading slash or tilde against
+    /// `~/.ssh` for user configuration files — the only kind RelayBar reads
+    /// — and silently ignores patterns that match nothing. `~/` resolves
+    /// against the same home directory the config came from, while `~user/`
+    /// forms expand through `GLOB_TILDE`; `GLOB_MARK` suffixes directories
+    /// so they can be skipped (OpenSSH includes files only), and
+    /// `GLOB_BRACE` keeps brace patterns working as they do on macOS.
+    private static func include(
+        pattern: String,
+        homeDirectory: URL,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        let resolvedPattern: String
+        if pattern.hasPrefix("~/") {
+            resolvedPattern = homeDirectory
+                .appendingPathComponent(String(pattern.dropFirst(2)))
+                .path
+        } else if pattern.hasPrefix("/") || pattern.hasPrefix("~") {
+            resolvedPattern = pattern
+        } else {
+            resolvedPattern = homeDirectory
+                .appendingPathComponent(".ssh", isDirectory: true)
+                .appendingPathComponent(pattern)
+                .path
+        }
+
+        var globResult = glob_t()
+        let status = resolvedPattern.withCString {
+            glob($0, GLOB_TILDE | GLOB_MARK | GLOB_BRACE, nil, &globResult)
+        }
+        defer { globfree(&globResult) }
+        guard status == 0, let paths = globResult.gl_pathv else { return }
+        for index in 0..<Int(globResult.gl_pathc) {
+            guard let path = paths[index] else { continue }
+            let match = String(cString: path)
+            guard !match.hasSuffix("/") else { continue }
+            collect(
+                from: URL(fileURLWithPath: match),
+                homeDirectory: homeDirectory,
+                depth: depth + 1,
+                state: &state
+            )
+        }
+    }
+
+    /// Reads regular files only: a glob can name a FIFO, device, or socket,
+    /// and opening one of those for reading can block discovery forever.
+    private static func readBoundedString(from url: URL) -> String? {
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: url.path
+            ),
+            attributes[.type] as? FileAttributeType == .typeRegular
+        else {
+            return nil
+        }
         guard let handle = try? FileHandle(forReadingFrom: url) else {
-            return []
+            return nil
         }
         defer { try? handle.close() }
 
@@ -34,56 +205,15 @@ enum SSHConfigHostReader {
         do {
             data = try handle.read(upToCount: maximumFileSize + 1) ?? Data()
         } catch {
-            return []
+            return nil
         }
         guard
             data.count <= maximumFileSize,
             let contents = String(data: data, encoding: .utf8)
         else {
-            return []
+            return nil
         }
-        return parse(contents)
-    }
-
-    static func parse(_ contents: String) -> [String] {
-        var result: [String] = []
-        var seen: Set<String> = []
-
-        for rawLine in contents.split(whereSeparator: \.isNewline) {
-            let line = rawLine
-                .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty else { continue }
-
-            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
-            guard
-                fields.count > 1,
-                fields[0].caseInsensitiveCompare("Host") == .orderedSame
-            else {
-                continue
-            }
-
-            for rawHost in fields.dropFirst() {
-                let host = unquoted(rawHost)
-                guard
-                    !host.hasPrefix("!"),
-                    !host.contains(where: { "*?[".contains($0) }),
-                    host.utf8.count <= 1_024,
-                    SSHArgumentPolicy.isValidHostTarget(host)
-                else {
-                    continue
-                }
-
-                let key = host.lowercased()
-                guard seen.insert(key).inserted else { continue }
-                result.append(host)
-                if result.count == maximumHostCount {
-                    return result
-                }
-            }
-        }
-
-        return result
+        return contents
     }
 
     private static func unquoted(_ value: String) -> String {
