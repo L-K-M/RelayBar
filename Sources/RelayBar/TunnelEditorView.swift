@@ -421,7 +421,8 @@ struct TunnelEditorView: View {
                     .accessibilityHint(
                         isValid ? nil : saveBlockingReason
                     )
-            }        }
+            }
+        }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(minHeight: 56)
