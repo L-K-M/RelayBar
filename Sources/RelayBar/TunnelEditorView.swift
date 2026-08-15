@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TunnelEditorView: View {
@@ -16,7 +17,9 @@ struct TunnelEditorView: View {
     @State private var reverseAllowedDestinations: String
     @State private var streamBindMask: String
     @State private var unlinkStaleSocket: Bool
+    @State private var startsAtLaunch: Bool
     @State private var importError: String?
+    @State private var clipboardReadError: String?
     @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
 
@@ -68,6 +71,9 @@ struct TunnelEditorView: View {
         _unlinkStaleSocket = State(
             initialValue: tunnel?.streamLocalSettings.unlinkStaleSocket ?? false
         )
+        _startsAtLaunch = State(
+            initialValue: tunnel?.startsAtLaunch ?? false
+        )
     }
 
     var body: some View {
@@ -96,14 +102,12 @@ struct TunnelEditorView: View {
 
     private var editorHeader: some View {
         HStack(spacing: 10) {
-            Button(action: onCancel) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onCancel
+            )
 
             Text(tunnel == nil ? "New Profile" : "Edit Profile")
                 .font(.system(size: 15, weight: .semibold))
@@ -134,6 +138,38 @@ struct TunnelEditorView: View {
                     .buttonStyle(.bordered)
                     .fixedSize()
                     .disabled(command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            // The clipboard is read only when the chip is clicked — never on
+            // editor appearance — so macOS Sequoia's paste-permission prompt
+            // can only appear as a direct response to this explicit action.
+            if tunnel == nil, command.isEmpty {
+                Button {
+                    switch ClipboardSSHCommand.candidate(
+                        from: NSPasteboard.general.string(forType: .string)
+                    ) {
+                    case .some(let suggestion):
+                        command = suggestion
+                        clipboardReadError = nil
+                        importCommand()
+                    case .none:
+                        clipboardReadError =
+                            "The clipboard doesn't hold an importable SSH command."
+                    }
+                } label: {
+                    Label("Import command from clipboard", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 10.5, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .help("Reads the clipboard and imports a forwarding-only ssh command")
+                .accessibilityLabel("Import SSH command from clipboard")
+
+                if let clipboardReadError {
+                    Text(clipboardReadError)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let importError {
@@ -173,6 +209,27 @@ struct TunnelEditorView: View {
                 hasPendingName: $hasPendingGroupName,
                 availableGroups: availableGroups
             )
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start at Launch")
+                        .font(.system(size: 10.5, weight: .medium))
+                    Text("Start this profile when RelayBar opens")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    "Start at Launch",
+                    isOn: $startsAtLaunch
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .accessibilityLabel("Start at Launch")
+            }
 
             EditorField(label: "SSH host", hint: "user@server") {
                 TextField("user@bastion.example.com", text: $sshHost)
@@ -392,7 +449,8 @@ struct TunnelEditorView: View {
                 bindMask: mask,
                 unlinkStaleSocket: unlinkStaleSocket
             ),
-            groupTag: groupTag
+            groupTag: groupTag,
+            startsAtLaunch: startsAtLaunch
         )
         return profile.isSafeToRun ? profile : nil
     }

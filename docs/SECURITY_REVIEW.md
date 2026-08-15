@@ -1,10 +1,10 @@
 # RelayBar security review
 
-Review date: July 24, 2026
+Review date: August 14, 2026
 
 ## Scope and threat model
 
-This review covers command import, tunnel persistence, child-process management, Remote Files paths/listings/transfers/image and Markdown previews, diagnostic output, network exposure, rendering dependencies, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command or remote path, tamper with RelayBar's preferences, or control names, metadata, bytes, Markdown, code snippets, formulas, URLs, and diagnostics returned by a remote SSH server. The user's existing SSH configuration is trusted to the same extent it is when running the macOS OpenSSH clients in Terminal.
+This review covers command import, tunnel persistence, child-process management, Remote Files paths/listings/transfers/image and Markdown previews, diagnostic output, network exposure, rendering dependencies, software-update delivery, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command or remote path, tamper with RelayBar's preferences, or control names, metadata, bytes, Markdown, code snippets, formulas, URLs, and diagnostics returned by a remote SSH server. The user's existing SSH configuration is trusted to the same extent it is when running the macOS OpenSSH clients in Terminal.
 
 ## Findings remediated
 
@@ -25,6 +25,27 @@ Remediation: SSH targets must be a single non-control, non-whitespace token and 
 An imported `-L 0.0.0.0:...` or wildcard bind can expose a forwarded service to other machines.
 
 Remediation: newly imported and manually created listeners default to explicit loopback. Every explicit non-loopback listener displays a rule-specific warning naming whether exposure occurs on the Mac or SSH server.
+
+### SR-11 — SSH configuration could expand master authority (high)
+
+The managed masters intentionally read normal SSH configuration so aliases,
+authentication, host-key policy, and jump hosts work like they do in Terminal.
+Before remediation, host configuration could also make a master detach, run a
+`LocalCommand`, request a tun device, forward the user's agent or X11 session,
+or implicitly widen a local listener through `GatewayPorts`.
+
+Remediation: both master command lines force `ForkAfterAuthentication=no`,
+`PermitLocalCommand=no`, `Tunnel=no`, `GatewayPorts=no`, `ForwardAgent=no`,
+`ForwardX11=no`, and `ForwardX11Trusted=no` before host and connection
+arguments. Existing `-N`, `-T`, `ControlPersist=no`, and
+`ClearAllForwardings=yes` protections remain. This policy does not disable
+aliases, identity files, known-hosts policy, authentication through the user's
+agent, or jump/proxy hosts. An omitted local bind now reliably stays on
+loopback, while an explicit bind address remains authoritative. Server-side
+remote listener exposure remains controlled by the SSH server. Configured
+`ProxyCommand` and `Match exec` still run local helpers as the connecting user;
+they remain part of the trusted connection-routing surface this policy
+intentionally preserves, unlike `LocalCommand`, which is forced off.
 
 ### SR-10 — Flexible forwarding expands network and filesystem authority (high)
 
@@ -74,14 +95,14 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 
 - Executable paths are fixed to `/usr/bin/ssh` and `/usr/bin/sftp`.
 - Arguments are passed through `Process` as an array; there is no shell expansion.
-- SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives.
+- SSH is non-interactive and uses `BatchMode`, a connection timeout, forward-failure detection, and keepalives. Both managed masters are forced to stay in the foreground and cannot enable local commands, tun devices, agent/X11 forwarding, or implicit gateway binding through host configuration.
 - One private master owns each forwarding profile; visible rules are installed with bounded, time-limited control operations and all-or-nothing startup.
 - Standard input and output are closed where unused; master and control diagnostics are bounded.
-- Detached SSH (`-f`) is discarded, and tracked children are terminated on stop and app quit.
+- Detached SSH (`-f`) is discarded on import, configured `ForkAfterAuthentication` is forced off, and tracked children are terminated on stop and app quit.
 - Tunnel definitions contain no passwords and remain in local application preferences.
 - Remote paths are not persisted. RelayBar does not read or copy private-key contents.
 - Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.
-- There are no analytics, advertising, telemetry, tracking, account, update, or downloaded-code SDKs.
+- There are no analytics, advertising, telemetry, tracking, or account SDKs. Sparkle 2.9.4 is exact-pinned for updates; its production feed is HTTPS and EdDSA-signed, update archives require signature verification before extraction, and its delegate sends no system-profile fields.
 - Markdown rendering dependencies are exact-pinned and their notices are bundled. None replaces the system SSH/SFTP transport.
 - The only reusable GitHub Actions step is the official checkout action, pinned to an immutable commit.
 - Release builds use the hardened runtime and a Developer ID Application signature.
@@ -102,5 +123,6 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - The Markdown compatibility layer intentionally does not reproduce every Obsidian vault feature. Wiki links, tags, embeds, and Mermaid are inert, and highlight emphasis is not pixel-identical to Obsidian.
 - HighlighterSwift evaluates its bundled highlight.js formatter locally. The input and language are bounded, but a defect in that third-party parser remains a residual in-process availability risk.
 - Opening a permitted external link hands it to the user's browser or mail app, which may contact the destination and disclose normal request metadata. RelayBar does so only after an explicit click.
+- A manual or opted-in scheduled update check contacts RelayBar's GitHub-hosted HTTPS feed, exposing ordinary connection metadata such as the source IP address to the hosting service. Accepting an offered update downloads its archive from the signed appcast's GitHub release URL. Scheduled checks are off by default, and automatic update downloads and installations are disabled.
 - New rendering dependency releases are not adopted automatically. Each update requires compatibility, license, security, and regression review.
 - Developer ID signing does not replace notarization. A downloaded build must be notarized and stapled before Gatekeeper will accept it without publisher warnings.

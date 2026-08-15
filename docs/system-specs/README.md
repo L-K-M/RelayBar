@@ -1,6 +1,6 @@
 # RelayBar System Specs
 
-Concise specifications for the behavior currently implemented by RelayBar. Last reviewed: 2026-07-24.
+Concise specifications for the behavior currently implemented by RelayBar. Last reviewed: 2026-08-14.
 
 ## Modules
 

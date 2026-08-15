@@ -55,14 +55,12 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onBack
+            )
 
             Text("Settings")
                 .font(.system(size: 15, weight: .semibold))
@@ -99,7 +97,7 @@ struct SettingsView: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
 
-            Text("A login launch opens the menu bar item only — saved profiles stay stopped until you start them.")
+            Text("A login launch opens RelayBar; profiles marked Start at Launch start automatically.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -115,7 +113,7 @@ struct SettingsView: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Automatic Updates")
+                Text("Automatically Check for Updates")
                     .font(.system(size: 12.5, weight: .medium))
                 Text("Checks about once a week and offers new versions. Nothing installs without you.")
                     .font(.system(size: 10.5))
@@ -126,7 +124,7 @@ struct SettingsView: View {
             Spacer(minLength: 8)
 
             Toggle(
-                "Automatic Updates",
+                "Automatically Check for Updates",
                 isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates },
                     set: { updates.setAutomaticallyChecksForUpdates($0) }
