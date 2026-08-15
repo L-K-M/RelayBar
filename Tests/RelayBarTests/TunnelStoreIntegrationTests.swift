@@ -1098,6 +1098,32 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.runningCount, 0)
     }
 
+    /// Task 040. The store records when a pending retry fires so the row can
+    /// count down live; stopping the profile clears the deadline.
+    func testRetryDeadlineTracksScheduledRetryAndClearsOnStop() async throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore(
+            defaults: defaults,
+            sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            retryDelayProvider: { _ in 5 }
+        )
+        let tunnel = makeLocalProfile()
+        store.start(tunnel)
+
+        let enteredRetry = await waitUntil {
+            if case .retrying = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(enteredRetry)
+        let deadline = try XCTUnwrap(store.retryDeadline(for: tunnel))
+        XCTAssertGreaterThan(deadline.timeIntervalSinceNow, 3)
+        XCTAssertLessThan(deadline.timeIntervalSinceNow, 6)
+
+        store.stop(tunnel)
+        XCTAssertNil(store.retryDeadline(for: tunnel))
+    }
+
     func testStopTracksMasterUntilItsTerminationCallbackArrives() async throws {
         let fixture = try makeFakeSSHFixture()
         defer { fixture.cleanup() }

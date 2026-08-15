@@ -37,6 +37,11 @@ final class TunnelStore: ObservableObject {
     private var desiredTunnels: [UUID: Tunnel] = [:]
     private var retryAttempts: [UUID: Int] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
+    /// When the pending retry of each profile fires, so the row can count
+    /// down live instead of showing a frozen "Retrying in Xs". Not
+    /// published: the row only reads it while the (published) retrying
+    /// phase is current, and the countdown ticks in the view.
+    private var retryDeadlines: [UUID: Date] = [:]
     private var startupTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingBrowserURLs: [UUID: URL] = [:]
     private var startupFailureMessages: [UUID: String] = [:]
@@ -109,6 +114,10 @@ final class TunnelStore: ObservableObject {
 
     func phase(for tunnel: Tunnel) -> TunnelPhase {
         phases[tunnel.id] ?? .stopped
+    }
+
+    func retryDeadline(for tunnel: Tunnel) -> Date? {
+        retryDeadlines[tunnel.id]
     }
 
     func runtimePorts(for tunnel: Tunnel) -> [UUID: Int] {
@@ -956,6 +965,7 @@ final class TunnelStore: ObservableObject {
         guard attempt <= maxRetryAttempts else {
             desiredTunnels[id] = nil
             retryAttempts[id] = nil
+            retryDeadlines[id] = nil
             pendingBrowserURLs[id] = nil
             phases[id] = .failed(
                 "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts."
@@ -966,6 +976,7 @@ final class TunnelStore: ObservableObject {
         cancelRetry(for: id)
         retryAttempts[id] = attempt
         let delay = max(0, retryDelayProvider(attempt))
+        retryDeadlines[id] = Date().addingTimeInterval(delay)
         phases[id] = .retrying(
             attempt: attempt,
             maxAttempts: maxRetryAttempts,
@@ -989,6 +1000,7 @@ final class TunnelStore: ObservableObject {
             }
 
             self.retryTasks[id] = nil
+            self.retryDeadlines[id] = nil
             self.launchTunnel(id: id)
         }
     }
@@ -996,6 +1008,7 @@ final class TunnelStore: ObservableObject {
     private func cancelRetry(for id: UUID) {
         retryTasks[id]?.cancel()
         retryTasks[id] = nil
+        retryDeadlines[id] = nil
     }
 
     private func openPendingBrowserURL(for id: UUID) {
