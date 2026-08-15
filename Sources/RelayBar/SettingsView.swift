@@ -113,7 +113,7 @@ struct SettingsView: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Automatic Updates")
+                Text("Automatically Check for Updates")
                     .font(.system(size: 12.5, weight: .medium))
                 Text("Checks about once a week and offers new versions. Nothing installs without you.")
                     .font(.system(size: 10.5))
@@ -124,7 +124,7 @@ struct SettingsView: View {
             Spacer(minLength: 8)
 
             Toggle(
-                "Automatic Updates",
+                "Automatically Check for Updates",
                 isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates },
                     set: { updates.setAutomaticallyChecksForUpdates($0) }

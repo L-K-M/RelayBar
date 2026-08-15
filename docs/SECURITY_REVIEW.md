@@ -1,10 +1,10 @@
 # RelayBar security review
 
-Review date: July 24, 2026
+Review date: August 14, 2026
 
 ## Scope and threat model
 
-This review covers command import, tunnel persistence, child-process management, Remote Files paths/listings/transfers/image and Markdown previews, diagnostic output, network exposure, rendering dependencies, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command or remote path, tamper with RelayBar's preferences, or control names, metadata, bytes, Markdown, code snippets, formulas, URLs, and diagnostics returned by a remote SSH server. The user's existing SSH configuration is trusted to the same extent it is when running the macOS OpenSSH clients in Terminal.
+This review covers command import, tunnel persistence, child-process management, Remote Files paths/listings/transfers/image and Markdown previews, diagnostic output, network exposure, rendering dependencies, software-update delivery, Developer ID packaging, and accidental secret publication. It assumes an attacker may provide a crafted command or remote path, tamper with RelayBar's preferences, or control names, metadata, bytes, Markdown, code snippets, formulas, URLs, and diagnostics returned by a remote SSH server. The user's existing SSH configuration is trusted to the same extent it is when running the macOS OpenSSH clients in Terminal.
 
 ## Findings remediated
 
@@ -102,7 +102,7 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - Tunnel definitions contain no passwords and remain in local application preferences.
 - Remote paths are not persisted. RelayBar does not read or copy private-key contents.
 - Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.
-- There are no analytics, advertising, telemetry, tracking, account, update, or downloaded-code SDKs.
+- There are no analytics, advertising, telemetry, tracking, or account SDKs. Sparkle 2.9.4 is exact-pinned for updates; its production feed is HTTPS and EdDSA-signed, update archives require signature verification before extraction, and its delegate sends no system-profile fields.
 - Markdown rendering dependencies are exact-pinned and their notices are bundled. None replaces the system SSH/SFTP transport.
 - The only reusable GitHub Actions step is the official checkout action, pinned to an immutable commit.
 - Release builds use the hardened runtime and a Developer ID Application signature.
@@ -123,5 +123,6 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - The Markdown compatibility layer intentionally does not reproduce every Obsidian vault feature. Wiki links, tags, embeds, and Mermaid are inert, and highlight emphasis is not pixel-identical to Obsidian.
 - HighlighterSwift evaluates its bundled highlight.js formatter locally. The input and language are bounded, but a defect in that third-party parser remains a residual in-process availability risk.
 - Opening a permitted external link hands it to the user's browser or mail app, which may contact the destination and disclose normal request metadata. RelayBar does so only after an explicit click.
+- A manual or opted-in scheduled update check contacts RelayBar's GitHub-hosted HTTPS feed, exposing ordinary connection metadata such as the source IP address to the hosting service. Accepting an offered update downloads its archive from the signed appcast's GitHub release URL. Scheduled checks are off by default, and automatic update downloads and installations are disabled.
 - New rendering dependency releases are not adopted automatically. Each update requires compatibility, license, security, and regression review.
 - Developer ID signing does not replace notarization. A downloaded build must be notarized and stapled before Gatekeeper will accept it without publisher warnings.

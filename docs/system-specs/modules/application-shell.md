@@ -50,10 +50,13 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.
 - The settings screen's Launch at Login toggle registers or unregisters the main app as the current user's login item through `SMAppService.mainApp` — no helper executable, launch daemon, elevated privilege, or separate settings window.
-- The General card's second row is **Automatic Updates**. It controls
+- The General card's second row is **Automatically Check for Updates**. It controls
   Sparkle's own persisted scheduled-check preference, defaults off, checks at
   a seven-day interval when enabled, and cannot enable automatic download or
-  installation. Settings and application activation do not initiate checks.
+  installation. Opening Settings does not issue a separate check. Enabling the
+  schedule resets Sparkle's cycle, and app launch starts that cycle; when no
+  prior check exists or the prior check is overdue, a scheduled background
+  check may therefore begin promptly.
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
 - A login launch opens the same menu-bar-only app. Saved profiles whose **Start at Launch** preference is on are started automatically at launch; every other profile stays stopped until the user starts it. Debug preview launches (`--preview-window`, `--remote-files-preview`, or a valid `--remote-files-live-preview`) do not auto-start saved profiles.
 - A quiet Settings footer reads version and build from the running bundle,
