@@ -6,18 +6,18 @@ Created: 2026-08-14
 
 ## Outcome
 
-When the pasteboard already holds a complete, importable SSH forwarding
-command as the profile editor opens, Quick Add offers a one-click (or ⇧⌘V)
-import chip, so "copy a command anywhere, open RelayBar, done" replaces
-click-add, click-field, paste, click-import.
+Quick Add offers a one-click (or ⇧⌘V) import chip while the command field is
+untouched, so "copy a command anywhere, open RelayBar, done" replaces
+click-add, click-field, paste, click-import. The clipboard is read only
+when the chip is clicked.
 
 ## Delivery Boundary
 
-- The suggestion appears only for text that fully parses as a
-  forwarding-only ssh command — partial or unrelated clipboard contents
-  never surface.
-- One read on editor appearance (a user action), one suggestion per editor
-  session; typing or using the chip dismisses it.
+- The clipboard is read only inside the chip's click action — never on
+  editor appearance — so the macOS Sequoia paste-permission prompt can
+  never appear from opening the editor.
+- Contents that fully parse import directly; partial or unrelated clipboard
+  contents produce a gentle message and change nothing.
 - No change to the parser, the import flow, or clipboard contents (read-only
   access, never written).
 
@@ -44,9 +44,9 @@ click-add, click-field, paste, click-import.
 ## Evidence (2026-08-14)
 
 - `ClipboardSSHCommand.candidate(from:)` trims and fully parses the text, so
-  the chip can never offer something the Import button would reject.
-- The editor reads the pasteboard once in `onAppear` (itself a user action)
-  and clears the suggestion on any edit to the command field.
+  a chip click can never import something the Import button would reject.
+- The editor reads the pasteboard only inside the chip's click action;
+  typing hides the chip, and unrelated contents show a gentle message.
 - Gate tests cover nil, empty, unrelated, hostless, and rule-less text plus
   a whitespace-padded valid command.
 - Local build and test execution were unavailable (Linux environment without
