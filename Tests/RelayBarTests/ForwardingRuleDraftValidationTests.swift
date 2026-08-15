@@ -23,6 +23,7 @@ final class ForwardingRuleDraftValidationTests: XCTestCase {
 
         draft.kind = .remote
         draft.listenPort = "0"
+        draft.destinationHost = "localhost"
         XCTAssertEqual(
             draft.validationIssue,
             "enter a destination port",

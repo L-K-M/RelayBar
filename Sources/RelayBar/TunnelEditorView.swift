@@ -403,11 +403,15 @@ struct TunnelEditorView: View {
             return "The SSH host cannot contain spaces or start with a dash."
         }
         let builtRules = rules.compactMap(\.forwardingRule)
-        if builtRules.count == rules.count {
-            let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
-            if probe.hasConflictingListeners {
-                return "Two rules listen on the same address and port."
-            }
+        if builtRules.count != rules.count {
+            // A draft passed the per-rule copy but still failed the hard
+            // gate: the mirror drifted. Surface that instead of leaving
+            // Save silently disabled.
+            return "A rule could not be built; check every field."
+        }
+        let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
+        if probe.hasConflictingListeners {
+            return "Two rules listen on the same address and port."
         }
         return nil
     }
