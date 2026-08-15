@@ -22,7 +22,12 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 - Derived sections are computed once per change to the saved list rather than per view evaluation, so phase and runtime-port updates do not rebuild them.
 - Editing an active profile stops it before replacing its definition.
 - Changing only a group tag, moving a profile, renaming a group, or ungrouping members is metadata-only and preserves process phase, retries, pending browser work, runtime ports, and process ownership.
-- Deleting a profile cancels its connection, control operation, retry, pending browser launch, runtime ports, and owned temporary artifacts.
+- Deleting a profile requires a native destructive confirmation that identifies
+  the profile, forwarding route, and SSH host. When the profile is starting,
+  retrying, or running, the confirmation explicitly warns that deletion stops
+  its active connection. Confirming cancels its connection, control operation,
+  retry, pending browser launch, runtime ports, and owned temporary artifacts;
+  cancelling leaves both the profile and its lifecycle untouched.
 - Definitions persist immediately after add, edit, delete, move, rename, or ungroup operations.
 
 See [Data and state](../shared/data-and-state.md) for the stored schema.
