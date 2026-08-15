@@ -31,6 +31,7 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 031 — Fix Edit Profile Insets](031-fix-edit-profile-insets.md)
 - [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)
 - [Task 035 - Add GLM 5.3 PR Review](035-add-glm-5-3-pr-review.md)
+- [Task 055 — Reject Invalid SFTP UTF-8](055-reject-invalid-sftp-utf8.md)
 - [Task 039 — Duplicate Profile](039-duplicate-profile.md)
 - [Task 042 — Copy Profile as SSH Command](042-copy-ssh-command.md)
 - [Task 054 — Align Update UI and Documentation](054-update-documentation-truth.md)

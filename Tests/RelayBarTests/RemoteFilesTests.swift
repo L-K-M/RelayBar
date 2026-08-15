@@ -2930,6 +2930,156 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
     }
 
+    func testRejectsInvalidUTF8ListingInsteadOfReturningAnEmptyFolder() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected invalid listing UTF-8 to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+            XCTAssertEqual(
+                error.errorDescription,
+                "The remote server returned a folder listing that is not valid UTF-8."
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnreadableListingCaptureDoesNotReturnAnEmptyFolder() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "unreadable"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected an unreadable listing capture to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .unreadableListing)
+            XCTAssertEqual(
+                error.errorDescription,
+                "RelayBar could not open the captured SFTP response for this folder."
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testReadableEmptyListingStillReturnsAnEmptyFolder() async throws {
+        let service = makeFixtureService()
+
+        let entries = try await service.list(
+            server: makeFixtureServer(host: "empty"),
+            path: "/srv/app"
+        )
+
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testLossilyDecodesMalformedUTF8Diagnostics() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the command to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(
+                error,
+                .commandFailed("Permission was denied for this server or path.")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testMalformedUTF8DiagnosticsRemainByteBounded() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSuccessfulCommandStillRejectsOversizedDiagnostics() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "successdiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail before exit-status handling.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testOutputLimitWinsWhenTruncationSplitsUTF8() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the output limit to fail before UTF-8 validation.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testOutputExactlyAtTheLimitStillReachesUTF8Validation() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 2,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected exact-cap invalid UTF-8 to reach encoding validation.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testRejectsProcessOutputBeyondTheConfiguredLimit() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/bin/echo"),

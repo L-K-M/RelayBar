@@ -87,6 +87,16 @@ Empty folders show a single focused empty state with an explicit accessibility d
 - Remote and local batch paths are limited to 32 KiB of UTF-8 before quoting.
 - Batch paths are quoted with `\` and `"` escaped. sftp's own quoting suppresses `glob(3)` expansion, so `*`, `?`, and `[` in a remote path resolve literally and need no further escaping. Verified against OpenSSH 10.2 with `star*dir`, `report[2026]`, `bra[ck]et.md`, and `draft?.md`, all of which list and open correctly.
 - Captured standard output is capped at 32 MiB and standard error at 1 MiB.
+  After process exit, capture reads probe one byte beyond each cap so an
+  oversized response fails closed even if filesystem size metadata is
+  unavailable.
+  A successful listing must be captured and decode losslessly as UTF-8 before
+  parsing; unreadable output and invalid bytes produce distinct typed errors
+  rather than an empty folder. Readable zero-byte output remains a valid empty
+  folder.
+  Failed-command diagnostics decode loss-tolerantly only after the byte cap, so
+  malformed bytes cannot erase recognizable bounded error text. Exceeding
+  either capture cap fails the operation even when sftp exits successfully.
 - The batch-input pipe suppresses `SIGPIPE`; if the child exits before input is written, RelayBar handles the write failure instead of terminating.
 - Close-by-default spawning explicitly preserves the batch reader as child standard input, including when that reader already occupies descriptor zero.
 - Parsed listing lines are limited to 32 KiB, entry names to 4 KiB, entry sizes must be nonnegative, and supported entries remain capped at 10,000.
