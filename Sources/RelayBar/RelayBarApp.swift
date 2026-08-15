@@ -916,10 +916,6 @@ enum QuitConfirmation {
 }
 
 /// AppKit autosaves a status item's slot and visibility into the owning app's
-    }
-}
-
-/// AppKit autosaves a status item's slot and visibility into the owning app's
 /// own defaults domain, and restores both on every later launch. That is the
 /// mechanism behind an icon that appears once and never again: nothing in the
 /// app re-asserts the item, so a single persisted `false` — or a slot beyond
