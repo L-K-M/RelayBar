@@ -71,9 +71,7 @@ final class TunnelStore: ObservableObject {
         maxRetryAttempts: Int = 10,
         retryDelayProvider: @escaping (Int) -> TimeInterval = TunnelStore.retryDelay(for:),
         browserOpener: @escaping (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
-        failureNotifier: @escaping (String, String) -> Void = {
-            TunnelFailureNotifier.shared.notify(profileName: $0, message: $1)
-        },
+        failureNotifier: ((String, String) -> Void)? = nil,
         processEnvironment: [String: String]? = nil,
         controlOperationTimeout: TimeInterval = 10,
         processTerminationGracePeriod: TimeInterval = 5,
@@ -84,7 +82,11 @@ final class TunnelStore: ObservableObject {
         self.maxRetryAttempts = max(0, maxRetryAttempts)
         self.retryDelayProvider = retryDelayProvider
         self.browserOpener = browserOpener
+        // The default is resolved in this MainActor-isolated initializer body
+        // rather than as a default argument, which would reference a
+        // MainActor-isolated static from a nonisolated context.
         self.failureNotifier = failureNotifier
+            ?? { TunnelFailureNotifier.shared.notify(profileName: $0, message: $1) }
         self.processEnvironment = processEnvironment
         self.controlOperationTimeout = max(0.1, controlOperationTimeout)
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
