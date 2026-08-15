@@ -3499,6 +3499,69 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.remotePath, "/typed")
     }
 
+    /// Task 050. A symlink to a directory navigates through the link: the
+    /// browser lists the linked folder with history intact.
+    func testActivatingSymlinkToDirectoryNavigatesThroughTheLink() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let link = RemoteFileEntry(
+            name: "current",
+            path: "/srv/app/current",
+            kind: .symbolicLink,
+            size: nil,
+            modificationText: "Jul 23 21:04"
+        )
+        let member = makeFileEntry(name: "report.md", parentPath: link.path)
+        service.listings["/srv/app"] = [link]
+        service.listings[link.path] = [member]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.activate(link)
+        try await waitUntil {
+            model.currentPath == link.path && !model.isLoading
+        }
+        XCTAssertEqual(model.entries, [member])
+        XCTAssertEqual(
+            service.listRequests.map(\.path),
+            ["/srv/app", link.path]
+        )
+        XCTAssertTrue(model.canGoBack)
+    }
+
+    /// Task 050. A symlink to a file falls back to file treatment: a
+    /// Markdown link previews, and the size from the link line is not used.
+    func testActivatingSymlinkToMarkdownFilePreviewsIt() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let link = RemoteFileEntry(
+            name: "notes.md",
+            path: "/srv/app/notes.md",
+            kind: .symbolicLink,
+            size: nil,
+            modificationText: "Jul 23 21:04"
+        )
+        service.listings["/srv/app"] = [link]
+        let previewDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: previewDirectory) }
+        let previewURL = previewDirectory.appendingPathComponent("notes.md")
+        try Data("# Linked notes".utf8).write(to: previewURL)
+        service.previewURL = previewURL
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.activate(link)
+        try await waitUntil {
+            model.screen == .preview
+                && model.previewMarkdown?.plainText.contains("Linked notes") == true
+        }
+        XCTAssertEqual(service.previewRequests, [link.path])
+    }
+
     func testRemovingStandaloneHostLeavesForwardingProfilesAvailable() throws {
         let profile = makeTunnel(name: "Profile", host: "profile.example.com")
         let catalog = RemoteServerCatalog()
@@ -4284,6 +4347,20 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
             return resolution
         }
         return .directory(try await list(server: server, path: path))
+    }
+
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        let result = withLock {
+            state.listRequests.append(ListRequest(server: server, path: path))
+            return state.listings[path]
+        }
+        if let result {
+            return result
+        }
+        throw RemoteFileError.commandFailed("Not a directory.")
     }
 
     func shutdown() {
