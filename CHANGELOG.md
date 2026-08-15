@@ -16,6 +16,9 @@ Notable RelayBar changes are recorded here.
   or into a terminal.
 - Round icon buttons deepen on hover, the row's ⋯ menu matches its sibling
   buttons, and truncated SSH errors expand in a hover tooltip.
+- Remote Files remembers the last path each connection opened successfully
+  and offers it in the launcher — on a fresh window and when switching
+  servers with the field untouched.
 
 ### Fixed
 

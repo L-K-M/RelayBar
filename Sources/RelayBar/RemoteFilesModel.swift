@@ -227,7 +227,14 @@ final class RemoteFilesModel: ObservableObject {
 
     @Published private(set) var screen: Screen = .launcher
     @Published private(set) var servers: [RemoteServer]
-    @Published var selectedServerID: UUID?
+    @Published var selectedServerID: UUID? {
+        didSet {
+            // Offer the selected server's last opened path in an untouched
+            // launcher field; never clobber text the user typed.
+            guard screen == .launcher, remotePath.isEmpty else { return }
+            prefillLastPathForSelectedServer()
+        }
+    }
     @Published var remotePath = ""
     @Published private(set) var currentPath = ""
     @Published private(set) var pendingPath: String?
@@ -288,6 +295,9 @@ final class RemoteFilesModel: ObservableObject {
         self.imageDecoder = imageDecoder
         self.markdownDecoder = markdownDecoder
         self.tunnels = tunnels
+        if let firstServer = initialServers.first {
+            remotePath = catalog.lastOpenedPath(for: firstServer) ?? ""
+        }
     }
 
     var pathValidationMessage: String? {
@@ -754,6 +764,7 @@ final class RemoteFilesModel: ObservableObject {
                 isRefreshing = false
                 retryLoadRequest = nil
                 serverCatalog.recordSuccessfulOpen(server)
+                serverCatalog.recordLastOpenedPath(remotePath, for: server)
                 refreshServers(preferredConnection: server.connectionIdentity)
                 if case .file(let entry) = result, entry.isPreviewable {
                     preview(entry)
@@ -890,6 +901,11 @@ final class RemoteFilesModel: ObservableObject {
             try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent())
         }
         previewURL = nil
+    }
+
+    private func prefillLastPathForSelectedServer() {
+        guard let server = selectedServer else { return }
+        remotePath = serverCatalog.lastOpenedPath(for: server) ?? ""
     }
 
     private func refreshServers(

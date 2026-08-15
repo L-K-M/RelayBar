@@ -7,7 +7,7 @@ without adding search, indexing, mounting, or editing.
 
 - A labeled **Remote Files…** row appears below the tunnel list.
 - The row opens or focuses one separate native window.
-- The launcher requires an absolute remote path and one available SSH server. A forwarding profile is not required.
+- The launcher requires an absolute remote path and one available SSH server. A forwarding profile is not required. The path field offers the last path that exact connection opened successfully — persisted per connection (at most 32, validated on load) — on a fresh window and when switching servers with the field untouched.
 - The server picker combines successfully opened recent connections, standalone hosts saved in RelayBar, forwarding-profile connections, and concrete aliases from `~/.ssh/config`, in that priority order.
 - Equivalent entries with the exact same SSH host and SSH arguments collapse into one SSH-host entry. Group tags and forwarding-rule differences do not split equivalent connections. Different host aliases or SSH arguments remain separate because they may select different credentials, ports, or routes.
 - A single Quick Add tunnel whose generated name matches its forwarded destination is labelled by its SSH host in the server picker. An intentional custom name remains visible with the SSH host for context when that SSH connection is not duplicated.
