@@ -12,6 +12,9 @@ final class TunnelFailureNotifier {
     private var requestedAuthorization = false
 
     func notify(profileName: String, message: String) {
+        // Test binaries have no bundle proxy; UNUserNotificationCenter
+        // aborts with an NSInternalInconsistencyException without one.
+        guard Bundle.main.bundleIdentifier != nil else { return }
         requestAuthorizationIfNeeded()
         let content = UNMutableNotificationContent()
         content.title = "\(profileName) stopped retrying"
