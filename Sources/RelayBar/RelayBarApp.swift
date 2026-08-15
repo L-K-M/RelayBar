@@ -117,7 +117,9 @@ final class RelayBarAppDelegate:
         setUpStatusItem()
         observeTunnelActivity()
         UpdateServiceFactory.shared.start()
-        configureDebugPreviewIfNeeded()
+        if !configureDebugPreviewIfNeeded() {
+            store.startProfilesMarkedForAutoStart()
+        }
     }
 
     /// Re-launching the app — double-clicking it in Finder, or `open -a
@@ -457,7 +459,7 @@ final class RelayBarAppDelegate:
     private var tunnelPreviewDefaultsSuite: String?
     private var remoteFilesPreviewPresenter: RemoteFilesPreviewPresenter?
 
-    private func configureDebugPreviewIfNeeded() {
+    private func configureDebugPreviewIfNeeded() -> Bool {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--preview-dark") {
             NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
@@ -470,7 +472,7 @@ final class RelayBarAppDelegate:
         {
             let sshHost = arguments[livePreviewIndex + 1]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard SSHArgumentPolicy.isValidHostTarget(sshHost) else { return }
+            guard SSHArgumentPolicy.isValidHostTarget(sshHost) else { return false }
 
             NSApplication.shared.setActivationPolicy(.regular)
             let tunnel = Tunnel(
@@ -487,7 +489,7 @@ final class RelayBarAppDelegate:
                 presenter: presenter,
                 catalog: RemoteServerCatalog()
             )
-            return
+            return true
         }
         if arguments.contains("--remote-files-preview") {
             NSApplication.shared.setActivationPolicy(.regular)
@@ -529,9 +531,9 @@ final class RelayBarAppDelegate:
                 presenter: presenter,
                 catalog: RemoteServerCatalog()
             )
-            return
+            return true
         }
-        guard arguments.contains("--preview-window") else { return }
+        guard arguments.contains("--preview-window") else { return false }
         NSApplication.shared.setActivationPolicy(.regular)
 
         let previewStore: TunnelStore
@@ -694,9 +696,10 @@ final class RelayBarAppDelegate:
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
         previewWindow = window
+        return true
     }
     #else
-    private func configureDebugPreviewIfNeeded() {}
+    private func configureDebugPreviewIfNeeded() -> Bool { false }
     #endif
 
     func applicationWillTerminate(_ notification: Notification) {

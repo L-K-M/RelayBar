@@ -259,6 +259,30 @@ final class TunnelStore: ObservableObject {
         }
     }
 
+    /// Starts every saved profile whose **Start at Launch** preference is on.
+    /// Unsafe profiles fail on their own row through the normal start path,
+    /// and an already-active profile is left untouched.
+    func startProfilesMarkedForAutoStart() {
+        for tunnel in tunnels
+        where tunnel.startsAtLaunch && desiredTunnels[tunnel.id] == nil {
+            start(tunnel)
+        }
+    }
+
+    /// Toggles the persisted Start at Launch preference without touching the
+    /// profile's lifecycle, the same metadata-only treatment as group moves.
+    func setStartsAtLaunch(_ enabled: Bool, for tunnel: Tunnel) {
+        guard let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) else {
+            return
+        }
+        guard tunnels[index].startsAtLaunch != enabled else { return }
+        tunnels[index].startsAtLaunch = enabled
+        if desiredTunnels[tunnel.id] != nil {
+            desiredTunnels[tunnel.id]?.startsAtLaunch = enabled
+        }
+        save()
+    }
+
     func start(_ tunnel: Tunnel) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
         guard tunnel.isSafeToRun else {

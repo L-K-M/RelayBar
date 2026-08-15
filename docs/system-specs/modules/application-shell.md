@@ -46,7 +46,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   a seven-day interval when enabled, and cannot enable automatic download or
   installation. Settings and application activation do not initiate checks.
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
-- A login launch opens the same menu-bar-only app; saved forwarding profiles stay stopped until the user starts them.
+- A login launch opens the same menu-bar-only app. Saved profiles whose **Start at Launch** preference is on are started automatically at launch; every other profile stays stopped until the user starts it. Debug preview launches (`--preview-window`, `--remote-files-preview`, or a valid `--remote-files-live-preview`) do not auto-start saved profiles.
 - A quiet Settings footer reads version and build from the running bundle,
   offers a non-shifting copy confirmation, and opens the canonical website and
   GitHub repository. Its **Check for Updates…** action exposes only transient

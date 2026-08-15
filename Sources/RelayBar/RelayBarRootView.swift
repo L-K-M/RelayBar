@@ -165,6 +165,9 @@ private struct TunnelListView: View {
             onEdit: { onEdit(tunnel) },
             onDuplicate: { store.duplicate(tunnel) },
             onMoveToGroup: { store.move(tunnel, toGroup: $0) },
+            onToggleAutoStart: {
+                store.setStartsAtLaunch(!tunnel.startsAtLaunch, for: tunnel)
+            },
             onDelete: { store.delete(tunnel) }
         )
     }
@@ -323,6 +326,7 @@ private struct TunnelRow: View {
     let onEdit: () -> Void
     let onDuplicate: () -> Void
     let onMoveToGroup: (String?) -> Void
+    let onToggleAutoStart: () -> Void
     let onDelete: () -> Void
 
     @State private var isNamingNewGroup = false
@@ -421,6 +425,12 @@ private struct TunnelRow: View {
                     Divider()
                     Button("Copy SSH Command", systemImage: "command") {
                         copy(SSHCommandFormatter.command(for: tunnel))
+                    }
+                    Button(action: onToggleAutoStart) {
+                        groupChoiceLabel(
+                            "Start at Launch",
+                            isSelected: tunnel.startsAtLaunch
+                        )
                     }
                     Menu("Move to Group") {
                         Button {

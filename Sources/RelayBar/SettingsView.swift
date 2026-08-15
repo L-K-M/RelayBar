@@ -99,7 +99,7 @@ struct SettingsView: View {
                     .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
 
-            Text("A login launch opens the menu bar item only — saved profiles stay stopped until you start them.")
+            Text("A login launch opens RelayBar; profiles marked Start at Launch start automatically.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
