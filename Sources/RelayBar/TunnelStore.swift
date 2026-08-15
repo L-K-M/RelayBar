@@ -169,6 +169,11 @@ final class TunnelStore: ObservableObject {
         tunnels[index] = tunnel
         phases[tunnel.id] = .stopped
         save()
+        // Stop is bookkeeping-synchronous — it clears the process and retry
+        // state before returning — so an edited active profile can relaunch
+        // immediately with its replaced definition. The user pressed Save,
+        // not Disconnect; the connection continues under the new settings.
+        if wasActive { start(tunnel) }
     }
 
     func move(_ tunnel: Tunnel, toGroup rawGroup: String?) {
