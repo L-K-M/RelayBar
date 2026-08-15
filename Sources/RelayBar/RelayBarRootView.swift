@@ -163,6 +163,7 @@ private struct TunnelListView: View {
                 store.openInBrowser(tunnel, ruleID: $0)
             },
             onEdit: { onEdit(tunnel) },
+            onDuplicate: { store.duplicate(tunnel) },
             onMoveToGroup: { store.move(tunnel, toGroup: $0) },
             onDelete: { store.delete(tunnel) }
         )
@@ -286,6 +287,31 @@ private struct TunnelListView: View {
     }
 }
 
+struct TunnelDeletionPrompt: Equatable {
+    static let confirmButtonTitle = "Delete Profile"
+
+    let title: String
+    let message: String
+
+    init(
+        tunnel: Tunnel,
+        phase: TunnelPhase,
+        runtimePorts: [UUID: Int]
+    ) {
+        title = "Delete \u{201c}\(tunnel.displayName)\u{201d}?"
+
+        let consequence = phase.isLifecycleActive
+            ? "This stops its active SSH connection and permanently removes the profile."
+            : "This permanently removes the profile."
+        message = """
+        SSH host: \(tunnel.sshHost)
+        \(tunnel.displaySummary(runtimePorts: runtimePorts))
+
+        \(consequence)
+        """
+    }
+}
+
 private struct TunnelRow: View {
     let tunnel: Tunnel
     let phase: TunnelPhase
@@ -295,10 +321,12 @@ private struct TunnelRow: View {
     let onOpen: () -> Void
     let onOpenRule: (UUID) -> Void
     let onEdit: () -> Void
+    let onDuplicate: () -> Void
     let onMoveToGroup: (String?) -> Void
     let onDelete: () -> Void
 
     @State private var isNamingNewGroup = false
+    @State private var isConfirmingDeletion = false
 
     var body: some View {
         VStack(spacing: 9) {
@@ -391,6 +419,9 @@ private struct TunnelRow: View {
                         }
                     }
                     Divider()
+                    Button("Copy SSH Command", systemImage: "command") {
+                        copy(SSHCommandFormatter.command(for: tunnel))
+                    }
                     Menu("Move to Group") {
                         Button {
                             onMoveToGroup(nil)
@@ -416,8 +447,11 @@ private struct TunnelRow: View {
                         }
                     }
                     Button("Edit", systemImage: "pencil", action: onEdit)
+                    Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                     Divider()
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                    Button("Delete\u{2026}", systemImage: "trash", role: .destructive) {
+                        isConfirmingDeletion = true
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 25, height: 25)
@@ -467,6 +501,28 @@ private struct TunnelRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+        .confirmationDialog(
+            deletionPrompt.title,
+            isPresented: $isConfirmingDeletion,
+            titleVisibility: .visible
+        ) {
+            Button(
+                TunnelDeletionPrompt.confirmButtonTitle,
+                role: .destructive,
+                action: onDelete
+            )
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deletionPrompt.message)
+        }
+    }
+
+    private var deletionPrompt: TunnelDeletionPrompt {
+        TunnelDeletionPrompt(
+            tunnel: tunnel,
+            phase: phase,
+            runtimePorts: runtimePorts
         )
     }
 
