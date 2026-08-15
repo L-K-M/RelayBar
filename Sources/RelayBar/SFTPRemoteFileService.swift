@@ -4,6 +4,15 @@ import Foundation
 protocol RemoteFileServing: AnyObject, Sendable {
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry]
+    /// Lists the target of a symbolic link as a directory. The trailing
+    /// slash makes the remote stat resolve the link, so this succeeds for a
+    /// symlink to a directory and fails for a link to a file or a dangling
+    /// link. A protocol requirement (not just an extension default) so
+    /// existential callers dispatch to the concrete implementation.
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry]
     func download(
         server: RemoteServer,
         entry: RemoteFileEntry,
@@ -12,6 +21,18 @@ protocol RemoteFileServing: AnyObject, Sendable {
     ) async throws
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL
     func shutdown()
+}
+
+extension RemoteFileServing {
+    /// Lists the target of a symbolic link. The trailing slash makes the
+    /// remote stat resolve the link, so this succeeds for a symlink to a
+    /// directory and fails for a link to a file or a dangling link.
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        throw RemoteFileError.commandFailed("Symbolic links are not supported.")
+    }
 }
 
 extension RemoteFileServing {
@@ -25,11 +46,18 @@ extension RemoteFileServing {
 /// Configuration is immutable after initialization. Each command owns separate
 /// process state, and the small boxes shared with callbacks synchronize access.
 final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
+    private enum CapturedStandardOutput {
+        case text(String)
+        case invalidUTF8
+        case unreadable
+    }
+
     private struct CommandResult {
         let status: Int32
-        let output: String
+        let output: CapturedStandardOutput
         let error: String
-        let exceededOutputLimit: Bool
+        /// True when either the output or diagnostics capture exceeds its byte cap.
+        let exceededCaptureLimit: Bool
     }
 
     private final class ProcessBox: @unchecked Sendable {
@@ -268,6 +296,33 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         return try SFTPListingParser.parsePath(output, path: normalizedPath)
     }
 
+    /// Lists the target of a symbolic link as a directory. The trailing
+    /// slash is significant: the remote side resolves `link/` through the
+    /// link to the directory it points at, while `link` alone would list the
+    /// link itself. A link to a file (or a dangling link) fails here, which
+    /// the model treats as "the link is a file".
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        guard RemotePath.validationMessage(for: path) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+        let normalizedPath = RemotePath.normalized(path)
+        let listingPath = normalizedPath == "/"
+            ? "/"
+            : normalizedPath + "/"
+        let result = try await run(
+            server: server,
+            batchInput: SFTPCommandBuilder.listCommand(path: listingPath)
+        )
+        try validate(result)
+        return try SFTPListingParser.parse(
+            result.output,
+            parentPath: normalizedPath
+        )
+    }
+
     private func listingOutput(
         server: RemoteServer,
         path: String
@@ -281,7 +336,16 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
         )
         try validate(result)
-        return (result.output, normalizedPath)
+        let output: String
+        switch result.output {
+        case .text(let text):
+            output = text
+        case .invalidUTF8:
+            throw RemoteFileError.invalidListingEncoding
+        case .unreadable:
+            throw RemoteFileError.unreadableListing
+        }
+        return (output, normalizedPath)
     }
 
     func download(
@@ -347,6 +411,11 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             guard fileManager.fileExists(atPath: partial.path) else {
                 throw RemoteFileError.missingDownload
             }
+            // Lock the payload down while it is still staged: moveItem
+            // preserves permissions, so without this a first-time download
+            // would sit at its final path with loose modes until the chmod
+            // below ran.
+            securePartialPermissions(at: partial)
 
             if fileManager.fileExists(atPath: destination.path) {
                 _ = try fileManager.replaceItemAt(
@@ -357,6 +426,10 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             } else {
                 try fileManager.moveItem(at: partial, to: destination)
             }
+            // replaceItemAt keeps the *replaced* item's attributes, so the
+            // payload must be locked down here, not at the staging path:
+            // owner-only, as the staging directory's 0700 already promised.
+            securePartialPermissions(at: destination)
             try? fileManager.removeItem(at: stagingDirectory)
         } catch {
             if ownsStagingDirectory {
@@ -531,21 +604,24 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                         {
                             outputLimitBox.markExceeded()
                         }
-                        let output = Self.readString(
+                        let capturedOutput = Self.readUTF8String(
                             at: outputURL,
                             maximumBytes: outputLimit
                         )
-                        let error = Self.readString(
+                        let capturedError = Self.readDiagnosticString(
                             at: errorURL,
                             maximumBytes: errorLimit
                         )
+                        let exceededCaptureLimit = outputLimitBox.hasExceeded
+                            || capturedOutput.exceededLimit
+                            || capturedError.exceededLimit
                         try? FileManager.default.removeItem(at: temporaryDirectory)
                         continuation.resume(
                             returning: CommandResult(
                                 status: status,
-                                output: output,
-                                error: error,
-                                exceededOutputLimit: outputLimitBox.hasExceeded
+                                output: capturedOutput.output,
+                                error: capturedError.text,
+                                exceededCaptureLimit: exceededCaptureLimit
                             )
                         )
                     }
@@ -755,7 +831,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     private func validate(_ result: CommandResult) throws {
-        if result.exceededOutputLimit {
+        if result.exceededCaptureLimit {
             throw RemoteFileError.responseTooLarge
         }
         guard result.status == 0 else {
@@ -857,22 +933,64 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
 
-    private static func readString(at url: URL, maximumBytes: Int64) -> String {
+    private static func readUTF8String(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> (output: CapturedStandardOutput, exceededLimit: Bool) {
+        guard let capture = readData(at: url, maximumBytes: maximumBytes) else {
+            return (.unreadable, false)
+        }
+        guard let text = String(data: capture.data, encoding: .utf8) else {
+            return (.invalidUTF8, capture.exceededLimit)
+        }
+        return (.text(text), capture.exceededLimit)
+    }
+
+    private static func readDiagnosticString(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> (text: String, exceededLimit: Bool) {
+        guard let capture = readData(at: url, maximumBytes: maximumBytes) else {
+            return ("", false)
+        }
+        return (
+            String(decoding: capture.data, as: UTF8.self),
+            capture.exceededLimit
+        )
+    }
+
+    private static func readData(
+        at url: URL,
+        maximumBytes: Int64
+    ) -> (data: Data, exceededLimit: Bool)? {
         guard
             maximumBytes > 0,
             maximumBytes <= Int64(Int.max),
             let handle = try? FileHandle(forReadingFrom: url)
         else {
-            return ""
+            return nil
         }
         defer { try? handle.close() }
         do {
-            guard let data = try handle.read(upToCount: Int(maximumBytes)) else {
-                return ""
+            let byteLimit = Int(maximumBytes)
+            var data = Data()
+            while data.count < byteLimit {
+                let remaining = byteLimit - data.count
+                guard
+                    let chunk = try handle.read(upToCount: min(64 * 1_024, remaining)),
+                    !chunk.isEmpty
+                else { break }
+                data.append(chunk)
             }
-            return String(data: data, encoding: .utf8) ?? ""
+            let exceededLimit: Bool
+            if data.count == byteLimit {
+                exceededLimit = try handle.read(upToCount: 1)?.isEmpty == false
+            } else {
+                exceededLimit = false
+            }
+            return (data, exceededLimit)
         } catch {
-            return ""
+            return nil
         }
     }
 }

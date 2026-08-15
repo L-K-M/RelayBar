@@ -158,6 +158,7 @@ private struct TunnelListView: View {
             tunnel: tunnel,
             phase: store.phase(for: tunnel),
             runtimePorts: store.runtimePorts(for: tunnel),
+            retryDeadline: store.retryDeadline(for: tunnel),
             availableGroups: availableGroups,
             onToggle: { store.toggle(tunnel) },
             onOpen: { store.openInBrowser(tunnel) },
@@ -165,7 +166,11 @@ private struct TunnelListView: View {
                 store.openInBrowser(tunnel, ruleID: $0)
             },
             onEdit: { onEdit(tunnel) },
+            onDuplicate: { store.duplicate(tunnel) },
             onMoveToGroup: { store.move(tunnel, toGroup: $0) },
+            onToggleAutoStart: {
+                store.setStartsAtLaunch(!tunnel.startsAtLaunch, for: tunnel)
+            },
             onDelete: { store.delete(tunnel) }
         )
     }
@@ -185,26 +190,23 @@ private struct TunnelListView: View {
             Spacer()
 
             HStack(spacing: 8) {
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.primary.opacity(0.06)))
-                }
-                .buttonStyle(.plain)
+                CircleIconButton(
+                    systemName: "gearshape",
+                    accessibilityLabel: "Settings",
+                    action: onSettings
+                )
                 .help("Settings")
-                .accessibilityLabel("Settings")
 
-                Button(action: onAdd) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.accentColor.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
+                CircleIconButton(
+                    systemName: "plus",
+                    font: .system(size: 13, weight: .semibold),
+                    foreground: .primary,
+                    base: Color.accentColor.opacity(0.12),
+                    hoverBase: Color.accentColor.opacity(0.22),
+                    accessibilityLabel: "Add tunnel",
+                    action: onAdd
+                )
                 .help("Add tunnel")
-                .accessibilityLabel("Add tunnel")
             }
         }
         .padding(.horizontal, 14)
@@ -256,7 +258,7 @@ private struct TunnelListView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button("Quit") { store.quit() }
+            Button("Quit") { RelayBarAppDelegate.requestUserQuit() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
@@ -288,19 +290,48 @@ private struct TunnelListView: View {
     }
 }
 
+struct TunnelDeletionPrompt: Equatable {
+    static let confirmButtonTitle = "Delete Profile"
+
+    let title: String
+    let message: String
+
+    init(
+        tunnel: Tunnel,
+        phase: TunnelPhase,
+        runtimePorts: [UUID: Int]
+    ) {
+        title = "Delete \u{201c}\(tunnel.displayName)\u{201d}?"
+
+        let consequence = phase.isLifecycleActive
+            ? "This stops its active SSH connection and permanently removes the profile."
+            : "This permanently removes the profile."
+        message = """
+        SSH host: \(tunnel.sshHost)
+        \(tunnel.displaySummary(runtimePorts: runtimePorts))
+
+        \(consequence)
+        """
+    }
+}
+
 private struct TunnelRow: View {
     let tunnel: Tunnel
     let phase: TunnelPhase
     let runtimePorts: [UUID: Int]
+    let retryDeadline: Date?
     let availableGroups: [String]
     let onToggle: () -> Void
     let onOpen: () -> Void
     let onOpenRule: (UUID) -> Void
     let onEdit: () -> Void
+    let onDuplicate: () -> Void
     let onMoveToGroup: (String?) -> Void
+    let onToggleAutoStart: () -> Void
     let onDelete: () -> Void
 
     @State private var isNamingNewGroup = false
+    @State private var isConfirmingDeletion = false
 
     var body: some View {
         VStack(spacing: 9) {
@@ -334,24 +365,26 @@ private struct TunnelRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    Text(errorOrHost)
+                    statusLine
                         .font(.system(size: 10.5))
                         .foregroundStyle(isFailure ? Color.red : Color.secondary)
                         .lineLimit(1)
+                        .help(statusLineHelp)
                 }
 
                 Spacer(minLength: 4)
 
                 if tunnel.unambiguousBrowserURL != nil {
-                    Button(action: onOpen) {
-                        Image(systemName: "safari")
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.accentColor.opacity(0.1)))
-                    }
-                    .buttonStyle(.plain)
+                    CircleIconButton(
+                        systemName: "safari",
+                        font: .system(size: 13, weight: .medium),
+                        foreground: .primary,
+                        base: Color.accentColor.opacity(0.1),
+                        hoverBase: Color.accentColor.opacity(0.2),
+                        accessibilityLabel: "Open \(tunnel.displayName) in browser",
+                        action: onOpen
+                    )
                     .help(openButtonHelp)
-                    .accessibilityLabel("Open \(tunnel.displayName) in browser")
                 }
 
                 Menu {
@@ -393,6 +426,15 @@ private struct TunnelRow: View {
                         }
                     }
                     Divider()
+                    Button("Copy SSH Command", systemImage: "command") {
+                        copy(SSHCommandFormatter.command(for: tunnel))
+                    }
+                    Button(action: onToggleAutoStart) {
+                        groupChoiceLabel(
+                            "Start at Launch",
+                            isSelected: tunnel.startsAtLaunch
+                        )
+                    }
                     Menu("Move to Group") {
                         Button {
                             onMoveToGroup(nil)
@@ -418,8 +460,11 @@ private struct TunnelRow: View {
                         }
                     }
                     Button("Edit", systemImage: "pencil", action: onEdit)
+                    Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                     Divider()
-                    Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                    Button("Delete\u{2026}", systemImage: "trash", role: .destructive) {
+                        isConfirmingDeletion = true
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 25, height: 25)
@@ -469,6 +514,28 @@ private struct TunnelRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+        .confirmationDialog(
+            deletionPrompt.title,
+            isPresented: $isConfirmingDeletion,
+            titleVisibility: .visible
+        ) {
+            Button(
+                TunnelDeletionPrompt.confirmButtonTitle,
+                role: .destructive,
+                action: onDelete
+            )
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deletionPrompt.message)
+        }
+    }
+
+    private var deletionPrompt: TunnelDeletionPrompt {
+        TunnelDeletionPrompt(
+            tunnel: tunnel,
+            phase: phase,
+            runtimePorts: runtimePorts
         )
     }
 
@@ -531,6 +598,41 @@ private struct TunnelRow: View {
             return "Open in browser when connected"
         case .stopped, .failed:
             return "Start tunnel and open in browser"
+        }
+    }
+
+    /// The full, untruncated text behind the one-line status line, so a
+    /// long SSH error is readable on hover.
+    private var statusLineHelp: String {
+        switch phase {
+        case .failed(let message):
+            return message
+        case .retrying(_, _, _, let message):
+            return message
+        case .stopped, .starting, .running:
+            return "via \(tunnel.sshHost)"
+        }
+    }
+
+    /// The third row line. A retrying profile counts down to its next
+    /// attempt against the store-recorded deadline instead of freezing the
+    /// delay that was current when the retry was scheduled.
+    @ViewBuilder private var statusLine: some View {
+        switch phase {
+        case .retrying(_, _, _, let message):
+            if let retryDeadline {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(
+                        0,
+                        Int(ceil(retryDeadline.timeIntervalSince(context.date)))
+                    )
+                    Text("Retrying in \(remaining)s · \(message)")
+                }
+            } else {
+                Text(errorOrHost)
+            }
+        default:
+            Text(errorOrHost)
         }
     }
 
@@ -787,5 +889,36 @@ private struct AppMark: View {
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// The popover's round icon buttons share one treatment — a tinted circle
+/// that deepens on hover — so the surface answers the mouse instead of
+/// feeling inert. Internal: used by the list, editor, and settings headers
+/// and by row actions.
+struct CircleIconButton: View {
+    let systemName: String
+    var font: Font = .system(size: 12.5, weight: .semibold)
+    var foreground: Color = .secondary
+    var base: Color = Color.primary.opacity(0.06)
+    var hoverBase: Color = Color.primary.opacity(0.12)
+    var size: CGFloat = 28
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(font)
+                .foregroundStyle(foreground)
+                .frame(width: size, height: size)
+                .background(Circle().fill(isHovered ? hoverBase : base))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .accessibilityLabel(accessibilityLabel)
     }
 }

@@ -1,6 +1,8 @@
 # Task 032 — Release and Manual Acceptance Verification
 
-Updated: 2026-08-02
+Document updated: 2026-08-14
+
+Manual evidence last recorded: 2026-08-02
 
 Result: In progress. VoiceOver inspection is excluded by maintainer decision.
 The maintainer approved local notarization and installation of 1.4.0 build 7,
@@ -25,11 +27,15 @@ website-download, and Homebrew publication remain pending.
   feedback does not depend on movement or shift the footer.
 - [x] Increase system text size and confirm every Settings control remains
   reachable vertically without horizontal clipping or overlap.
-- [x] Confirm **Automatic Updates** uses the promised weekly-check copy,
-  persists an intentional toggle change across relaunch, and adds no badge or
-  status to the tunnel list. A clean first launch defaults off; an existing
-  installation may retain its previous choice. Restore the preferred setting
-  after the check.
+- [x] Confirm the updater preference—labeled **Automatic Updates** when
+  verified—used the promised weekly-check copy, persisted an intentional
+  toggle change across relaunch, and added no badge or status to the tunnel
+  list. A clean first launch defaulted off; an existing installation may
+  retain its previous choice.
+- [ ] Re-verify the renamed **Automatically Check for Updates** row on macOS:
+  the longer label renders without clipping or overlap at increased text
+  sizes, the weekly-check explanation is unchanged, and the toggle persists
+  across relaunch. Restore the preferred setting after the check.
 - [x] Before the production appcast is published, **Check for Updates…** should
   end with the concise retry state. Close and reopen Settings and confirm the
   transient result is gone.
@@ -96,7 +102,7 @@ website-download, and Homebrew publication remain pending.
   embedded in `Packaging/Info.plist`. After maintainer authorization, Sparkle's
   `sign_update` signed and verified a disposable local payload. The payload was
   moved to Trash and nothing was published.
-- 2026-08-02: The maintainer reported that every Settings-footer and profile-
+- 2026-08-02: The maintainer reported that every Settings footer and profile
   editor check above passed on macOS 27.0 build 26A5388g. VoiceOver inspection
   remains waived, and the separate macOS 13 check remains open.
 - 2026-08-02: The maintainer approved a beta publication. Commit
@@ -108,6 +114,6 @@ website-download, and Homebrew publication remain pending.
   Its final `RelayBar.zip` is 6,528,677 bytes with SHA-256
   `358116688d81e9f1c9fe38070cbd4f0dbd7686f0eecb767b1d921bc80661a80a`.
   An anonymous download was byte-identical and passed clean extraction,
-  strict signature, stapled-ticket, Gatekeeper, version/build, universal-
+  strict signature, stapled-ticket, Gatekeeper, version/build, universal
   architecture, retained-resource, and launch checks. The stable appcast,
   website download, and Homebrew cask were deliberately left unchanged.

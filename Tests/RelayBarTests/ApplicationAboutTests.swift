@@ -108,7 +108,13 @@ final class ApplicationAboutTests: XCTestCase {
         XCTAssertEqual(announcer.messages, ["Copied"])
         XCTAssertTrue(model.didCopyVersion)
 
-        try await Task.sleep(for: .milliseconds(30))
+        // The reset is scheduled, not instantaneous: assert the outcome with
+        // a polling deadline rather than a fixed sleep, so a busy CI runner
+        // cannot flake the test by delaying the 10 ms confirmation task.
+        let deadline = Date().addingTimeInterval(2)
+        while model.didCopyVersion, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
         XCTAssertFalse(model.didCopyVersion)
     }
 

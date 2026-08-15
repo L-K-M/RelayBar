@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TunnelEditorView: View {
@@ -19,7 +20,9 @@ struct TunnelEditorView: View {
     @State private var reverseAllowedDestinations: String
     @State private var streamBindMask: String
     @State private var unlinkStaleSocket: Bool
+    @State private var startsAtLaunch: Bool
     @State private var importError: String?
+    @State private var clipboardReadError: String?
     @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
 
@@ -73,6 +76,9 @@ struct TunnelEditorView: View {
         _unlinkStaleSocket = State(
             initialValue: tunnel?.streamLocalSettings.unlinkStaleSocket ?? false
         )
+        _startsAtLaunch = State(
+            initialValue: tunnel?.startsAtLaunch ?? false
+        )
     }
 
     var body: some View {
@@ -101,14 +107,12 @@ struct TunnelEditorView: View {
 
     private var editorHeader: some View {
         HStack(spacing: 10) {
-            Button(action: onCancel) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.primary.opacity(0.06)))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
+            CircleIconButton(
+                systemName: "chevron.left",
+                font: .system(size: 12, weight: .semibold),
+                accessibilityLabel: "Back",
+                action: onCancel
+            )
 
             Text(tunnel == nil ? "New Profile" : "Edit Profile")
                 .font(.system(size: 15, weight: .semibold))
@@ -141,6 +145,38 @@ struct TunnelEditorView: View {
                     .disabled(command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
 
+            // The clipboard is read only when the chip is clicked — never on
+            // editor appearance — so macOS Sequoia's paste-permission prompt
+            // can only appear as a direct response to this explicit action.
+            if tunnel == nil, command.isEmpty {
+                Button {
+                    switch ClipboardSSHCommand.candidate(
+                        from: NSPasteboard.general.string(forType: .string)
+                    ) {
+                    case .some(let suggestion):
+                        command = suggestion
+                        clipboardReadError = nil
+                        importCommand()
+                    case .none:
+                        clipboardReadError =
+                            "The clipboard doesn't hold an importable SSH command."
+                    }
+                } label: {
+                    Label("Import command from clipboard", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 10.5, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .help("Reads the clipboard and imports a forwarding-only ssh command")
+                .accessibilityLabel("Import SSH command from clipboard")
+
+                if let clipboardReadError {
+                    Text(clipboardReadError)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if let importError {
                 Label(importError, systemImage: "exclamationmark.circle.fill")
                     .font(.system(size: 10.5))
@@ -168,6 +204,8 @@ struct TunnelEditorView: View {
 
             EditorField(label: "Name", hint: "Optional") {
                 TextField("Development access", text: $name)
+                    .accessibilityLabel("Profile name")
+                    .accessibilityHint("Optional display name")
                     .focused($focusedField, equals: .name)
             }
 
@@ -177,8 +215,31 @@ struct TunnelEditorView: View {
                 availableGroups: availableGroups
             )
 
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start at Launch")
+                        .font(.system(size: 10.5, weight: .medium))
+                    Text("Start this profile when RelayBar opens")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    "Start at Launch",
+                    isOn: $startsAtLaunch
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .accessibilityLabel("Start at Launch")
+            }
+
             EditorField(label: "SSH host", hint: "user@server") {
                 TextField("user@bastion.example.com", text: $sshHost)
+                    .accessibilityLabel("SSH host")
+                    .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($focusedField, equals: .sshHost)
             }
 
@@ -334,18 +395,51 @@ struct TunnelEditorView: View {
     }
 
     private var actionBar: some View {
-        HStack {
-            Button("Cancel", action: onCancel)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button(saveButtonTitle, action: save)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!isValid)
-        }
+        VStack(spacing: 8) {
+            // Tied to the button's own gate: the caption only ever explains
+            // an actually-disabled Save. If the mirror ever drifts so the
+            // gate rejects something the mirror accepts, the generic
+            // fallback still names a reason — the specific reasons can be
+            // wrong, but "check the fields" never is.
+            if !isValid {
+                Label(saveBlockingReason, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Before you can save: \(saveBlockingReason)")
+            }
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(saveButtonTitle, action: save)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!isValid)
+                    .help(isValid ? "" : saveBlockingReason)
+                    .accessibilityHint(
+                        isValid ? nil : saveBlockingReason
+                    )
+            }        }
         .padding(.horizontal, 16)
-        .frame(height: 56)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+    }
+
+    /// The caption and tooltip text for a disabled Save: the mirror's first
+    /// issue, or a generic fallback if the mirror ever misses one.
+    private var saveBlockingReason: String {
+        TunnelEditorValidation.firstIssue(
+            hasPendingGroupName: hasPendingGroupName,
+            rules: rules,
+            streamBindMask: streamBindMask,
+            reversePolicyChoice: reversePolicyChoice,
+            hasReverseSOCKS: hasReverseSOCKS,
+            reverseAllowedDestinations: reverseAllowedDestinations,
+            sshHost: sshHost
+        )
+            ?? "Check the fields above; one value is not valid."
     }
 
     private var saveButtonTitle: String {
@@ -398,7 +492,8 @@ struct TunnelEditorView: View {
                 bindMask: mask,
                 unlinkStaleSocket: unlinkStaleSocket
             ),
-            groupTag: groupTag
+            groupTag: groupTag,
+            startsAtLaunch: startsAtLaunch
         )
         return profile.isSafeToRun ? profile : nil
     }
@@ -738,6 +833,7 @@ private struct ForwardingRuleEditor: View {
             HStack {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
+                    .accessibilityHidden(true)
                 Spacer()
                 if !kindLockedToTCP {
                     Picker("Endpoint type", selection: kind) {
@@ -747,6 +843,7 @@ private struct ForwardingRuleEditor: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 112)
+                    .accessibilityLabel("\(title) endpoint type")
                 }
             }
 
@@ -770,7 +867,8 @@ private struct ForwardingRuleEditor: View {
     }
 }
 
-private struct ForwardingRuleDraft: Identifiable {
+/// Internal rather than fileprivate so the validation copy is unit-testable.
+struct ForwardingRuleDraft: Identifiable {
     var id: UUID
     var kind: ForwardingRuleKind
     var listenKind: ForwardListenEndpoint.Kind
@@ -806,6 +904,72 @@ private struct ForwardingRuleDraft: Identifiable {
         destinationHost = rule.destination?.tcp?.host ?? ""
         destinationPort = rule.destination?.tcp.map { String($0.port) } ?? ""
         destinationPath = rule.destination?.path ?? ""
+    }
+
+    /// The first reason this draft cannot become a valid rule, mirroring
+    /// the checks in `forwardingRule` with user-facing wording.
+    var validationIssue: String? {
+        switch listenKind {
+        case .tcp:
+            if listenPort.trimmingCharacters(in: .whitespaces).isEmpty {
+                return "enter a listen port"
+            }
+            guard let port = Int(listenPort) else {
+                return "the listen port is not a number"
+            }
+            if kind.listensRemotely {
+                guard (0...65_535).contains(port) else {
+                    return "the listen port must be 0–65535 (0 = automatic)"
+                }
+            } else {
+                guard (1...65_535).contains(port) else {
+                    return "the listen port must be 1–65535"
+                }
+            }
+            let bind = listenAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard SSHArgumentPolicy.isValidBindAddress(bind.isEmpty ? nil : bind) else {
+                return "the listen address cannot contain spaces or start with a dash"
+            }
+        case .unix:
+            let path = listenPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if path.isEmpty {
+                return "enter a local socket path"
+            }
+            guard SSHArgumentPolicy.isValidSocketPath(path) else {
+                return "the socket path must be absolute and cannot contain a colon"
+            }
+        }
+
+        if !kind.isDynamic {
+            switch destinationKind {
+            case .tcp:
+                let host = destinationHost.trimmingCharacters(in: .whitespacesAndNewlines)
+                if host.isEmpty {
+                    return "enter a destination host"
+                }
+                guard SSHArgumentPolicy.isValidDestinationHost(host) else {
+                    return "the destination host cannot contain spaces or start with a dash"
+                }
+                if destinationPort.trimmingCharacters(in: .whitespaces).isEmpty {
+                    return "enter a destination port"
+                }
+                guard
+                    let port = Int(destinationPort),
+                    (1...65_535).contains(port)
+                else {
+                    return "the destination port must be 1–65535"
+                }
+            case .unix:
+                let path = destinationPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                if path.isEmpty {
+                    return "enter a destination socket path"
+                }
+                guard SSHArgumentPolicy.isValidSocketPath(path) else {
+                    return "the destination socket path must be absolute and cannot contain a colon"
+                }
+            }
+        }
+        return nil
     }
 
     var forwardingRule: ForwardingRule? {
@@ -857,7 +1021,8 @@ private struct ForwardingRuleDraft: Identifiable {
     }
 }
 
-private enum ReversePolicyChoice: String, CaseIterable {
+/// Internal so the editor-level validation copy is unit-testable.
+enum ReversePolicyChoice: String, CaseIterable {
     case unspecified
     case any
     case restricted
@@ -889,9 +1054,83 @@ private struct EditorField<Content: View>: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            .accessibilityHidden(true)
             content
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11.5))
         }
+    }
+}
+
+/// The editor-level validation mirror, extracted from the view so the copy
+/// can be tested against the same fixtures the hard `builtTunnel` gate
+/// accepts and rejects. Checks run in the same order as `builtTunnel` and
+/// stop at the first problem.
+enum TunnelEditorValidation {
+    static func firstIssue(
+        hasPendingGroupName: Bool,
+        rules: [ForwardingRuleDraft],
+        streamBindMask: String,
+        reversePolicyChoice: ReversePolicyChoice,
+        hasReverseSOCKS: Bool,
+        reverseAllowedDestinations: String,
+        sshHost: String
+    ) -> String? {
+        if hasPendingGroupName {
+            return "Finish naming the new group."
+        }
+        if rules.isEmpty {
+            return "Add at least one forwarding rule."
+        }
+        for (index, rule) in rules.enumerated() {
+            if let issue = rule.validationIssue {
+                return "Rule \(index + 1): \(issue)"
+            }
+        }
+        guard
+            let mask = UInt16(streamBindMask, radix: 8),
+            mask <= 0o777
+        else {
+            return "Enter a valid octal socket bind mask such as 0177."
+        }
+        if hasReverseSOCKS {
+            switch reversePolicyChoice {
+            case .unspecified:
+                return "Choose a destination policy for Remote SOCKS."
+            case .restricted:
+                let destinations = reverseAllowedDestinations
+                    .split(whereSeparator: { $0.isWhitespace || $0 == "," })
+                    .map(String.init)
+                if destinations.isEmpty {
+                    return "List at least one allowed host:port destination."
+                }
+                if !destinations.allSatisfy(
+                    SSHArgumentPolicy.isValidPermitRemoteOpenDestination
+                ) {
+                    return "Allowed destinations must be host:port entries."
+                }
+            case .any, .none:
+                break
+            }
+        }
+        let host = sshHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        if host.isEmpty {
+            return "Enter an SSH host such as user@server."
+        }
+        if !SSHArgumentPolicy.isValidHostTarget(host) {
+            return "The SSH host cannot contain spaces or start with a dash."
+        }
+        let builtRules = rules.compactMap(\.forwardingRule)
+        if builtRules.count != rules.count {
+            // A draft passed the per-rule copy but still failed the hard
+            // gate: the mirror drifted. Surface that instead of leaving
+            // Save silently disabled.
+            return "A rule could not be built; check every field."
+        }
+        let probe = Tunnel(name: "", sshHost: host, rules: builtRules)
+        if probe.hasConflictingListeners {
+            return "Two rules listen on the same address and port."
+        }
+        return nil
     }
 }

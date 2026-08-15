@@ -482,3 +482,22 @@ enum SSHCommandParser {
         return tokens
     }
 }
+
+/// The clipboard side of Quick Add: the editor can offer a one-click import
+/// when the pasteboard already holds a complete, importable command.
+enum ClipboardSSHCommand {
+    /// Returns the trimmed text only when it parses as a complete
+    /// forwarding-only ssh command — partial or unrelated clipboard contents
+    /// never produce a suggestion.
+    static func candidate(from text: String?) -> String? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmed.isEmpty,
+            (try? SSHCommandParser.parse(trimmed)) != nil
+        else {
+            return nil
+        }
+        return trimmed
+    }
+}

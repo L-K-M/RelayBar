@@ -166,16 +166,14 @@ final class RemoteFileSSHSession: @unchecked Sendable {
     private let signalProcess: @Sendable (pid_t, Int32) -> Int32
     private let errorOutputLimit: Int
 
-    static let privateDirectoryPrefix = "RelayBar-SSH."
-    static let controlSocketName = "s"
-    static let openSSHBindTemporarySuffixByteCount = 17
-    static let unixSocketPathByteCapacity = MemoryLayout.size(
-        ofValue: sockaddr_un().sun_path
-    )
+    static let privateDirectoryPrefix = SSHControlPath.privateDirectoryPrefix
+    static let controlSocketName = SSHControlPath.controlSocketName
+    static let openSSHBindTemporarySuffixByteCount =
+        SSHControlPath.openSSHBindTemporarySuffixByteCount
+    static let unixSocketPathByteCapacity =
+        SSHControlPath.unixSocketPathByteCapacity
     static let maximumControlSocketPathByteCount =
-        unixSocketPathByteCapacity
-        - 1 // NUL terminator
-        - openSSHBindTemporarySuffixByteCount
+        SSHControlPath.maximumControlSocketPathByteCount
 
     private var master: Master?
     private var waiters: [Waiter] = []
@@ -258,17 +256,9 @@ final class RemoteFileSSHSession: @unchecked Sendable {
             "-N",
             "-T",
             "-M",
-            "-S", controlSocket.path,
-            "-a",
-            "-x",
-            "-o", "ControlPersist=no",
-            "-o", "ClearAllForwardings=yes",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=10",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3"
+            "-S", controlSocket.path
         ]
+        arguments.append(contentsOf: SSHMasterPolicy.enforcedArguments)
         arguments.append(contentsOf: server.additionalArguments)
         arguments.append(server.sshHost)
         return arguments
@@ -470,40 +460,15 @@ final class RemoteFileSSHSession: @unchecked Sendable {
     }
 
     private func makeControlLocations() throws -> (directory: URL, socket: URL) {
-        let templateURL = temporaryDirectory.appendingPathComponent(
-            "\(Self.privateDirectoryPrefix)XXXXXXXX",
-            isDirectory: true
-        )
-        var template = Array(templateURL.path.utf8CString)
-        let didCreateDirectory = template.withUnsafeMutableBufferPointer {
-            buffer in
-            guard let baseAddress = buffer.baseAddress else { return false }
-            return Darwin.mkdtemp(baseAddress) != nil
-        }
-        guard didCreateDirectory else {
+        do {
+            let locations = try SSHControlPath.create(
+                in: temporaryDirectory,
+                fileManager: fileManager
+            )
+            return (locations.directory, locations.socket)
+        } catch {
             throw RemoteFileError.connectionSessionUnavailable
         }
-        let directoryPath = template.withUnsafeBufferPointer { buffer in
-            String(cString: buffer.baseAddress!)
-        }
-        let directory = URL(
-            fileURLWithPath: directoryPath,
-            isDirectory: true
-        )
-        let socket = directory.appendingPathComponent(Self.controlSocketName)
-
-        // OpenSSH's mux listener first binds a sibling path using the
-        // `.XXXXXXXXXXXXXXXX` suffix from mux.c, then renames it to the final
-        // ControlPath. Both that suffix and the terminating NUL must fit
-        // within Darwin's sockaddr_un.sun_path.
-        guard
-            socket.path.utf8.count
-                <= Self.maximumControlSocketPathByteCount
-        else {
-            try? fileManager.removeItem(at: directory)
-            throw RemoteFileError.connectionSessionUnavailable
-        }
-        return (directory, socket)
     }
 
     private var mergedEnvironment: [String: String] {

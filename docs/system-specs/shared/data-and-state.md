@@ -2,14 +2,15 @@
 
 ## Persisted forwarding profile
 
-`Tunnel` stores a stable UUID, name, optional group tag, SSH destination, allowed connection arguments, ordered typed forwarding rules, optional Remote SOCKS policy, and Unix-socket settings. Each rule has a stable UUID, explicit kind, tagged TCP-or-Unix listener, and an optional tagged fixed destination.
+`Tunnel` stores a stable UUID, name, optional group tag, a Start at Launch flag, SSH destination, allowed connection arguments, ordered typed forwarding rules, optional Remote SOCKS policy, and Unix-socket settings. Each rule has a stable UUID, explicit kind, tagged TCP-or-Unix listener, and an optional tagged fixed destination.
 
 - Storage: JSON array in `UserDefaults` under `savedTunnels.v2`.
 - A group tag is either absent or a normalized string of at most 32 user-visible characters. Normalization trims surrounding whitespace and collapses internal whitespace runs. Line breaks and control characters are invalid.
 - Group matching uses a locale-independent case-folded key and retains the first saved spelling. Groups are derived from profile tags; there is no separate group collection, empty-group record, index, or cache.
 - Section derivation buckets profiles in one pass, sorts only distinct named groups with localized standard ordering, preserves profile order inside each bucket, and appends Ungrouped last.
 - When v2 is absent, the entire `savedTunnels.v1` array must decode before each legacy tunnel is converted to one equivalent Local TCP rule and the v2 collection is written. The legacy value is retained.
-- Legacy UUID, name, optional group tag, SSH host, bind, ports, destination, and allowed arguments are preserved. Missing `groupTag` decodes as ungrouped, and missing `additionalArguments` still decodes as an empty array.
+- A v2 value that is present but does not decode is copied verbatim to `savedTunnels.v2.corrupt-backup` before the store falls back to legacy migration or an empty list, so the first later save cannot overwrite the only copy of the user's profiles. The backup is written once per affected launch and never read back automatically.
+- Legacy UUID, name, optional group tag, SSH host, bind, ports, destination, and allowed arguments are preserved. Missing `groupTag` decodes as ungrouped, missing `additionalArguments` still decodes as an empty array, and missing `startsAtLaunch` decodes as false.
 - Runtime phase, processes, errors, retries, control paths, browser requests, owned-socket identities, and allocated remote ports are not persisted.
 
 ## Runtime ownership

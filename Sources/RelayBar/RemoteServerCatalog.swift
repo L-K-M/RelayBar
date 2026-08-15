@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum RemoteServerCatalogError: LocalizedError, Equatable {
@@ -23,10 +24,180 @@ enum RemoteServerCatalogError: LocalizedError, Equatable {
 enum SSHConfigHostReader {
     static let maximumFileSize = 1 * 1_024 * 1_024
     static let maximumHostCount = 256
+    /// Include traversal stays cheap even for careless or hostile include
+    /// chains: bounded depth, bounded file count, and visited-file cycles.
+    static let maximumIncludeDepth = 8
+    static let maximumIncludedFileCount = 64
 
     static func load(from url: URL) -> [String] {
+        load(
+            from: url,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+    }
+
+    static func load(from url: URL, homeDirectory: URL) -> [String] {
+        var state = LoadState()
+        collect(
+            from: url,
+            homeDirectory: homeDirectory,
+            depth: 0,
+            state: &state
+        )
+        return state.hosts
+    }
+
+    static func parse(_ contents: String) -> [String] {
+        var state = LoadState()
+        appendHosts(
+            from: contents,
+            homeDirectory: nil,
+            depth: 0,
+            state: &state
+        )
+        return state.hosts
+    }
+
+    private struct LoadState {
+        var hosts: [String] = []
+        var seenHosts: Set<String> = []
+        var visitedFiles: Set<String> = []
+        var filesRead = 0
+    }
+
+    private static func collect(
+        from url: URL,
+        homeDirectory: URL,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        guard
+            depth <= maximumIncludeDepth,
+            state.filesRead < maximumIncludedFileCount,
+            state.hosts.count < maximumHostCount
+        else {
+            return
+        }
+        let fileKey = url.resolvingSymlinksInPath().standardizedFileURL.path
+        guard state.visitedFiles.insert(fileKey).inserted else { return }
+        guard let contents = readBoundedString(from: url) else { return }
+        state.filesRead += 1
+        appendHosts(
+            from: contents,
+            homeDirectory: homeDirectory,
+            depth: depth,
+            state: &state
+        )
+    }
+
+    private static func appendHosts(
+        from contents: String,
+        homeDirectory: URL?,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        for rawLine in contents.split(whereSeparator: \.isNewline) {
+            guard state.hosts.count < maximumHostCount else { return }
+            let line = rawLine
+                .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+
+            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count > 1 else { continue }
+
+            if fields[0].caseInsensitiveCompare("Host") == .orderedSame {
+                for rawHost in fields.dropFirst() {
+                    let host = unquoted(rawHost)
+                    guard
+                        !host.hasPrefix("!"),
+                        !host.contains(where: { "*?[".contains($0) }),
+                        host.utf8.count <= 1_024,
+                        SSHArgumentPolicy.isValidHostTarget(host)
+                    else {
+                        continue
+                    }
+
+                    let key = host.lowercased()
+                    guard state.seenHosts.insert(key).inserted else { continue }
+                    state.hosts.append(host)
+                    if state.hosts.count == maximumHostCount { return }
+                }
+            } else if
+                let homeDirectory,
+                fields[0].caseInsensitiveCompare("Include") == .orderedSame
+            {
+                for rawPattern in fields.dropFirst() {
+                    include(
+                        pattern: unquoted(rawPattern),
+                        homeDirectory: homeDirectory,
+                        depth: depth,
+                        state: &state
+                    )
+                }
+            }
+        }
+    }
+
+    /// OpenSSH resolves patterns without a leading slash or tilde against
+    /// `~/.ssh` for user configuration files — the only kind RelayBar reads
+    /// — and silently ignores patterns that match nothing. `~/` resolves
+    /// against the same home directory the config came from, while `~user/`
+    /// forms expand through `GLOB_TILDE`; `GLOB_MARK` suffixes directories
+    /// so they can be skipped (OpenSSH includes files only), and
+    /// `GLOB_BRACE` keeps brace patterns working as they do on macOS.
+    private static func include(
+        pattern: String,
+        homeDirectory: URL,
+        depth: Int,
+        state: inout LoadState
+    ) {
+        let resolvedPattern: String
+        if pattern.hasPrefix("~/") {
+            resolvedPattern = homeDirectory
+                .appendingPathComponent(String(pattern.dropFirst(2)))
+                .path
+        } else if pattern.hasPrefix("/") || pattern.hasPrefix("~") {
+            resolvedPattern = pattern
+        } else {
+            resolvedPattern = homeDirectory
+                .appendingPathComponent(".ssh", isDirectory: true)
+                .appendingPathComponent(pattern)
+                .path
+        }
+
+        var globResult = glob_t()
+        let status = resolvedPattern.withCString {
+            glob($0, GLOB_TILDE | GLOB_MARK | GLOB_BRACE, nil, &globResult)
+        }
+        defer { globfree(&globResult) }
+        guard status == 0, let paths = globResult.gl_pathv else { return }
+        for index in 0..<Int(globResult.gl_pathc) {
+            guard let path = paths[index] else { continue }
+            let match = String(cString: path)
+            guard !match.hasSuffix("/") else { continue }
+            collect(
+                from: URL(fileURLWithPath: match),
+                homeDirectory: homeDirectory,
+                depth: depth + 1,
+                state: &state
+            )
+        }
+    }
+
+    /// Reads regular files only: a glob can name a FIFO, device, or socket,
+    /// and opening one of those for reading can block discovery forever.
+    private static func readBoundedString(from url: URL) -> String? {
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: url.path
+            ),
+            attributes[.type] as? FileAttributeType == .typeRegular
+        else {
+            return nil
+        }
         guard let handle = try? FileHandle(forReadingFrom: url) else {
-            return []
+            return nil
         }
         defer { try? handle.close() }
 
@@ -34,56 +205,15 @@ enum SSHConfigHostReader {
         do {
             data = try handle.read(upToCount: maximumFileSize + 1) ?? Data()
         } catch {
-            return []
+            return nil
         }
         guard
             data.count <= maximumFileSize,
             let contents = String(data: data, encoding: .utf8)
         else {
-            return []
+            return nil
         }
-        return parse(contents)
-    }
-
-    static func parse(_ contents: String) -> [String] {
-        var result: [String] = []
-        var seen: Set<String> = []
-
-        for rawLine in contents.split(whereSeparator: \.isNewline) {
-            let line = rawLine
-                .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty else { continue }
-
-            let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
-            guard
-                fields.count > 1,
-                fields[0].caseInsensitiveCompare("Host") == .orderedSame
-            else {
-                continue
-            }
-
-            for rawHost in fields.dropFirst() {
-                let host = unquoted(rawHost)
-                guard
-                    !host.hasPrefix("!"),
-                    !host.contains(where: { "*?[".contains($0) }),
-                    host.utf8.count <= 1_024,
-                    SSHArgumentPolicy.isValidHostTarget(host)
-                else {
-                    continue
-                }
-
-                let key = host.lowercased()
-                guard seen.insert(key).inserted else { continue }
-                result.append(host)
-                if result.count == maximumHostCount {
-                    return result
-                }
-            }
-        }
-
-        return result
+        return contents
     }
 
     private static func unquoted(_ value: String) -> String {
@@ -132,15 +262,23 @@ final class RemoteServerCatalog {
         }
     }
 
+    private struct LastPathRecord: Codable {
+        let key: String
+        let path: String
+    }
+
     private static let savedLimit = 128
     private static let recentLimit = 8
+    private static let lastPathLimit = 32
     private static let savedStorageKey = "remoteFiles.savedServers.v1"
     private static let recentStorageKey = "remoteFiles.recentServers.v1"
+    private static let lastPathStorageKey = "remoteFiles.lastPaths.v1"
 
     private let defaults: UserDefaults?
     private let sshConfigURL: URL?
     private var savedRecords: [Record]
     private var recentRecords: [Record]
+    private var lastPathRecords: [LastPathRecord]
 
     init(defaults: UserDefaults? = nil, sshConfigURL: URL? = nil) {
         self.defaults = defaults
@@ -155,6 +293,7 @@ final class RemoteServerCatalog {
             key: Self.recentStorageKey,
             limit: Self.recentLimit
         )
+        lastPathRecords = Self.loadLastPaths(from: defaults)
     }
 
     static func appDefault() -> RemoteServerCatalog {
@@ -249,6 +388,69 @@ final class RemoteServerCatalog {
         persist(recentRecords, key: Self.recentStorageKey)
     }
 
+    /// The last successfully opened remote path for this exact connection,
+    /// so the launcher can offer to continue where the user left off instead
+    /// of resetting to an empty field on every window.
+    func lastOpenedPath(for server: RemoteServer) -> String? {
+        let key = Self.lastPathKey(for: server.connectionIdentity)
+        return lastPathRecords.first { $0.key == key }?.path
+    }
+
+    func recordLastOpenedPath(_ path: String, for server: RemoteServer) {
+        let normalized = RemotePath.normalized(path)
+        guard RemotePath.validationMessage(for: normalized) == nil else { return }
+        let key = Self.lastPathKey(for: server.connectionIdentity)
+        if lastPathRecords.first?.key == key,
+           lastPathRecords.first?.path == normalized {
+            return
+        }
+        lastPathRecords.removeAll { $0.key == key }
+        lastPathRecords.insert(
+            LastPathRecord(key: key, path: normalized),
+            at: 0
+        )
+        if lastPathRecords.count > Self.lastPathLimit {
+            lastPathRecords.removeLast(lastPathRecords.count - Self.lastPathLimit)
+        }
+        persist(lastPathRecords, key: Self.lastPathStorageKey)
+    }
+
+    /// Newlines cannot appear in a validated host or option value, so one
+    /// key line per component is unambiguous.
+    private static func lastPathKey(
+        for identity: RemoteServer.ConnectionIdentity
+    ) -> String {
+        ([identity.sshHost] + identity.additionalArguments)
+            .joined(separator: "\n")
+    }
+
+    private static func loadLastPaths(
+        from defaults: UserDefaults?
+    ) -> [LastPathRecord] {
+        guard
+            let data = defaults?.data(forKey: lastPathStorageKey),
+            let decoded = try? JSONDecoder().decode(
+                [LastPathRecord].self,
+                from: data
+            )
+        else {
+            return []
+        }
+        var result: [LastPathRecord] = []
+        var seen: Set<String> = []
+        for record in decoded.prefix(lastPathLimit) {
+            guard
+                !record.key.isEmpty,
+                RemotePath.validationMessage(for: record.path) == nil,
+                seen.insert(record.key).inserted
+            else {
+                continue
+            }
+            result.append(record)
+        }
+        return result
+    }
+
     func recordSuccessfulOpen(_ server: RemoteServer) {
         if recentRecords.first?.connectionIdentity == server.connectionIdentity {
             return
@@ -263,7 +465,7 @@ final class RemoteServerCatalog {
         persist(recentRecords, key: Self.recentStorageKey)
     }
 
-    private func persist(_ records: [Record], key: String) {
+    private func persist<Records: Encodable>(_ records: [Records], key: String) {
         guard let defaults, let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: key)
     }

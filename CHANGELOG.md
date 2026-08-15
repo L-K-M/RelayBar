@@ -10,9 +10,52 @@ Notable RelayBar changes are recorded here.
   leaving it stopped. The editor's save button is labeled Save & Restart while
   the profile owns lifecycle work, so the restart is disclosed at the decision
   point.
+### Added
+
+- Profiles can be duplicated from the row menu. The copy gets fresh profile
+  and rule identities, lands right after the original, and starts stopped —
+  clone-then-tweak without retyping a connection.
+- Profiles can be marked **Start at Launch** in the editor or row menu, and
+  RelayBar starts those profiles automatically when it launches.
+- Row menus can copy a profile as the `ssh` command RelayBar effectively
+  runs — same grammar Quick Add imports, so the command pastes straight back
+  or into a terminal.
+- The profile editor says exactly why Save is disabled — the first blocking
+  issue, next to the button and as its tooltip — instead of making you hunt
+  a dozen fields.
+- Round icon buttons deepen on hover, the row's ⋯ menu matches its sibling
+  buttons, and truncated SSH errors expand in a hover tooltip.
+- Symbolic links in Remote Files now behave like what they point at: linked
+  folders navigate, linked Markdown and images preview, and other linked
+  files download — instead of failing as a download error.
+- Remote Files remembers the last path each connection opened successfully
+  and offers it in the launcher — on a fresh window and when switching
+  servers with the field untouched.
+- Remote Files now follows `Include` lines in `~/.ssh/config` (glob
+  patterns, `~/` and `~/.ssh`-relative resolution, depth- and file-capped),
+  so hosts kept in included files appear in the server list.
+- Quitting with tunnels running asks first — Stop and Quit, or Cancel — so a
+  stray ⌘Q no longer drops every live connection without warning.
+- Quick Add notices a complete SSH command on the clipboard and offers
+  one-click import (or ⇧⌘V) — copy a command anywhere, open RelayBar, done.
+  The clipboard is read only when the chip is clicked, so the system's
+  paste-permission prompt can never appear from opening the editor.
 
 ### Fixed
 
+- An unreadable saved-profile blob is copied to
+  `savedTunnels.v2.corrupt-backup` before the store starts from an empty list.
+  A corrupt collection used to be indistinguishable from a fresh install, and
+  the next save overwrote the only copy of the user's profiles.
+- A master now has 30 seconds to publish its control socket instead of 12.
+  `ConnectTimeout` bounds only the TCP connect, so a slow network or a large
+  agent key set could be reported as a broken master while it was still
+  authenticating.
+
+- Clicking the menu-bar icon while the popover is open now dismisses the
+  popover. The click already closed the transient popover on mouse-down, and
+  the toggle action on mouse-up used to re-open it immediately, so the icon
+  could never dismiss its own menu.
 - Quick Add imports `-o ExitOnForwardFailure=yes`. It is a boolean that makes
   ssh exit when a forward cannot be established — it runs nothing and reads
   nothing — and RelayBar already sets it on every connection it launches, so
@@ -21,6 +64,9 @@ Notable RelayBar changes are recorded here.
   imported, instead of claiming it can execute commands or read arbitrary
   files. That claim was untrue of every harmless option that simply was not
   listed.
+- Back from a directly opened remote file now opens the file's containing
+  folder with the file selected, instead of dropping straight out of the
+  browser to the launcher.
 
 - The menu-bar icon no longer disappears after a launch. The item is now an
   AppKit `NSStatusItem` the application delegate creates and holds, under the
@@ -35,6 +81,12 @@ Notable RelayBar changes are recorded here.
   one a crowded or notched menu bar drops.
 - Standard editing shortcuts reach text fields in the profile editor and the
   Remote Files window again, through a main menu the app now installs itself.
+- A retrying profile now counts down to its next attempt. The row used to
+  freeze "Retrying in 30s" for the whole backoff, reading like a stuck UI.
+- Finished downloads now land with owner-only permissions (`0600` for files,
+  `0700` for folders). The staging directory was created locked down, but
+  the payload itself kept whatever permissions sftp left once the transfer
+  outlived the last poll.
 
 ## [1.3.0] - 2026-07-30
 

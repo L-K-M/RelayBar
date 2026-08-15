@@ -285,6 +285,122 @@ final class SSHConfigHostReaderTests: XCTestCase {
 
         XCTAssertTrue(SSHConfigHostReader.load(from: configURL).isEmpty)
     }
+
+    /// Task 043. Hosts in included files load like top-level hosts, relative
+    /// patterns resolve against ~/.ssh, unmatched patterns are ignored, and
+    /// non-matching extensions and directories are skipped. The nested
+    /// include resolves against ~/.ssh as OpenSSH does, so `delta` can only
+    /// arrive through it — the outer glob never matches that file.
+    func testFollowsIncludesWithGlobAndNestedFiles() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        let hostsDirectory = sshDirectory.appendingPathComponent("hosts.d")
+        try FileManager.default.createDirectory(
+            at: hostsDirectory,
+            withIntermediateDirectories: true
+        )
+        try write("Host top\n Include hosts.d/*.conf\nInclude missing/*.conf\n", to: sshDirectory.appendingPathComponent("config"))
+        try write("Host alpha beta\n", to: hostsDirectory.appendingPathComponent("a.conf"))
+        try write("Host gamma\nInclude nested.conf\n", to: hostsDirectory.appendingPathComponent("b.conf"))
+        try write("Host delta\n", to: sshDirectory.appendingPathComponent("nested.conf"))
+        try write("Host not-included\n", to: hostsDirectory.appendingPathComponent("ignore.txt"))
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "alpha", "beta", "gamma", "delta"])
+    }
+
+    /// Task 043. Include cycles terminate: each file is processed once.
+    func testIncludeCyclesAreVisitedOnce() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        let configURL = sshDirectory.appendingPathComponent("config")
+        let loopURL = sshDirectory.appendingPathComponent("loop.conf")
+        try write("Host top\nInclude loop.conf\n", to: configURL)
+        try write("Host looped\nInclude config\n", to: loopURL)
+
+        let aliases = SSHConfigHostReader.load(
+            from: configURL,
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "looped"])
+    }
+
+    /// Task 043. Include recursion is depth-capped, so a chain deeper than
+    /// the cap stops contributing hosts instead of recursing without bound.
+    func testIncludeDepthIsCapped() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        let chainLength = SSHConfigHostReader.maximumIncludeDepth + 4
+        for depth in 0...chainLength {
+            let nextLine = depth < chainLength
+                ? "Include chain-\(depth + 1).conf\n"
+                : ""
+            try write(
+                "Host host-\(depth)\n\(nextLine)",
+                to: sshDirectory.appendingPathComponent("chain-\(depth).conf")
+            )
+        }
+        try write("Host root\nInclude chain-0.conf\n", to: sshDirectory.appendingPathComponent("config"))
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        // chain-N is read at depth N+1, so the chain member exactly at the
+        // cap still loads and the next one is refused.
+        XCTAssertEqual(
+            aliases,
+            ["root"] + (0..<SSHConfigHostReader.maximumIncludeDepth).map { "host-\($0)" }
+        )
+    }
+
+    /// Task 043. `~/` Include patterns resolve against the same home the
+    /// config came from, not a process-global home.
+    func testTildeSlashIncludeResolvesAgainstTheConfigHome() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        try write(
+            "Host top\nInclude ~/extra.conf\n",
+            to: sshDirectory.appendingPathComponent("config")
+        )
+        try write(
+            "Host tilde-host\n",
+            to: home.appendingPathComponent("extra.conf")
+        )
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "tilde-host"])
+    }
+
+    private func write(_ contents: String, to url: URL) throws {
+        try Data(contents.utf8).write(to: url)
+    }
 }
 
 @MainActor
@@ -332,6 +448,89 @@ final class RemoteServerCatalogTests: XCTestCase {
         XCTAssertEqual(
             servers.map(\.source),
             [.recent, .saved, .forwardingProfile, .sshConfig]
+        )
+    }
+
+    /// Task 045. The last opened path persists per exact connection and
+    /// survives a catalog reload.
+    func testLastOpenedPathPersistsPerConnection() throws {
+        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let first = RemoteServer(
+            id: UUID(),
+            name: "First",
+            sshHost: "first.example.com",
+            additionalArguments: [],
+            source: .saved
+        )
+        let second = RemoteServer(
+            id: UUID(),
+            name: "Second",
+            sshHost: "first.example.com",
+            additionalArguments: ["-p", "2222"],
+            source: .saved
+        )
+
+        catalog.recordLastOpenedPath("/srv/app/", for: first)
+        catalog.recordLastOpenedPath("/var/log", for: second)
+
+        XCTAssertEqual(catalog.lastOpenedPath(for: first), "/srv/app")
+        XCTAssertEqual(catalog.lastOpenedPath(for: second), "/var/log")
+
+        let reloaded = RemoteServerCatalog(defaults: defaults)
+        XCTAssertEqual(reloaded.lastOpenedPath(for: first), "/srv/app")
+        XCTAssertEqual(reloaded.lastOpenedPath(for: second), "/var/log")
+
+        catalog.recordLastOpenedPath("relative/path", for: first)
+        catalog.recordLastOpenedPath("/srv/app", for: first)
+        let unchanged = RemoteServerCatalog(defaults: defaults)
+        XCTAssertEqual(unchanged.lastOpenedPath(for: first), "/srv/app")
+    }
+
+    /// Task 045. Last-path records stay bounded, most-recently used first.
+    func testLastOpenedPathStorageIsBounded() throws {
+        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+
+        for index in 0..<40 {
+            catalog.recordLastOpenedPath(
+                "/path-\(index)",
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S\(index)",
+                    sshHost: "server-\(index).example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
+        }
+
+        let reloaded = RemoteServerCatalog(defaults: defaults)
+        XCTAssertNotNil(
+            reloaded.lastOpenedPath(
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S39",
+                    sshHost: "server-39.example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
+        )
+        XCTAssertNil(
+            reloaded.lastOpenedPath(
+                for: RemoteServer(
+                    id: UUID(),
+                    name: "S0",
+                    sshHost: "server-0.example.com",
+                    additionalArguments: [],
+                    source: .saved
+                )
+            )
         )
     }
 
@@ -1756,6 +1955,43 @@ final class SFTPCommandBuilderTests: XCTestCase {
 }
 
 final class RemoteFileSSHSessionTests: XCTestCase {
+    func testSharedControlLocationCreationIsAtomicallyUniqueAndPrivate() async throws {
+        let root = try shortTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let locations = try await withThrowingTaskGroup(
+            of: SSHControlLocations.self
+        ) { group in
+            for _ in 0..<32 {
+                group.addTask {
+                    try SSHControlPath.create(in: root)
+                }
+            }
+            var result: [SSHControlLocations] = []
+            for try await location in group {
+                result.append(location)
+            }
+            return result
+        }
+
+        XCTAssertEqual(locations.count, 32)
+        XCTAssertEqual(Set(locations.map(\.directory.path)).count, 32)
+        for location in locations {
+            XCTAssertEqual(location.socket.lastPathComponent, "s")
+            XCTAssertLessThanOrEqual(
+                location.socket.path.utf8.count,
+                SSHControlPath.maximumControlSocketPathByteCount
+            )
+            let attributes = try FileManager.default.attributesOfItem(
+                atPath: location.directory.path
+            )
+            XCTAssertEqual(
+                (attributes[.posixPermissions] as? NSNumber)?.intValue,
+                0o700
+            )
+        }
+    }
+
     func testBuildsForegroundMasterArgumentsWithoutSFTPTranslation() throws {
         let server = RemoteServer(
             id: UUID(),
@@ -2694,6 +2930,156 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         }
     }
 
+    func testRejectsInvalidUTF8ListingInsteadOfReturningAnEmptyFolder() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected invalid listing UTF-8 to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+            XCTAssertEqual(
+                error.errorDescription,
+                "The remote server returned a folder listing that is not valid UTF-8."
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnreadableListingCaptureDoesNotReturnAnEmptyFolder() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "unreadable"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected an unreadable listing capture to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .unreadableListing)
+            XCTAssertEqual(
+                error.errorDescription,
+                "RelayBar could not open the captured SFTP response for this folder."
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testReadableEmptyListingStillReturnsAnEmptyFolder() async throws {
+        let service = makeFixtureService()
+
+        let entries = try await service.list(
+            server: makeFixtureServer(host: "empty"),
+            path: "/srv/app"
+        )
+
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testLossilyDecodesMalformedUTF8Diagnostics() async {
+        let service = makeFixtureService()
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the command to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(
+                error,
+                .commandFailed("Permission was denied for this server or path.")
+            )
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testMalformedUTF8DiagnosticsRemainByteBounded() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invaliddiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSuccessfulCommandStillRejectsOversizedDiagnostics() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardErrorLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "successdiagnostic"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the diagnostic limit to fail before exit-status handling.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testOutputLimitWinsWhenTruncationSplitsUTF8() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 1,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected the output limit to fail before UTF-8 validation.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .responseTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testOutputExactlyAtTheLimitStillReachesUTF8Validation() async {
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            standardOutputLimit: 2,
+            connectionSharing: false
+        )
+
+        do {
+            _ = try await service.list(
+                server: makeFixtureServer(host: "invalidutf8"),
+                path: "/srv/app"
+            )
+            XCTFail("Expected exact-cap invalid UTF-8 to reach encoding validation.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .invalidListingEncoding)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testRejectsProcessOutputBeyondTheConfiguredLimit() async {
         let service = SFTPRemoteFileService(
             executableURL: URL(fileURLWithPath: "/bin/echo"),
@@ -2860,6 +3246,14 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "downloaded")
         XCTAssertGreaterThanOrEqual(progress.maximum, 10)
         XCTAssertTrue(partialItems(in: directory).isEmpty)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: destination.path
+        )
+        XCTAssertEqual(
+            (attributes[.posixPermissions] as? NSNumber)?.intValue,
+            0o600,
+            "A finished download lands with owner-only permissions."
+        )
     }
 
     func testDownloadSupportsDestinationNamesNearFilesystemLimit() async throws {
@@ -3188,6 +3582,56 @@ final class RemoteDirectoryCacheTests: XCTestCase {
 
 @MainActor
 final class RemoteFilesModelTests: XCTestCase {
+    func testInitialOpenCanBeCancelledWithoutLosingLauncherInput() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        service.deferredLoadPaths.insert("/srv/app")
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        let selectedServerID = model.selectedServerID
+
+        model.openRemotePath()
+        try await waitUntil { service.pendingDeferredLoadPathCount == 1 }
+
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertTrue(model.isLoading)
+        XCTAssertTrue(model.canCancelInitialOpen)
+
+        model.cancelInitialOpen()
+
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertFalse(model.canCancelInitialOpen)
+        XCTAssertNil(model.pendingPath)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.remotePath, "/srv/app")
+        XCTAssertEqual(model.selectedServerID, selectedServerID)
+        XCTAssertEqual(service.shutdownCount, 1)
+
+        service.failDeferredLoadPath(
+            "/srv/app",
+            with: .commandFailed("Late failure")
+        )
+        try await waitUntil { service.completedLoadPathRequestCount == 1 }
+        await Task.yield()
+
+        XCTAssertNil(
+            model.errorMessage,
+            "A late failure from a cancelled request must not publish an error."
+        )
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.servers.first?.source, .forwardingProfile)
+
+        service.deferredLoadPaths.remove("/srv/app")
+        service.pathResults["/srv/app"] = .directory([])
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        XCTAssertEqual(service.loadPathRequests.count, 2)
+        XCTAssertEqual(model.currentPath, "/srv/app")
+    }
+
     func testDirectMarkdownPathOpensPreviewAndPreservesBackPath() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
@@ -3196,6 +3640,7 @@ final class RemoteFilesModelTests: XCTestCase {
             parentPath: "/home/linxy97/workspace/2026/youtube-video-transcript"
         )
         service.pathResults[entry.path] = .file(entry)
+        service.listings[RemotePath.parent(of: entry.path)] = [entry]
         let previewDirectory = try makeTemporaryDirectory()
         let previewURL = previewDirectory.appendingPathComponent(entry.name)
         try Data("# Transcription learnings\n\nDirect preview.".utf8).write(to: previewURL)
@@ -3219,9 +3664,92 @@ final class RemoteFilesModelTests: XCTestCase {
         model.goBack()
         XCTAssertEqual(model.screen, .browser)
         XCTAssertEqual(model.entries, [entry])
+
+        // Task 038. With no folder history, Back from a directly opened file
+        // opens the containing folder with the file selected instead of
+        // abandoning the browser for the launcher.
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && service.listRequests.count == 1
+                && model.currentPath == RemotePath.parent(of: entry.path)
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(
+            service.listRequests.map(\.path),
+            [RemotePath.parent(of: entry.path)]
+        )
+
         model.goBack()
         XCTAssertEqual(model.screen, .launcher)
-        XCTAssertEqual(model.remotePath, entry.path)
+        XCTAssertEqual(model.remotePath, RemotePath.parent(of: entry.path))
+    }
+
+    /// Task 038. A directly opened file at the root still has a containing
+    /// folder: Back lists `/` with the file selected.
+    func testBackFromRootLevelDirectFileListsRoot() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin", parentPath: "")
+        service.pathResults[entry.path] = .file(entry)
+        service.listings["/"] = [entry]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading
+                && service.listRequests.count == 1
+                && model.entries == [entry]
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.currentPath, "/")
+        XCTAssertEqual(model.selectedEntryID, entry.id)
+        XCTAssertEqual(service.listRequests.map(\.path), ["/"])
+
+        // The root load must have cleared the direct-file state, so the
+        // next Back leaves the browser for the launcher.
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+    }
+
+    /// Task 038. When the containing-folder load fails, the direct-file
+    /// context is consumed: the error strip owns retry, and the next Back
+    /// leaves for the launcher instead of re-issuing the same failing load.
+    func testBackFromDirectFileAfterFailedParentLoadExitsToLauncher() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let entry = makeFileEntry(name: "notes.bin")
+        service.pathResults[entry.path] = .file(entry)
+        service.errors[RemotePath.parent(of: entry.path)] =
+            RemoteFileError.commandFailed("Permission denied.")
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = entry.path
+
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.goBack()
+        try await waitUntil {
+            !model.isLoading && model.errorMessage == "Permission denied."
+        }
+        XCTAssertEqual(model.screen, .browser)
+        XCTAssertEqual(model.entries, [entry])
+
+        model.goBack()
+        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(
+            model.remotePath,
+            entry.path,
+            "The failed folder load never commits, so the launcher keeps the file path."
+        )
     }
 
     func testDirectNonPreviewableFileIsSelectedWithoutStartingDownload() async throws {
@@ -3312,6 +3840,134 @@ final class RemoteFilesModelTests: XCTestCase {
             ["first.example.com", "second.example.com"]
         )
         model.cancelAll()
+    }
+
+    /// Task 045. A reopened Remote Files window offers the last path that
+    /// server opened successfully.
+    func testLauncherPrefillsLastOpenedPathForInitialServer() async throws {
+        let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        service.listings["/srv/app"] = []
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            serverCatalog: catalog
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        let reopened = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: StubRemoteFileService(),
+            serverCatalog: catalog
+        )
+        XCTAssertEqual(reopened.remotePath, "/srv/app")
+        model.cancelAll()
+    }
+
+    /// Task 045. Switching the launcher server offers that server's last
+    /// path only while the field is untouched.
+    func testSwitchingServerPrefillsLastPathOnlyWhenFieldIsEmpty() throws {
+        let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let first = makeTunnel(name: "First", host: "first.example.com")
+        let second = makeTunnel(name: "Second", host: "second.example.com")
+        catalog.recordLastOpenedPath(
+            "/var/log",
+            for: RemoteServer(tunnel: second)
+        )
+        let model = RemoteFilesModel(
+            tunnels: [first, second],
+            service: StubRemoteFileService(),
+            serverCatalog: catalog
+        )
+        XCTAssertEqual(model.remotePath, "")
+
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "second.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "/var/log")
+
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "first.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "/var/log", "Switching again never clobbers a non-empty field.")
+
+        model.remotePath = "/typed"
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "second.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "/typed")
+    }
+
+    /// Task 050. A symlink to a directory navigates through the link: the
+    /// browser lists the linked folder with history intact.
+    func testActivatingSymlinkToDirectoryNavigatesThroughTheLink() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let link = RemoteFileEntry(
+            name: "current",
+            path: "/srv/app/current",
+            kind: .symbolicLink,
+            size: nil,
+            modificationText: "Jul 23 21:04"
+        )
+        let member = makeFileEntry(name: "report.md", parentPath: link.path)
+        service.listings["/srv/app"] = [link]
+        service.listings[link.path] = [member]
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.activate(link)
+        try await waitUntil {
+            model.currentPath == link.path && !model.isLoading
+        }
+        XCTAssertEqual(model.entries, [member])
+        XCTAssertEqual(
+            service.listRequests.map(\.path),
+            ["/srv/app", link.path]
+        )
+        XCTAssertTrue(model.canGoBack)
+    }
+
+    /// Task 050. A symlink to a file falls back to file treatment: a
+    /// Markdown link previews, and the size from the link line is not used.
+    func testActivatingSymlinkToMarkdownFilePreviewsIt() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        let link = RemoteFileEntry(
+            name: "notes.md",
+            path: "/srv/app/notes.md",
+            kind: .symbolicLink,
+            size: nil,
+            modificationText: "Jul 23 21:04"
+        )
+        service.listings["/srv/app"] = [link]
+        let previewDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: previewDirectory) }
+        let previewURL = previewDirectory.appendingPathComponent("notes.md")
+        try Data("# Linked notes".utf8).write(to: previewURL)
+        service.previewURL = previewURL
+        let model = RemoteFilesModel(tunnels: [tunnel], service: service)
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.activate(link)
+        try await waitUntil {
+            model.screen == .preview
+                && model.previewMarkdown?.plainText.contains("Linked notes") == true
+        }
+        XCTAssertEqual(service.previewRequests, [link.path])
     }
 
     func testRemovingStandaloneHostLeavesForwardingProfilesAvailable() throws {
@@ -3994,6 +4650,11 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         var pathResults: [String: RemotePathLoadResult] = [:]
         var errors: [String: Error] = [:]
         var suspendedListPaths: Set<String> = []
+        var deferredLoadPaths: Set<String> = []
+        var deferredLoadPathContinuations: [
+            String: CheckedContinuation<RemotePathLoadResult, Error>
+        ] = [:]
+        var completedLoadPathRequestCount = 0
         var listRequests: [ListRequest] = []
         var loadPathRequests: [ListRequest] = []
         var shutdownCount = 0
@@ -4026,6 +4687,19 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     var suspendedListPaths: Set<String> {
         get { withLock { state.suspendedListPaths } }
         set { withLock { state.suspendedListPaths = newValue } }
+    }
+
+    var deferredLoadPaths: Set<String> {
+        get { withLock { state.deferredLoadPaths } }
+        set { withLock { state.deferredLoadPaths = newValue } }
+    }
+
+    var pendingDeferredLoadPathCount: Int {
+        withLock { state.deferredLoadPathContinuations.count }
+    }
+
+    var completedLoadPathRequestCount: Int {
+        withLock { state.completedLoadPathRequestCount }
     }
 
     var listRequests: [ListRequest] {
@@ -4091,14 +4765,51 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
     }
 
     func loadPath(server: RemoteServer, path: String) async throws -> RemotePathLoadResult {
-        let resolution = withLock {
+        let request = withLock {
             state.loadPathRequests.append(ListRequest(server: server, path: path))
-            return state.pathResults[path]
+            return (
+                resolution: state.pathResults[path],
+                isDeferred: state.deferredLoadPaths.contains(path)
+            )
         }
-        if let resolution {
+        defer {
+            withLock { state.completedLoadPathRequestCount += 1 }
+        }
+        if request.isDeferred {
+            return try await withCheckedThrowingContinuation { continuation in
+                withLock {
+                    state.deferredLoadPathContinuations[path] = continuation
+                }
+            }
+        }
+        if let resolution = request.resolution {
             return resolution
         }
         return .directory(try await list(server: server, path: path))
+    }
+
+    func failDeferredLoadPath(
+        _ path: String,
+        with error: RemoteFileError
+    ) {
+        let continuation = withLock {
+            state.deferredLoadPathContinuations.removeValue(forKey: path)
+        }
+        continuation?.resume(throwing: error)
+    }
+
+    func listSymlinkTarget(
+        server: RemoteServer,
+        path: String
+    ) async throws -> [RemoteFileEntry] {
+        let result = withLock {
+            state.listRequests.append(ListRequest(server: server, path: path))
+            return state.listings[path]
+        }
+        if let result {
+            return result
+        }
+        throw RemoteFileError.commandFailed("Not a directory.")
     }
 
     func shutdown() {
