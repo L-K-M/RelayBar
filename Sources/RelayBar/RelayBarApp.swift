@@ -151,12 +151,18 @@ final class RelayBarAppDelegate:
         if UpdateServiceFactory.shared.prepareForApplicationTermination() {
             return .terminateCancel
         }
-        let activeCount = store.runningCount
+        // Prompt only for user-initiated quits. The updater's own
+        // post-install terminate re-enters this delegate, and asking again
+        // there double-prompts a decision the user already made; logout and
+        // shutdown must never be blocked by a modal either. Both arrive
+        // with no current event, so the event check is the gate.
+        guard NSApp.currentEvent != nil, store.runningCount > 0 else {
+            return .terminateNow
+        }
         // `runningCount` is the store's one definition of active — starting,
         // retrying, or running (isLifecycleActive) — so connect and backoff
         // phases are covered, not just settled tunnels.
-        guard activeCount > 0 else { return .terminateNow }
-        presentQuitConfirmation(activeCount: activeCount)
+        presentQuitConfirmation()
         return .terminateLater
     }
 
@@ -166,7 +172,7 @@ final class RelayBarAppDelegate:
     /// termination is to answer later: present on the next turn, then reply.
     private var quitConfirmationInFlight = false
 
-    private func presentQuitConfirmation(activeCount: Int) {
+    private func presentQuitConfirmation() {
         guard !quitConfirmationInFlight else { return }
         quitConfirmationInFlight = true
         DispatchQueue.main.async { [weak self] in
