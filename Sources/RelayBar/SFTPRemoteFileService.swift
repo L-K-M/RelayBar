@@ -25,7 +25,7 @@ protocol RemoteFileServing: AnyObject, Sendable {
 
 extension RemoteFileServing {
     /// Lists the target of a symbolic link. The trailing slash makes the
-    /// remote stat resolve the link, so this succeeds for a symlink to a
+    /// remote stat resolve the link (OpenSSH sftp follows it), so this succeeds for a symlink to a
     /// directory and fails for a link to a file or a dangling link.
     func listSymlinkTarget(
         server: RemoteServer,
