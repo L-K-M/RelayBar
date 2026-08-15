@@ -317,8 +317,17 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             batchInput: SFTPCommandBuilder.listCommand(path: listingPath)
         )
         try validate(result)
+        let output: String
+        switch result.output {
+        case .text(let text):
+            output = text
+        case .invalidUTF8:
+            throw RemoteFileError.invalidListingEncoding
+        case .unreadable:
+            throw RemoteFileError.unreadableListing
+        }
         return try SFTPListingParser.parse(
-            result.output,
+            output,
             parentPath: normalizedPath
         )
     }
