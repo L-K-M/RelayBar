@@ -46,7 +46,10 @@ final class TunnelFailureNotifier {
         }
     }
 
-    private static func add(
+    /// Runs on arbitrary system queues via the notification-center
+    /// completions and touches no actor state, so it is deliberately
+    /// nonisolated (and Swift 6-clean).
+    private nonisolated static func add(
         profileName: String,
         message: String,
         to center: UNUserNotificationCenter
