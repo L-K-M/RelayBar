@@ -34,10 +34,11 @@ click-add, click-field, paste, click-import.
 
 ## Acceptance
 
-- With `ssh -N -L 8080:localhost:3000 dev@example.com` on the clipboard, the
-  new-profile editor shows the chip; activating it imports exactly as the
-  manual flow does.
-- With text, an incomplete command, or an empty clipboard, nothing appears.
+- With the editor's Quick Add visible and the field untouched, the chip is
+  offered; activating it with `ssh -N -L 8080:localhost:3000 dev@example.com`
+  on the clipboard imports exactly as the manual flow does.
+- With text, an incomplete command, or an empty clipboard, activating the
+  chip shows the gentle message and changes nothing.
 - `swift test -Xswiftc -warnings-as-errors` and `git diff --check` pass.
 
 ## Evidence (2026-08-14)
