@@ -4,7 +4,7 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
 
 ## Contract
 
-- Users can add, edit, duplicate, delete, start, and stop profiles. Duplicating inserts an independent copy with fresh profile and rule identities directly after the original; an explicitly named profile's copy gains a " copy" suffix, and the copy starts stopped.
+- Users can add, edit, duplicate, delete, start, and stop profiles. Duplicating inserts an independent copy with fresh profile and rule identities directly after the original; an explicitly named profile's copy gains a " copy" suffix, the copy starts stopped, and the copy does not inherit the source's Start at Launch preference.
 - Each profile has a persisted **Start at Launch** preference. The editor exposes it as a switch in the connection details, and the row menu can toggle it without changing the profile's running phase. When RelayBar launches, every saved profile with the preference on is started through the normal per-profile lifecycle; unsafe profiles fail on their own row and already-active profiles are skipped.
 - Each profile may have one optional group tag. The editor places a native **Group · Optional** picker below Name, and Quick Add leaves the selected group unchanged.
 - When every profile is ungrouped, the saved list keeps its original flat presentation. Once any profile has a group, named sections use localized standard ordering, preserve saved order within each section, and place **Ungrouped** last when needed.

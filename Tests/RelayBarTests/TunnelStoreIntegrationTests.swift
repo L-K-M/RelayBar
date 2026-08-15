@@ -236,7 +236,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = TunnelStore(defaults: defaults)
-        let first = makeGroupedProfile(name: "Web", port: 43_250, group: "Work")
+        var first = makeGroupedProfile(name: "Web", port: 43_250, group: "Work")
+        first.startsAtLaunch = true
         let second = makeGroupedProfile(name: "Other", port: 43_251, group: nil)
         store.add(first)
         store.add(second)
@@ -248,6 +249,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertNotEqual(copy.id, first.id)
         XCTAssertEqual(copy.name, "Web copy")
         XCTAssertEqual(copy.groupTag, "Work")
+        XCTAssertFalse(copy.startsAtLaunch)
         XCTAssertEqual(copy.sshHost, first.sshHost)
         XCTAssertEqual(copy.rules.count, first.rules.count)
         XCTAssertNotEqual(copy.rules[0].id, first.rules[0].id)
