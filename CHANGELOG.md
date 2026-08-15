@@ -22,6 +22,10 @@ Notable RelayBar changes are recorded here.
 - Remote Files now follows `Include` lines in `~/.ssh/config` (glob
   patterns, `~/` and `~/.ssh`-relative resolution, depth- and file-capped),
   so hosts kept in included files appear in the server list.
+- Quick Add notices a complete SSH command on the clipboard and offers
+  one-click import (or ⇧⌘V) — copy a command anywhere, open RelayBar, done.
+  The clipboard is read only when the chip is clicked, so the system's
+  paste-permission prompt can never appear from opening the editor.
 
 ### Fixed
 

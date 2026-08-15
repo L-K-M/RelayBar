@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TunnelEditorView: View {
@@ -18,6 +19,7 @@ struct TunnelEditorView: View {
     @State private var unlinkStaleSocket: Bool
     @State private var startsAtLaunch: Bool
     @State private var importError: String?
+    @State private var clipboardReadError: String?
     @State private var hasPendingGroupName = false
     @FocusState private var focusedField: Field?
 
@@ -136,6 +138,38 @@ struct TunnelEditorView: View {
                     .buttonStyle(.bordered)
                     .fixedSize()
                     .disabled(command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            // The clipboard is read only when the chip is clicked — never on
+            // editor appearance — so macOS Sequoia's paste-permission prompt
+            // can only appear as a direct response to this explicit action.
+            if tunnel == nil, command.isEmpty {
+                Button {
+                    switch ClipboardSSHCommand.candidate(
+                        from: NSPasteboard.general.string(forType: .string)
+                    ) {
+                    case .some(let suggestion):
+                        command = suggestion
+                        clipboardReadError = nil
+                        importCommand()
+                    case .none:
+                        clipboardReadError =
+                            "The clipboard doesn't hold an importable SSH command."
+                    }
+                } label: {
+                    Label("Import command from clipboard", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 10.5, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .help("Reads the clipboard and imports a forwarding-only ssh command")
+                .accessibilityLabel("Import SSH command from clipboard")
+
+                if let clipboardReadError {
+                    Text(clipboardReadError)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let importError {
