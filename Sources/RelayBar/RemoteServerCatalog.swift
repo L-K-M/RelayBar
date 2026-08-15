@@ -141,8 +141,9 @@ enum SSHConfigHostReader {
 
     /// OpenSSH resolves patterns without a leading slash or tilde against
     /// `~/.ssh` for user configuration files — the only kind RelayBar reads
-    /// — and silently ignores patterns that match nothing. `GLOB_TILDE`
-    /// covers both `~/` and `~user/` forms; `GLOB_MARK` suffixes directories
+    /// — and silently ignores patterns that match nothing. `~/` resolves
+    /// against the same home directory the config came from, while `~user/`
+    /// forms expand through `GLOB_TILDE`; `GLOB_MARK` suffixes directories
     /// so they can be skipped (OpenSSH includes files only), and
     /// `GLOB_BRACE` keeps brace patterns working as they do on macOS.
     private static func include(
@@ -151,12 +152,19 @@ enum SSHConfigHostReader {
         depth: Int,
         state: inout LoadState
     ) {
-        let resolvedPattern = pattern.hasPrefix("/") || pattern.hasPrefix("~")
-            ? pattern
-            : homeDirectory
+        let resolvedPattern: String
+        if pattern.hasPrefix("~/") {
+            resolvedPattern = homeDirectory
+                .appendingPathComponent(String(pattern.dropFirst(2)))
+                .path
+        } else if pattern.hasPrefix("/") || pattern.hasPrefix("~") {
+            resolvedPattern = pattern
+        } else {
+            resolvedPattern = homeDirectory
                 .appendingPathComponent(".ssh", isDirectory: true)
                 .appendingPathComponent(pattern)
                 .path
+        }
 
         var globResult = glob_t()
         let status = resolvedPattern.withCString {
@@ -177,7 +185,17 @@ enum SSHConfigHostReader {
         }
     }
 
+    /// Reads regular files only: a glob can name a FIFO, device, or socket,
+    /// and opening one of those for reading can block discovery forever.
     private static func readBoundedString(from url: URL) -> String? {
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: url.path
+            ),
+            attributes[.type] as? FileAttributeType == .typeRegular
+        else {
+            return nil
+        }
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return nil
         }

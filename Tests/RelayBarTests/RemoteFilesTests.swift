@@ -371,6 +371,33 @@ final class SSHConfigHostReaderTests: XCTestCase {
         )
     }
 
+    /// Task 043. `~/` Include patterns resolve against the same home the
+    /// config came from, not a process-global home.
+    func testTildeSlashIncludeResolvesAgainstTheConfigHome() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sshDirectory = home.appendingPathComponent(".ssh")
+        try FileManager.default.createDirectory(
+            at: sshDirectory,
+            withIntermediateDirectories: true
+        )
+        try write(
+            "Host top\nInclude ~/extra.conf\n",
+            to: sshDirectory.appendingPathComponent("config")
+        )
+        try write(
+            "Host tilde-host\n",
+            to: home.appendingPathComponent("extra.conf")
+        )
+
+        let aliases = SSHConfigHostReader.load(
+            from: sshDirectory.appendingPathComponent("config"),
+            homeDirectory: home
+        )
+
+        XCTAssertEqual(aliases, ["top", "tilde-host"])
+    }
+
     private func write(_ contents: String, to url: URL) throws {
         try Data(contents.utf8).write(to: url)
     }
