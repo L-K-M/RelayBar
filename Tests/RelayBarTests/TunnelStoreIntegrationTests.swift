@@ -173,6 +173,66 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertNotNil(defaults.data(forKey: "savedTunnels.v1"))
     }
 
+    /// A corrupt profile blob used to be indistinguishable from a fresh
+    /// install, and the first save() after that overwrote the only copy.
+    func testUndecodableCollectionIsBackedUpBeforeStartingEmpty() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let corrupt = Data("{ not a profile list".utf8)
+        defaults.set(corrupt, forKey: "savedTunnels.v2")
+
+        let store = TunnelStore(defaults: defaults)
+
+        XCTAssertTrue(store.tunnels.isEmpty)
+        XCTAssertEqual(
+            defaults.data(forKey: "savedTunnels.v2.corrupt-backup"),
+            corrupt
+        )
+
+        // The backup has to survive the write that would otherwise have been
+        // the moment the profiles became unrecoverable.
+        store.add(
+            Tunnel(
+                name: "Fresh",
+                localPort: 8_080,
+                destinationHost: "localhost",
+                destinationPort: 3_000,
+                sshHost: "server"
+            )
+        )
+        XCTAssertEqual(
+            defaults.data(forKey: "savedTunnels.v2.corrupt-backup"),
+            corrupt
+        )
+    }
+
+    /// A corrupt v2 blob must not cost the user a usable v1 collection.
+    func testUndecodableCollectionStillMigratesLegacyProfiles() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(Data("nonsense".utf8), forKey: "savedTunnels.v2")
+        let legacy = LegacyTunnel(
+            id: UUID(),
+            name: "Legacy",
+            localPort: 8_080,
+            destinationHost: "localhost",
+            destinationPort: 3_000,
+            sshHost: "server",
+            bindAddress: nil,
+            additionalArguments: []
+        )
+        defaults.set(
+            try JSONEncoder().encode([legacy]),
+            forKey: "savedTunnels.v1"
+        )
+
+        let store = TunnelStore(defaults: defaults)
+
+        XCTAssertEqual(store.tunnels.count, 1)
+        XCTAssertEqual(store.tunnels[0].id, legacy.id)
+        XCTAssertNotNil(defaults.data(forKey: "savedTunnels.v2.corrupt-backup"))
+    }
+
     func testGroupMutationsNormalizeMergeAndPersistWithoutASeparateGroupStore() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

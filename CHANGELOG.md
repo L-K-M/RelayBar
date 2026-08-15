@@ -25,6 +25,15 @@ Notable RelayBar changes are recorded here.
 
 ### Fixed
 
+- An unreadable saved-profile blob is copied to
+  `savedTunnels.v2.corrupt-backup` before the store starts from an empty list.
+  A corrupt collection used to be indistinguishable from a fresh install, and
+  the next save overwrote the only copy of the user's profiles.
+- A master now has 30 seconds to publish its control socket instead of 12.
+  `ConnectTimeout` bounds only the TCP connect, so a slow network or a large
+  agent key set could be reported as a broken master while it was still
+  authenticating.
+
 - Clicking the menu-bar icon while the popover is open now dismisses the
   popover. The click already closed the transient popover on mouse-down, and
   the toggle action on mouse-up used to re-open it immediately, so the icon
