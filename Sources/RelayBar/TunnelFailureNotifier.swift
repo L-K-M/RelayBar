@@ -15,7 +15,32 @@ final class TunnelFailureNotifier {
         // Test binaries have no bundle proxy; UNUserNotificationCenter
         // aborts with an NSInternalInconsistencyException without one.
         guard Bundle.main.bundleIdentifier != nil else { return }
-        requestAuthorizationIfNeeded()
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                // Requests added before authorization is granted are
+                // dropped, so the first failure must wait for the answer.
+                center.requestAuthorization(options: [.alert, .sound]) {
+                    granted, _ in
+                    guard granted else { return }
+                    Self.add(profileName: profileName, message: message, to: center)
+                }
+            case .authorized, .provisional, .ephemeral:
+                Self.add(profileName: profileName, message: message, to: center)
+            case .denied:
+                break
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private static func add(
+        profileName: String,
+        message: String,
+        to center: UNUserNotificationCenter
+    ) {
         let content = UNMutableNotificationContent()
         content.title = "\(profileName) stopped retrying"
         content.body = message
@@ -25,16 +50,6 @@ final class TunnelFailureNotifier {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    private func requestAuthorizationIfNeeded() {
-        guard !requestedAuthorization else { return }
-        requestedAuthorization = true
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        }
+        center.add(request)
     }
 }
