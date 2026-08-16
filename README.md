@@ -5,6 +5,9 @@ native macOS menu-bar app for structured SSH forwarding profiles and exact-path 
 file access. A scion is the cutting taken from a parent plant and grown on separately;
 the name says where this came from without claiming to be it.
 
+Current source version: <!-- version -->1.4.0<!-- /version -->. This fork has not
+yet published a release.
+
 Start at the
 [upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
 to install a release, and the full documentation.
@@ -61,17 +64,25 @@ because a build pointing at them would replace itself with upstream's app.
 
 ## Build
 
-Requires macOS 13 or newer and the Xcode command-line tools. This fork publishes no
-releases, so build it yourself:
+Requires macOS 13 or newer and the Xcode command-line tools. This fork has not yet
+published a release, so build it yourself:
 
 ```bash
-./scripts/build-app.sh
+./scripts/build.sh
 open .build/RelayBarScion.app
 ```
 
-The script writes `.build/RelayBarScion.app` and signs it with the first valid **Developer ID
-Application** certificate in your login keychain; set `SIGNING_IDENTITY` to choose a
-different one.
+`scripts/build.sh` is a thin stub over the shared
+[release-tool](https://github.com/L-K-M/release-tool) build engine (adding
+`--clean`, `--debug`, `--run`, `--install`, `--zip`, `--dmg`); the build itself stays
+in `scripts/build-app.sh`, which writes `.build/RelayBarScion.app` and signs it with
+the first valid **Developer ID Application** certificate in your login keychain; set
+`SIGNING_IDENTITY` to choose a different one.
+
+Releases are cut with `scripts/release.sh X.Y.Z [--push]` (a stub over the same
+engine): it bumps the version, build number, and the version line above in one
+commit, tags `vX.Y.Z`, and with `--push` lets CI test, build, notarize, and publish
+the GitHub Release.
 
 Bundled third-party license text is in
 [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
