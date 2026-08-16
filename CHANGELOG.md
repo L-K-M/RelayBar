@@ -29,6 +29,15 @@ Notable RelayBar Scion changes are recorded here.
   point.
 ### Added
 
+- The family release tooling: `scripts/release.sh` and `scripts/build.sh` are
+  thin stubs over the shared engines from
+  [release-tool](https://github.com/L-K-M/release-tool). One command bumps the
+  version, the Sparkle build number, and the README version line together,
+  commits, and tags; a new tag-triggered workflow then tests, builds, signs,
+  notarizes, staples, and publishes the GitHub release, and verifies the
+  published archive byte-for-byte. The app's version is now single-sourced in
+  the Xcode build settings instead of hand-synced literals in the property
+  list.
 - Profiles can be duplicated from the row menu. The copy gets fresh profile
   and rule identities, lands right after the original, and starts stopped —
   clone-then-tweak without retyping a connection.
