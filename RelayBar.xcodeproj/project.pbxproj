@@ -41,7 +41,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		300000000000000000000000 /* RelayBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		300000000000000000000000 /* RelayBarScion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayBarScion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		300000000000000000000001 /* RelayBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBarApp.swift; sourceTree = "<group>"; };
 		300000000000000000000002 /* RelayBarRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBarRootView.swift; sourceTree = "<group>"; };
 		300000000000000000000003 /* SSHArgumentPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHArgumentPolicy.swift; sourceTree = "<group>"; };
@@ -102,7 +102,7 @@
 		130000000000000000000000 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				300000000000000000000000 /* RelayBar.app */,
+				300000000000000000000000 /* RelayBarScion.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,7 +183,7 @@
 				700000000000000000000003 /* SwiftMath */,
 			);
 			productName = RelayBar;
-			productReference = 300000000000000000000000 /* RelayBar.app */;
+			productReference = 300000000000000000000000 /* RelayBarScion.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -413,8 +413,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.relaybarscion.RelayBarScion;
+				PRODUCT_NAME = RelayBarScion;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -437,8 +437,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.lx2026.RelayBar;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.relaybarscion.RelayBarScion;
+				PRODUCT_NAME = RelayBarScion;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;

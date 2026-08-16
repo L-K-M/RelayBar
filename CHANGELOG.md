@@ -1,11 +1,28 @@
 # Changelog
 
-Notable RelayBar changes are recorded here.
+Notable RelayBar Scion changes are recorded here.
 
 ## [Unreleased]
 
 ### Changed
 
+- This fork is now **RelayBar Scion**, with its own bundle identifier
+  (`com.relaybarscion.RelayBarScion`), bundle name, and `RelayBarScion.app`
+  executable. It installs and runs alongside an upstream RelayBar instead of
+  fighting it for the same identity, preferences domain, and menu-bar slot.
+- On its first launch, Scion copies saved profiles and Remote Files hosts out
+  of upstream's `com.lx2026.RelayBar` preferences domain, so an existing
+  RelayBar user starts with their tunnels rather than an empty list. The copy
+  runs once, never overwrites anything already saved under the new identity,
+  and leaves upstream's domain untouched — the original app keeps working.
+  Launch at Login and macOS privacy grants are per-identity and do not carry
+  over; both are re-established from Settings and the usual system prompts.
+- Scion ships no update feed and no update-signing key. Upstream's feed
+  advertises upstream's app, so keeping it would have handed every Scion user
+  an update that replaced their build with the one they forked away from.
+  Sparkle therefore never starts, **Check for Updates…** stays disabled, and
+  new versions are installed by hand until this fork publishes a feed of its
+  own.
 - Editing an active profile now restarts it with the new definition instead of
   leaving it stopped. The editor's save button is labeled Save & Restart while
   the profile owns lifecycle work, so the restart is disclosed at the decision
@@ -72,7 +89,8 @@ Notable RelayBar changes are recorded here.
 
 - The menu-bar icon no longer disappears after a launch. The item is now an
   AppKit `NSStatusItem` the application delegate creates and holds, under the
-  explicit autosave name `com.lx2026.RelayBar.status`, so RelayBar can assert
+  explicit autosave name `com.relaybarscion.RelayBarScion.status`, so the app
+  can assert
   its own visibility at every launch and discard a saved slot that no attached
   screen can display. `MenuBarExtra` kept its status item private, leaving the
   app no way to recover once the system had persisted the icon as hidden.

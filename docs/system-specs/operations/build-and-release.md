@@ -6,13 +6,16 @@
 - Xcode command-line tools
 - Developer ID Application certificate for packaged builds
 - Sparkle's EdDSA private key in the login Keychain under account
-  `com.lx2026.RelayBar`
+  `com.relaybarscion.RelayBarScion`, for the update-publication scripts only.
+  Every script reads the account from `SPARKLE_ACCOUNT` and falls back to that
+  value, so a maintainer with a differently named key overrides it in the
+  environment rather than editing the scripts.
 
 ## Commands
 
 - `swift test` runs the package tests.
-- `./scripts/build-app.sh` builds and signs `.build/RelayBar.app`.
-- `./scripts/package-release.sh` creates `.build/RelayBar.zip`.
+- `./scripts/build-app.sh` builds and signs `.build/RelayBarScion.app`.
+- `./scripts/package-release.sh` creates `.build/RelayBarScion.zip`.
 - `./scripts/notarize-release.sh` submits, waits, staples, and validates a release.
 - `./scripts/update-appcast.sh <final ZIP> <immutable HTTPS URL>` verifies the
   published archive byte-for-byte, preserves full-update history, signs the
@@ -28,13 +31,22 @@
 
 The Xcode target pins Sparkle 2.9.4 exactly. SwiftPM deliberately omits it so
 unit tests cannot initialize an updater or contact the network. The application
-property list fixes the stable HTTPS feed, public EdDSA key, seven-day interval,
-automatic checks off by default, and automatic downloads/installs disabled.
-It also requires a signed feed and verification before extraction. The updater
-delegate sends no system-profile fields.
+property list fixes the seven-day interval, automatic checks off by default, and
+automatic downloads/installs disabled. It also requires a signed feed and
+verification before extraction. The updater delegate sends no system-profile
+fields.
+
+This fork ships **no** `SUFeedURL` and **no** `SUPublicEDKey`: upstream's feed
+advertises upstream's app, so inheriting it would hand every Scion user an
+update that replaces their build with the one they left. Sparkle therefore
+fails to start, the app logs that and carries on, and Settings reports the
+check as unavailable. Everything below about publishing an update applies only
+once this fork owns a feed URL and an EdDSA key pair of its own and adds both
+keys back to `Packaging/Info.plist`; until then, releases are downloaded and
+installed by hand.
 
 Private update staging is deliberately separate from production publication.
-Its appcast may use only `http://127.0.0.1:<explicit-port>/RelayBar.zip`, is
+Its appcast may use only `http://127.0.0.1:<explicit-port>/RelayBarScion.zip`, is
 served from a new local directory, and is selected by the guarded maintainer
 launch argument described in the application-shell specification. It never edits
 `docs/appcast.xml`, accepts a network host, or weakens production HTTPS and
@@ -75,7 +87,7 @@ verification checks the feed signature before downloading and validating every
 retained enclosure.
 
 Create an annotated version tag on the verified release commit. A stable GitHub
-release contains one immutable `RelayBar.zip`, is neither a draft nor a
+release contains one immutable `RelayBarScion.zip`, is neither a draft nor a
 prerelease, and must not have its asset replaced in place. Independently
 download the public asset without repository credentials, compare its SHA-256
 and bytes with the verified local archive, and repeat signature, ticket,
@@ -106,9 +118,11 @@ only that release and newer can use the in-app path.
 ### Update-signing key custody and recovery
 
 The private EdDSA key stays in the maintainer's login Keychain under account
-`com.lx2026.RelayBar`; only its public key is committed. Before publishing the
-first update, export one encrypted offline recovery copy with Sparkle's
-`generate_keys --account com.lx2026.RelayBar -x <secure-path>`, verify a restore
+`com.relaybarscion.RelayBarScion`; only its public key is committed. Before
+publishing the first update, export one encrypted offline recovery copy with
+Sparkle's
+`generate_keys --account com.relaybarscion.RelayBarScion -x <secure-path>`,
+verify a restore
 on an isolated maintainer environment, and record its custodian without putting
 the path, key, or Keychain password in the repository or CI logs.
 
@@ -122,6 +136,10 @@ Never remove an EdDSA key from a build that already participates in the update
 chain.
 
 ## Homebrew cask
+
+This fork publishes no cask. The tap, formula, and upgrade command below belong
+to upstream and install upstream's app; they are recorded here as the procedure
+a Scion cask would follow, not as a channel this fork currently ships through.
 
 The maintainer-owned `lx2026/homebrew-tap` repository publishes
 `Casks/relaybar.rb`. The cask installs the same immutable, versioned

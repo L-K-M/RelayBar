@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPCAST="${1:-$ROOT/docs/appcast.xml}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
 EXPECTED_FEED="$(plutil -extract SUFeedURL raw "$ROOT/Packaging/Info.plist")"
 EXPECTED_KEY="$(plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist")"
 REQUIRES_SIGNED_FEED="$(

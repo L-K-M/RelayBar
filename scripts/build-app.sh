@@ -19,7 +19,7 @@ esac
 
 cd "$ROOT"
 DERIVED_DATA="$ROOT/.build/LocalDerivedData"
-APP="$ROOT/.build/RelayBar.app"
+APP="$ROOT/.build/RelayBarScion.app"
 
 if [[ -z "$SIGNING_IDENTITY" ]]; then
   SIGNING_IDENTITY="$(
@@ -45,7 +45,7 @@ xcodebuild \
   build >/dev/null
 
 rm -rf "$APP"
-cp -R "$DERIVED_DATA/Build/Products/$XCODE_CONFIGURATION/RelayBar.app" "$APP"
+cp -R "$DERIVED_DATA/Build/Products/$XCODE_CONFIGURATION/RelayBarScion.app" "$APP"
 
 SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/B"

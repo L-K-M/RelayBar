@@ -5,13 +5,13 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>RelayBar</string>
+    <string>RelayBarScion</string>
     <key>CFBundleIdentifier</key>
-    <string>com.lx2026.RelayBar</string>
+    <string>com.relaybarscion.RelayBarScion</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>RelayBar</string>
+    <string>RelayBar Scion</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -31,11 +31,12 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>RelayBar connects to SSH hosts on your local network to create tunnels.</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 RelayBar</string>
-    <key>SUFeedURL</key>
-    <string>https://lx2026.github.io/RelayBar/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>YU2cxOZU33vQR5b4HHuNCl2KBlrqgVuz2Hi9Fows8w0=</string>
+    <string>Copyright © 2026 RelayBar Scion</string>
+    <!-- No SUFeedURL or SUPublicEDKey: this fork has no update feed of its
+         own, and upstream's feed and signing key would replace this build with
+         upstream's. Sparkle's start() throws without them, which the updater
+         service logs before carrying on, leaving Check for Updates… disabled.
+         Add both keys together when this fork publishes releases. -->
     <key>SURequireSignedFeed</key>
     <true/>
     <key>SUEnableAutomaticChecks</key>

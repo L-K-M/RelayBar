@@ -5,11 +5,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPCAST="${1:-}"
 ARCHIVE="${2:-}"
 PORT="${3:-}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
 EXPECTED_KEY="$(plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist")"
 
 if [[ -z "$APPCAST" || -z "$ARCHIVE" || -z "$PORT" ]]; then
-  echo "Usage: $0 <private-appcast.xml> <RelayBar.zip> <loopback-port>" >&2
+  echo "Usage: $0 <private-appcast.xml> <RelayBarScion.zip> <loopback-port>" >&2
   exit 2
 fi
 if [[ ! -f "$APPCAST" || ! -f "$ARCHIVE" ]]; then
@@ -78,7 +78,7 @@ print("\t".join(row))
 PY
 
 IFS=$'\t' read -r URL LENGTH SIGNATURE BUILD < "$RELAYBAR_PRIVATE_TEMP/enclosure.tsv"
-if [[ "$URL" != "http://127.0.0.1:$PORT/RelayBar.zip" ]]; then
+if [[ "$URL" != "http://127.0.0.1:$PORT/RelayBarScion.zip" ]]; then
   echo "Unexpected private enclosure URL: $URL" >&2
   exit 1
 fi

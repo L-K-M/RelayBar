@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "210000000000000000000000"
-               BuildableName = "RelayBar.app"
+               BuildableName = "RelayBarScion.app"
                BlueprintName = "RelayBar"
                ReferencedContainer = "container:RelayBar.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "210000000000000000000000"
-            BuildableName = "RelayBar.app"
+            BuildableName = "RelayBarScion.app"
             BlueprintName = "RelayBar"
             ReferencedContainer = "container:RelayBar.xcodeproj">
          </BuildableReference>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "210000000000000000000000"
-            BuildableName = "RelayBar.app"
+            BuildableName = "RelayBarScion.app"
             BlueprintName = "RelayBar"
             ReferencedContainer = "container:RelayBar.xcodeproj">
          </BuildableReference>

@@ -5,6 +5,7 @@
 `Tunnel` stores a stable UUID, name, optional group tag, a Start at Launch flag, SSH destination, allowed connection arguments, ordered typed forwarding rules, optional Remote SOCKS policy, and Unix-socket settings. Each rule has a stable UUID, explicit kind, tagged TCP-or-Unix listener, and an optional tagged fixed destination.
 
 - Storage: JSON array in `UserDefaults` under `savedTunnels.v2`.
+- On the first launch under this fork's bundle identifier, saved profiles and Remote Files hosts are copied from the upstream identifier's domain `com.lx2026.RelayBar` when the key is absent here. The copy runs once, never overwrites a value already saved under this identity, and leaves the upstream domain unchanged so an upstream install keeps working.
 - A group tag is either absent or a normalized string of at most 32 user-visible characters. Normalization trims surrounding whitespace and collapses internal whitespace runs. Line breaks and control characters are invalid.
 - Group matching uses a locale-independent case-folded key and retains the first saved spelling. Groups are derived from profile tags; there is no separate group collection, empty-group record, index, or cache.
 - Section derivation buckets profiles in one pass, sorts only distinct named groups with localized standard ordering, preserves profile order inside each bucket, and appends Ungrouped last.

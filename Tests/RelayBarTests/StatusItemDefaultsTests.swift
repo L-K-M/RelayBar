@@ -69,7 +69,7 @@ final class StatusItemDefaultsTests: XCTestCase {
     private var suiteName: String!
     private var defaults: UserDefaults!
 
-    private let autosaveName = "com.lx2026.RelayBar.status"
+    private let autosaveName = "com.relaybarscion.RelayBarScion.status"
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -225,5 +225,98 @@ final class StatusItemDefaultsTests: XCTestCase {
         )
 
         XCTAssertNil(defaults.object(forKey: key))
+    }
+}
+
+/// The rename gave the fork a new preferences domain; without this the user's
+/// saved profiles stay behind in the old one and the app looks freshly
+/// installed.
+final class LegacyDefaultsMigrationTests: XCTestCase {
+    private var suites: [String] = []
+
+    private func makeDefaults() throws -> UserDefaults {
+        let name = "RelayBarMigration.\(UUID().uuidString)"
+        suites.append(name)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }
+
+    override func tearDown() {
+        for name in suites {
+            UserDefaults().removePersistentDomain(forName: name)
+        }
+        suites = []
+        super.tearDown()
+    }
+
+    func testCopiesEveryUserDataKeyIntoAnEmptyDomain() throws {
+        let new = try makeDefaults()
+        let old = try makeDefaults()
+        for key in LegacyDefaultsMigration.migratedKeys {
+            old.set(Data("\(key) payload".utf8), forKey: key)
+        }
+
+        let copied = LegacyDefaultsMigration.run(into: new, from: old)
+
+        XCTAssertEqual(Set(copied), Set(LegacyDefaultsMigration.migratedKeys))
+        for key in LegacyDefaultsMigration.migratedKeys {
+            XCTAssertEqual(
+                new.data(forKey: key),
+                Data("\(key) payload".utf8),
+                key
+            )
+        }
+    }
+
+    /// The old app may still be installed, so the migration reads it and
+    /// leaves it intact.
+    func testLeavesTheLegacyDomainUntouched() throws {
+        let new = try makeDefaults()
+        let old = try makeDefaults()
+        old.set(Data("profiles".utf8), forKey: "savedTunnels.v2")
+
+        LegacyDefaultsMigration.run(into: new, from: old)
+
+        XCTAssertEqual(old.data(forKey: "savedTunnels.v2"), Data("profiles".utf8))
+    }
+
+    func testNeverOverwritesDataAlreadySavedUnderTheNewIdentity() throws {
+        let new = try makeDefaults()
+        let old = try makeDefaults()
+        new.set(Data("mine".utf8), forKey: "savedTunnels.v2")
+        old.set(Data("theirs".utf8), forKey: "savedTunnels.v2")
+        old.set(Data("hosts".utf8), forKey: "remoteFiles.savedServers.v1")
+
+        let copied = LegacyDefaultsMigration.run(into: new, from: old)
+
+        XCTAssertEqual(new.data(forKey: "savedTunnels.v2"), Data("mine".utf8))
+        XCTAssertEqual(copied, ["remoteFiles.savedServers.v1"])
+    }
+
+    func testRunsOnceEvenIfTheLegacyDomainChangesLater() throws {
+        let new = try makeDefaults()
+        let old = try makeDefaults()
+        old.set(Data("first".utf8), forKey: "savedTunnels.v2")
+
+        XCTAssertEqual(
+            LegacyDefaultsMigration.run(into: new, from: old),
+            ["savedTunnels.v2"]
+        )
+
+        new.removeObject(forKey: "savedTunnels.v2")
+        old.set(Data("second".utf8), forKey: "savedTunnels.v2")
+
+        XCTAssertEqual(LegacyDefaultsMigration.run(into: new, from: old), [])
+        XCTAssertNil(new.data(forKey: "savedTunnels.v2"))
+    }
+
+    func testFreshInstallCopiesNothingAndStillMarksItselfDone() throws {
+        let new = try makeDefaults()
+
+        XCTAssertEqual(LegacyDefaultsMigration.run(into: new, from: nil), [])
+        XCTAssertTrue(
+            new.bool(forKey: LegacyDefaultsMigration.completionKey)
+        )
     }
 }

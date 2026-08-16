@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE to a notarytool keychain profile}"
 
-APP="$ROOT/.build/RelayBar.app"
-ZIP="$ROOT/.build/RelayBar.zip"
+APP="$ROOT/.build/RelayBarScion.app"
+ZIP="$ROOT/.build/RelayBarScion.zip"
 
 "$ROOT/scripts/package-release.sh"
 
