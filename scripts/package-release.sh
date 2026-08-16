@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/.build/RelayBar.app"
-ZIP="$ROOT/.build/RelayBar.zip"
+APP="$ROOT/.build/RelayBarScion.app"
+ZIP="$ROOT/.build/RelayBarScion.zip"
 
 "$ROOT/scripts/build-app.sh" release
 

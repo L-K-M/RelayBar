@@ -23,19 +23,26 @@ final class TunnelFailureNotifier {
         // NSInternalInconsistencyException there. Detect XCTest instead of
         // touching either API.
         guard TunnelFailureNotifier.isRunningUnderXCTest == false else { return }
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
+        // Each closure asks for the center again rather than capturing one.
+        // These completions are `@Sendable` and UNUserNotificationCenter is
+        // not Sendable, so a captured center is a non-Sendable value crossing
+        // an isolation boundary — an error under complete checking on SDKs
+        // that carry the annotation. `current()` is a singleton accessor with
+        // no isolation of its own, so re-reading it inside costs nothing and
+        // hands each closure the same object without the capture.
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
             switch settings.authorizationStatus {
             case .notDetermined:
                 // Requests added before authorization is granted are
                 // dropped, so the first failure must wait for the answer.
-                center.requestAuthorization(options: [.alert, .sound]) {
-                    granted, _ in
-                    guard granted else { return }
-                    Self.add(profileName: profileName, message: message, to: center)
-                }
+                UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .sound]) {
+                        granted, _ in
+                        guard granted else { return }
+                        Self.add(profileName: profileName, message: message)
+                    }
             case .authorized, .provisional, .ephemeral:
-                Self.add(profileName: profileName, message: message, to: center)
+                Self.add(profileName: profileName, message: message)
             case .denied:
                 break
             @unknown default:
@@ -49,8 +56,7 @@ final class TunnelFailureNotifier {
     /// nonisolated (and Swift 6-clean).
     private nonisolated static func add(
         profileName: String,
-        message: String,
-        to center: UNUserNotificationCenter
+        message: String
     ) {
         let content = UNMutableNotificationContent()
         content.title = "\(profileName) stopped retrying"
@@ -63,6 +69,6 @@ final class TunnelFailureNotifier {
             content: content,
             trigger: nil
         )
-        center.add(request)
+        UNUserNotificationCenter.current().add(request)
     }
 }

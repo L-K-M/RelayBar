@@ -3,9 +3,23 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPCAST="${1:-$ROOT/docs/appcast.xml}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
-EXPECTED_FEED="$(plutil -extract SUFeedURL raw "$ROOT/Packaging/Info.plist")"
-EXPECTED_KEY="$(plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist")"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
+# This fork ships no SUFeedURL or SUPublicEDKey, so both extractions now exit
+# nonzero and `set -e` would abort here with a bare plutil error. Say what is
+# actually wrong instead, and refuse before the checks below can compare the
+# retained upstream appcast against upstream's own feed URL and key.
+if ! EXPECTED_FEED="$(
+      plutil -extract SUFeedURL raw "$ROOT/Packaging/Info.plist" 2>/dev/null
+    )" ||
+   ! EXPECTED_KEY="$(
+      plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist" 2>/dev/null
+    )" ||
+   [[ -z "$EXPECTED_FEED" || -z "$EXPECTED_KEY" ]]; then
+  echo "Packaging/Info.plist carries no SUFeedURL or SUPublicEDKey." >&2
+  echo "This fork publishes no update feed, so there is nothing to verify." >&2
+  echo "Add both keys, pointing at a fork-owned feed, before running this." >&2
+  exit 1
+fi
 REQUIRES_SIGNED_FEED="$(
   plutil -extract SURequireSignedFeed raw "$ROOT/Packaging/Info.plist"
 )"

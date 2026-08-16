@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCHIVE="${1:-}"
 DOWNLOAD_URL="${2:-}"
 APPCAST="$ROOT/docs/appcast.xml"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
 
 if [[ -z "$ARCHIVE" || -z "$DOWNLOAD_URL" ]]; then
-  echo "Usage: $0 <final-stapled-RelayBar.zip> <immutable-download-url>" >&2
+  echo "Usage: $0 <final-stapled-RelayBarScion.zip> <immutable-download-url>" >&2
   exit 2
 fi
 if [[ ! -f "$ARCHIVE" ]]; then
@@ -35,15 +35,15 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir "$RELAYBAR_TEMP/archives"
-cp "$ARCHIVE" "$RELAYBAR_TEMP/archives/RelayBar.zip"
+cp "$ARCHIVE" "$RELAYBAR_TEMP/archives/RelayBarScion.zip"
 if [[ -f "$APPCAST" ]]; then
   cp "$APPCAST" "$RELAYBAR_TEMP/archives/appcast.xml"
 fi
 
 curl --fail --location --silent --show-error \
   "$DOWNLOAD_URL" \
-  --output "$RELAYBAR_TEMP/public-RelayBar.zip"
-if ! cmp -s "$ARCHIVE" "$RELAYBAR_TEMP/public-RelayBar.zip"; then
+  --output "$RELAYBAR_TEMP/public-RelayBarScion.zip"
+if ! cmp -s "$ARCHIVE" "$RELAYBAR_TEMP/public-RelayBarScion.zip"; then
   echo "The public archive differs from the final stapled archive." >&2
   exit 1
 fi

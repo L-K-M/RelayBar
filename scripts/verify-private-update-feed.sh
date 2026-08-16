@@ -5,11 +5,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APPCAST="${1:-}"
 ARCHIVE="${2:-}"
 PORT="${3:-}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
-EXPECTED_KEY="$(plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist")"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
+# This fork ships no SUPublicEDKey, so the extraction exits nonzero and `set -e`
+# would abort here with a bare plutil error — including when stage-private-update.sh
+# calls this script, which is the documented rehearsal path.
+if ! EXPECTED_KEY="$(
+      plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist" 2>/dev/null
+    )" || [[ -z "$EXPECTED_KEY" ]]; then
+  echo "Packaging/Info.plist carries no SUPublicEDKey." >&2
+  echo "The loopback rehearsal verifies a build against its own embedded key," >&2
+  echo "so it needs a fork-owned key pair before it can run." >&2
+  exit 1
+fi
 
 if [[ -z "$APPCAST" || -z "$ARCHIVE" || -z "$PORT" ]]; then
-  echo "Usage: $0 <private-appcast.xml> <RelayBar.zip> <loopback-port>" >&2
+  echo "Usage: $0 <private-appcast.xml> <RelayBarScion.zip> <loopback-port>" >&2
   exit 2
 fi
 if [[ ! -f "$APPCAST" || ! -f "$ARCHIVE" ]]; then
@@ -78,7 +88,7 @@ print("\t".join(row))
 PY
 
 IFS=$'\t' read -r URL LENGTH SIGNATURE BUILD < "$RELAYBAR_PRIVATE_TEMP/enclosure.tsv"
-if [[ "$URL" != "http://127.0.0.1:$PORT/RelayBar.zip" ]]; then
+if [[ "$URL" != "http://127.0.0.1:$PORT/RelayBarScion.zip" ]]; then
   echo "Unexpected private enclosure URL: $URL" >&2
   exit 1
 fi

@@ -1,7 +1,9 @@
-# RelayBar
+# RelayBar Scion
 
-A fork of [lx2026/RelayBar](https://github.com/lx2026/RelayBar), a tiny native macOS
-menu-bar app for structured SSH forwarding profiles and exact-path remote file access.
+RelayBar Scion is a fork of [lx2026/RelayBar](https://github.com/lx2026/RelayBar), a tiny
+native macOS menu-bar app for structured SSH forwarding profiles and exact-path remote
+file access. A scion is the cutting taken from a parent plant and grown on separately;
+the name says where this came from without claiming to be it.
 
 Start at the
 [upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
@@ -27,9 +29,9 @@ managed by a SwiftUI scene. The app moves off the SwiftUI `App` lifecycle to a p
 `NSApplication` one so that ownership is real rather than nominal.
 
 **The item has a stable identity the app can address.** It carries the explicit autosave
-name `com.lx2026.RelayBar.status`. At every launch RelayBar asserts its visibility,
-discards a saved slot that no attached screen can display, and clears the stale keys the
-old `MenuBarExtra` item left behind.
+name `com.relaybarscion.RelayBarScion.status`. At every launch the app asserts its
+visibility, discards a saved slot that no attached screen can display, and clears the
+stale keys the old `MenuBarExtra` item left behind.
 
 **Re-launching the app is an escape hatch.** Opening RelayBar while it is already running
 re-asserts the icon and opens the menu, instead of doing nothing.
@@ -41,6 +43,22 @@ This change comes with a trade-off: because visibility is asserted at every laun
 icon off the menu bar does not persist. For an app whose only surface is that icon,
 coming back is the safer default.
 
+## Installing alongside upstream
+
+The app carries its own bundle identifier, `com.relaybarscion.RelayBarScion`, so macOS
+treats it as a separate application: separate preferences, separate Login Item, separate
+Accessibility and Local Network grants, and a separate menu-bar slot. Upstream RelayBar
+can stay installed and running.
+
+On its first launch it copies saved forwarding profiles and Remote Files hosts out of
+upstream's preferences domain so nothing has to be retyped. It copies rather than moves,
+leaving upstream's own preferences intact. Two things do not carry over, because they
+belong to the old identity: Launch at Login must be re-enabled, and macOS will ask again
+for Accessibility or Local Network access when a connection first needs it.
+
+It also ships no update feed. Upstream's feed and signing key are deliberately absent,
+because a build pointing at them would replace itself with upstream's app.
+
 ## Build
 
 Requires macOS 13 or newer and the Xcode command-line tools. This fork publishes no
@@ -48,10 +66,10 @@ releases, so build it yourself:
 
 ```bash
 ./scripts/build-app.sh
-open .build/RelayBar.app
+open .build/RelayBarScion.app
 ```
 
-The script writes `.build/RelayBar.app` and signs it with the first valid **Developer ID
+The script writes `.build/RelayBarScion.app` and signs it with the first valid **Developer ID
 Application** certificate in your login keychain; set `SIGNING_IDENTITY` to choose a
 different one.
 

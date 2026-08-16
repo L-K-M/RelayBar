@@ -19,7 +19,7 @@ esac
 
 cd "$ROOT"
 DERIVED_DATA="$ROOT/.build/LocalDerivedData"
-APP="$ROOT/.build/RelayBar.app"
+APP="$ROOT/.build/RelayBarScion.app"
 
 if [[ -z "$SIGNING_IDENTITY" ]]; then
   SIGNING_IDENTITY="$(
@@ -35,17 +35,34 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
   exit 1
 fi
 
-xcodebuild \
+# xcodebuild writes diagnostics to stdout and only the failure summary to
+# stderr, so discarding stdout outright threw away every reason a build could
+# fail and left the caller with a list of commands and no error text. Keep the
+# quiet successful build, but hold the log and print the diagnostics on failure.
+BUILD_LOG="$ROOT/.build/xcodebuild-$XCODE_CONFIGURATION.log"
+mkdir -p "$ROOT/.build"
+
+if ! xcodebuild \
   -project RelayBar.xcodeproj \
   -scheme RelayBar \
   -configuration "$XCODE_CONFIGURATION" \
   -destination "$DESTINATION" \
   -derivedDataPath "$DERIVED_DATA" \
   CODE_SIGNING_ALLOWED=NO \
-  build >/dev/null
+  build >"$BUILD_LOG" 2>&1
+then
+  echo "Build failed. Diagnostics from $BUILD_LOG:" >&2
+  # A warning promoted by SWIFT_TREAT_WARNINGS_AS_ERRORS still prints as
+  # "warning:", so both are worth showing; the tail is the fallback for a
+  # failure that produced neither, such as a missing dependency.
+  if ! grep -E "(error|warning): " "$BUILD_LOG" >&2; then
+    tail -n 40 "$BUILD_LOG" >&2
+  fi
+  exit 1
+fi
 
 rm -rf "$APP"
-cp -R "$DERIVED_DATA/Build/Products/$XCODE_CONFIGURATION/RelayBar.app" "$APP"
+cp -R "$DERIVED_DATA/Build/Products/$XCODE_CONFIGURATION/RelayBarScion.app" "$APP"
 
 SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/B"

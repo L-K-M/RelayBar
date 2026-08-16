@@ -99,7 +99,7 @@ final class RelayBarAppDelegate:
     /// `MenuBarExtra` left the name to AppKit, which assigns one by creation
     /// order — `Item-0` — so the persisted state was neither recognizable as
     /// RelayBar's nor reachable from RelayBar.
-    private static let statusItemAutosaveName = "com.lx2026.RelayBar.status"
+    private static let statusItemAutosaveName = "com.relaybarscion.RelayBarScion.status"
 
     private lazy var store = TunnelStore.shared
     private lazy var updates = UpdateModel(service: UpdateServiceFactory.shared)
@@ -115,6 +115,9 @@ final class RelayBarAppDelegate:
     private var tunnelActivityObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before TunnelStore.shared reads its first key: the new bundle
+        // identifier means a new, empty preferences domain.
+        LegacyDefaultsMigration.run()
         installMainMenu()
         setUpStatusItem()
         observeTunnelActivity()
@@ -203,6 +206,13 @@ final class RelayBarAppDelegate:
         quitConfirmationInFlight = true
         DispatchQueue.main.async { [weak self] in
             guard let self else {
+                // Documented as unreachable, which is exactly why it logs: if
+                // delegate ownership ever changes, quitting without a prompt
+                // needs to be explicable from the console.
+                NSLog(
+                    "RelayBar Scion: delegate released before the quit "
+                        + "confirmation; terminating without prompting."
+                )
                 // Returning .terminateLater owes AppKit exactly one reply.
                 // The delegate outlives every quit today — main() holds it
                 // for the process lifetime — but a deallocated delegate
@@ -927,6 +937,81 @@ enum QuitConfirmation {
 
     static func stopButtonTitle(activeTunnelCount: Int) -> String {
         activeTunnelCount == 1 ? "Stop Tunnel and Quit" : "Stop Tunnels and Quit"
+    }
+}
+
+/// This fork carries its own bundle identifier, which gives it a preferences
+/// domain of its own and leaves every saved profile behind in the domain the
+/// upstream identifier owned. This copies the user's data across once, on the
+/// first launch that finds the new domain without it.
+///
+/// It copies and never moves. The app this fork came from may still be
+/// installed and in use, and emptying its preferences out from under it would
+/// be a second surprise on top of the rename.
+enum LegacyDefaultsMigration {
+    /// The bundle identifier this fork was built from.
+    static let legacyDomainName = "com.lx2026.RelayBar"
+
+    /// Keys holding work the user created. Runtime state, window state, and
+    /// the status item's saved slot are deliberately absent: they describe the
+    /// old identity's placement and cost nothing to rebuild.
+    static let migratedKeys = [
+        "savedTunnels.v2",
+        "savedTunnels.v1",
+        "remoteFiles.savedServers.v1",
+        "remoteFiles.recentServers.v1",
+        "remoteFiles.lastPaths.v1"
+    ]
+
+    static let completionKey = "migratedLegacyRelayBarDefaults"
+
+    /// Returns the keys actually copied, which is empty on every launch after
+    /// the first — including the first launch of a fresh install, where there
+    /// is nothing to carry over.
+    @discardableResult
+    static func run(
+        into defaults: UserDefaults = .standard,
+        // Spelled with the type name because a default argument is compiled
+        // as its own thunk rather than in the body's scope; qualifying it is
+        // the reading that is unambiguously valid.
+        from legacy: UserDefaults? = UserDefaults(
+            suiteName: LegacyDefaultsMigration.legacyDomainName
+        )
+    ) -> [String] {
+        guard !defaults.bool(forKey: completionKey) else { return [] }
+        // A nil suite means the domain could not be opened at all, which is
+        // not the same as finding it empty. Leave the flag unset so the next
+        // launch looks again rather than recording a migration that never
+        // read anything.
+        guard let legacy else { return [] }
+        // Marked before copying rather than after: a crash midway through
+        // should not re-run against a domain the user has since edited here.
+        defaults.set(true, forKey: completionKey)
+
+        var copied: [String] = []
+        for key in migratedKeys {
+            // A value already under this identity wins. The user has used this
+            // build; the old domain is only a seed for an empty one.
+            guard
+                defaults.object(forKey: key) == nil,
+                let value = legacy.object(forKey: key)
+            else {
+                continue
+            }
+            defaults.set(value, forKey: key)
+            copied.append(key)
+        }
+
+        if !copied.isEmpty {
+            NSLog(
+                // %ld, not %d: `count` is a 64-bit Int on every platform this
+                // ships to.
+                "RelayBar Scion carried %ld saved keys over from %@.",
+                copied.count,
+                legacyDomainName
+            )
+        }
+        return copied
     }
 }
 

@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCHIVE="${1:-}"
 PORT="${2:-}"
 OUTPUT_DIRECTORY="${3:-}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.lx2026.RelayBar}"
+SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
 
 if [[ -z "$ARCHIVE" || -z "$PORT" || -z "$OUTPUT_DIRECTORY" ]]; then
-  echo "Usage: $0 <final-stapled-RelayBar.zip> <loopback-port> <new-output-directory>" >&2
+  echo "Usage: $0 <final-stapled-RelayBarScion.zip> <loopback-port> <new-output-directory>" >&2
   exit 2
 fi
 if [[ ! -f "$ARCHIVE" ]]; then
@@ -31,7 +31,7 @@ if [[ ! -x "$SPARKLE_BIN/generate_appcast" ]]; then
 fi
 
 mkdir "$OUTPUT_DIRECTORY"
-cp "$ARCHIVE" "$OUTPUT_DIRECTORY/RelayBar.zip"
+cp "$ARCHIVE" "$OUTPUT_DIRECTORY/RelayBarScion.zip"
 "$SPARKLE_BIN/generate_appcast" \
   --account "$SPARKLE_ACCOUNT" \
   --download-url-prefix "http://127.0.0.1:$PORT/" \
@@ -41,6 +41,6 @@ cp "$ARCHIVE" "$OUTPUT_DIRECTORY/RelayBar.zip"
 
 "$ROOT/scripts/verify-private-update-feed.sh" \
   "$OUTPUT_DIRECTORY/appcast.xml" \
-  "$OUTPUT_DIRECTORY/RelayBar.zip" \
+  "$OUTPUT_DIRECTORY/RelayBarScion.zip" \
   "$PORT"
 echo "$OUTPUT_DIRECTORY"

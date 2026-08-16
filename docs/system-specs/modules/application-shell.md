@@ -8,7 +8,7 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - The app runs as a menu-bar accessory with no Dock icon (`LSUIElement`).
 - The delegate creates the status item once at launch, holds it for the process
   lifetime, and gives it the explicit autosave name
-  `com.lx2026.RelayBar.status`. The system persists the item's slot and
+  `com.relaybarscion.RelayBarScion.status`. The system persists the item's slot and
   visibility under that name in RelayBar's own defaults domain, so the app can
   address, repair, and re-assert its own icon. Visibility is set true at every
   launch, a saved slot that no attached screen can display is discarded before
@@ -61,6 +61,12 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   schedule resets Sparkle's cycle, and app launch starts that cycle; when no
   prior check exists or the prior check is overdue, a scheduled background
   check may therefore begin promptly.
+- This fork bundles no update feed and no public update key, because upstream's
+  feed advertises upstream's app. The updater consequently fails to start, that
+  failure is logged rather than surfaced as an alert, and **Check for
+  Updates…** stays disabled. Every other Settings surface behaves unchanged, so
+  restoring `SUFeedURL` and `SUPublicEDKey` is all that a fork-owned feed
+  requires.
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
 - A login launch opens the same menu-bar-only app. Saved profiles whose **Start at Launch** preference is on are started automatically at launch; every other profile stays stopped until the user starts it. Debug preview launches (`--preview-window`, `--remote-files-preview`, or a valid `--remote-files-live-preview`) do not auto-start saved profiles.
 - A quiet Settings footer reads version and build from the running bundle,
@@ -78,11 +84,15 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   SSH master and control helper has exited. Stop sends SIGTERM, then escalates
   a surviving child to SIGKILL after a bounded grace period so update relaunch,
   quit, logout, and shutdown cannot wait indefinitely.
-- A maintainer-only `--maintainer-update-feed` launch argument can override the
-  bundled production feed only for an explicit-port, plain-HTTP loopback URL
-  on `127.0.0.1`, `localhost`, or `::1`. The override is process-scoped and is
-  not persisted. An invalid requested override prevents the updater from
-  starting; an ordinary launch uses the signed HTTPS production feed.
+- A maintainer-only `--maintainer-update-feed` launch argument can supply a feed
+  only as an explicit-port, plain-HTTP loopback URL on `127.0.0.1`,
+  `localhost`, or `::1`. The override is process-scoped and is not persisted.
+  An invalid requested override prevents the updater from starting, and it does
+  not relax the signed-feed or verify-before-extraction requirements. While no
+  public update key is bundled, the argument cannot start the updater either —
+  Sparkle refuses to run without a key to verify signatures against — so the
+  loopback rehearsal is available only to a build that embeds a fork-owned
+  key.
 - Quit with any tunnel starting, retrying, or running asks once — Stop and Quit, or Cancel — before stopping all managed SSH processes and terminating; a deferred update install takes over termination first and asks its own question. With nothing active, Quit proceeds without a prompt.
 
 ## Ownership
