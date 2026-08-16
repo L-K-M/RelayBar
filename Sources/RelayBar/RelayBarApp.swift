@@ -979,10 +979,14 @@ enum LegacyDefaultsMigration {
         )
     ) -> [String] {
         guard !defaults.bool(forKey: completionKey) else { return [] }
+        // A nil suite means the domain could not be opened at all, which is
+        // not the same as finding it empty. Leave the flag unset so the next
+        // launch looks again rather than recording a migration that never
+        // read anything.
+        guard let legacy else { return [] }
         // Marked before copying rather than after: a crash midway through
         // should not re-run against a domain the user has since edited here.
         defaults.set(true, forKey: completionKey)
-        guard let legacy else { return [] }
 
         var copied: [String] = []
         for key in migratedKeys {

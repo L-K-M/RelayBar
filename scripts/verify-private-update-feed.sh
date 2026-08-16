@@ -6,7 +6,17 @@ APPCAST="${1:-}"
 ARCHIVE="${2:-}"
 PORT="${3:-}"
 SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
-EXPECTED_KEY="$(plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist")"
+# This fork ships no SUPublicEDKey, so the extraction exits nonzero and `set -e`
+# would abort here with a bare plutil error — including when stage-private-update.sh
+# calls this script, which is the documented rehearsal path.
+if ! EXPECTED_KEY="$(
+      plutil -extract SUPublicEDKey raw "$ROOT/Packaging/Info.plist" 2>/dev/null
+    )" || [[ -z "$EXPECTED_KEY" ]]; then
+  echo "Packaging/Info.plist carries no SUPublicEDKey." >&2
+  echo "The loopback rehearsal verifies a build against its own embedded key," >&2
+  echo "so it needs a fork-owned key pair before it can run." >&2
+  exit 1
+fi
 
 if [[ -z "$APPCAST" || -z "$ARCHIVE" || -z "$PORT" ]]; then
   echo "Usage: $0 <private-appcast.xml> <RelayBarScion.zip> <loopback-port>" >&2

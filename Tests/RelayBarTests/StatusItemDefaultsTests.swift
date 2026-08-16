@@ -311,12 +311,35 @@ final class LegacyDefaultsMigrationTests: XCTestCase {
         XCTAssertNil(new.data(forKey: "savedTunnels.v2"))
     }
 
+    /// A fresh install still has a readable upstream domain — an empty one —
+    /// so the migration looked, found nothing, and is finished.
     func testFreshInstallCopiesNothingAndStillMarksItselfDone() throws {
+        let new = try makeDefaults()
+        let old = try makeDefaults()
+
+        XCTAssertEqual(LegacyDefaultsMigration.run(into: new, from: old), [])
+        XCTAssertTrue(
+            new.bool(forKey: LegacyDefaultsMigration.completionKey)
+        )
+    }
+
+    /// A nil suite is the one case where nothing was read at all. Recording it
+    /// as done would strand the user's profiles on the strength of a lookup
+    /// that never happened, so that launch is retried instead.
+    func testAnUnreadableLegacyDomainIsRetriedRatherThanMarkedDone() throws {
         let new = try makeDefaults()
 
         XCTAssertEqual(LegacyDefaultsMigration.run(into: new, from: nil), [])
-        XCTAssertTrue(
+        XCTAssertFalse(
             new.bool(forKey: LegacyDefaultsMigration.completionKey)
+        )
+
+        let old = try makeDefaults()
+        old.set(Data("profiles".utf8), forKey: "savedTunnels.v2")
+
+        XCTAssertEqual(
+            LegacyDefaultsMigration.run(into: new, from: old),
+            ["savedTunnels.v2"]
         )
     }
 }

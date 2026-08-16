@@ -29,7 +29,7 @@
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>RelayBar connects to SSH hosts on your local network to create tunnels.</string>
+    <string>RelayBar Scion connects to SSH hosts on your local network to create tunnels.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 RelayBar Scion</string>
     <!-- No SUFeedURL or SUPublicEDKey: this fork has no update feed of its
