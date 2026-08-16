@@ -6,7 +6,8 @@ CONFIGURATION="${1:-release}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 
 case "$CONFIGURATION" in
-  debug|Debug)
+  # --debug is what the shared lkm-build engine passes for a Debug build.
+  debug|Debug|--debug)
     XCODE_CONFIGURATION="Debug"
     DESTINATION="platform=macOS"
     ;;
