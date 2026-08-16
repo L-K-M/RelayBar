@@ -13,7 +13,7 @@
 - `swift test` runs the package tests. The SwiftPM manifest deliberately omits Sparkle so unit tests can never initialize an updater or touch the network; CI runs `swift test -Xswiftc -warnings-as-errors` plus an unsigned `xcodebuild` Release build.
 - `./scripts/build.sh` is the family entry point: a thin stub over the shared build engine from <https://github.com/L-K-M/release-tool> (`--clean/--debug/--run/--install/--zip/--dmg`), delegating to `./scripts/build-app.sh`, which owns the build and the inside-out Developer ID signing of Sparkle's nested components.
 - `./scripts/release.sh X.Y.Z [--push]` cuts a release (same shared engine): bumps `MARKETING_VERSION`, the Sparkle build number (`scripts/bump-build-number.sh`), and the README version marker in one commit, then tags `vX.Y.Z`; `--push` triggers `.github/workflows/release.yml` (test → build → notarize → publish). The tag must match the committed version.
-- Release machinery beyond that — `package-release.sh`, `notarize-release.sh`, `update-appcast.sh`, `verify-update-feed.sh`, `stage-private-update.sh`, `verify-private-update-feed.sh`, `prune-renderer-resources.sh`, `check-task-spec-registry.sh` — is documented in `docs/system-specs/operations/build-and-release.md`, the authoritative runbook.
+- Release machinery beyond that — `package-release.sh`, `notarize-release.sh`, `update-appcast.sh`, `verify-update-feed.sh`, `stage-private-update.sh`, `verify-private-update-feed.sh`, `prune-renderer-resources.sh` — is documented in `docs/system-specs/operations/build-and-release.md`, the authoritative runbook. `check-task-spec-registry.sh` is the docs-hygiene CI check described in `docs/task-specs/README.md`.
 
 ## Task-spec writing
 

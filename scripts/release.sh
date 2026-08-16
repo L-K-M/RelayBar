@@ -13,6 +13,10 @@
 #   scripts/release.sh 1.5.0 --push   # …also push the commit + tag (CI then publishes)
 #   scripts/release.sh                # tag the current MARKETING_VERSION as-is
 #
+# Pre-releases: the xcode kind's version regex rejects hyphenated versions, so a
+# beta needs RELEASE_VERSION_REGEX exported (and release.yml's tag-must-match gate
+# still requires the committed MARKETING_VERSION to carry the same suffix).
+#
 # Usage: scripts/release.sh [X.Y[.Z]] [--push]
 # Shared engine: https://github.com/L-K-M/release-tool (this stub only sets config).
 set -euo pipefail

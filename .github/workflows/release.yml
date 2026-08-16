@@ -131,6 +131,12 @@ jobs:
           # as a prerelease and NOT made "latest".
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
+          # Published assets are immutable (runbook): on a job re-run the rebuilt
+          # archive has different bytes (fresh signatures + notarization ticket), and
+          # the default overwrite would silently replace the public asset in place.
+          # With overwrite off, the re-upload is skipped and the byte-compare below
+          # fails closed against the preserved original instead.
+          overwrite_files: false
           generate_release_notes: true
           body: |
             This build is Developer ID signed, notarized, and stapled.

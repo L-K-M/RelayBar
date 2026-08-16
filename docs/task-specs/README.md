@@ -39,6 +39,7 @@ active and accepted directories. Run it before claiming a number.
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
 - [Task 053 — Auto-start Profiles at Launch](053-auto-start-profiles-at-launch.md)
+- [Task 060 — Family Release Tooling](060-family-release-tooling.md)
 
 ## Backlog
 
