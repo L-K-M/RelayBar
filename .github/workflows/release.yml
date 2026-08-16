@@ -1,0 +1,158 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']        # e.g. v1.5.0, cut by scripts/release.sh
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # needed to create the GitHub Release
+
+jobs:
+  # Gate publication on the test suite: a v* tag can land on a commit CI never
+  # saw, and a tag on a broken commit must not publish a release.
+  test:
+    name: Test
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: '16.4'
+      - name: Test Swift package
+        run: swift test -Xswiftc -warnings-as-errors
+
+  release:
+    name: Build, notarize & publish
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 60   # notarytool --wait can be slow, but a wedged build must not run 6h
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: '16.4'
+
+      # Unlike the sibling repos, the version is NOT injected at build time: Sparkle
+      # compares the committed build number, and the runbook requires the committed
+      # version/build to be exactly what ships. The tag must therefore match the
+      # committed MARKETING_VERSION (scripts/release.sh keeps them in step).
+      - name: Version from tag must match the committed version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMITTED="$(xcodebuild -project RelayBar.xcodeproj -scheme RelayBar -showBuildSettings 2>/dev/null \
+            | awk '/MARKETING_VERSION/{print $3; exit}')"
+          if [ "$VERSION" != "$COMMITTED" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match committed MARKETING_VERSION $COMMITTED — cut tags with scripts/release.sh"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # RelayBar Scion has no unsigned release fallback: every published build is
+      # Developer ID signed, notarized, and stapled. Fail closed with a clear
+      # message rather than half-configuring the keychain.
+      - name: Require signing and notarization secrets
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+        run: |
+          missing=""
+          for s in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD KEYCHAIN_PASSWORD AC_API_KEY_ID AC_API_ISSUER_ID AC_API_KEY_P8; do
+            eval "v=\${$s:-}"
+            [ -n "$v" ] || missing="$missing $s"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::missing repository secrets:$missing — RelayBar Scion publishes no unsigned builds"
+            exit 1
+          fi
+
+      - name: Import the Developer ID identity into a throwaway keychain
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Make the throwaway keychain both searchable and the default, so
+          # codesign finds the identity and notarytool finds its profile.
+          security list-keychains -d user -s "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Store notarization credentials
+        env:
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+        run: |
+          printf '%s' "$AC_API_KEY_P8" > "$RUNNER_TEMP/ac-api-key.p8"
+          xcrun notarytool store-credentials ci \
+            --key "$RUNNER_TEMP/ac-api-key.p8" \
+            --key-id "$AC_API_KEY_ID" \
+            --issuer "$AC_API_ISSUER_ID"
+          rm -f "$RUNNER_TEMP/ac-api-key.p8"
+
+      # One call runs the whole preserved pipeline: build-app.sh (universal build,
+      # inside-out Developer ID signing of Sparkle's XPC services/Autoupdate/
+      # Updater/framework, strict verification), zip, notarytool submit --wait,
+      # staple + validate, re-zip the stapled app, spctl assess.
+      - name: Build, sign, notarize, staple
+        env:
+          NOTARY_PROFILE: ci
+        run: ./scripts/notarize-release.sh
+
+      # The asset keeps the runbook-mandated immutable name RelayBarScion.zip
+      # (update-appcast.sh derives the enclosure URL from it); the tag path in the
+      # download URL provides uniqueness.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          name: RelayBar Scion ${{ env.VERSION }}
+          files: .build/RelayBarScion.zip
+          # A pre-release tag (contains a hyphen, e.g. v1.5.0-beta.1) must be marked
+          # as a prerelease and NOT made "latest".
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          body: |
+            This build is Developer ID signed, notarized, and stapled.
+
+            The Sparkle appcast (if this fork publishes one) is regenerated manually
+            after publication, per `docs/system-specs/operations/build-and-release.md`.
+
+      # Never trust an upload: download what GitHub actually serves for the tag
+      # and byte-compare it against the stapled archive that was just built.
+      - name: Verify the published asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/published"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published"
+          cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip" \
+            || { echo "::error::published RelayBarScion.zip differs from the built archive"; exit 1; }
+
+      - name: Clean up the keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ] && [ -f "$KEYCHAIN" ]; then
+            security delete-keychain "$KEYCHAIN"
+          fi
+          security default-keychain -s login.keychain 2>/dev/null || true
