@@ -7,6 +7,14 @@
 - Task specs describe proposed work and must not be presented as current behavior.
 - Source code remains authoritative when implemented behavior and a system spec disagree; update the affected system spec as part of the change.
 
+## Toolchain and commands
+
+- Requirements: macOS 13 or newer, Xcode (CI pins 16.4), and — for packaged builds — a Developer ID Application certificate.
+- `swift test` runs the package tests. The SwiftPM manifest deliberately omits Sparkle so unit tests can never initialize an updater or touch the network; CI runs `swift test -Xswiftc -warnings-as-errors` plus an unsigned `xcodebuild` Release build.
+- `./scripts/build.sh` is the family entry point: a thin stub over the shared build engine from <https://github.com/L-K-M/release-tool> (`--clean/--debug/--run/--install/--zip/--dmg`), delegating to `./scripts/build-app.sh`, which owns the build and the inside-out Developer ID signing of Sparkle's nested components.
+- `./scripts/release.sh X.Y.Z [--push]` cuts a release (same shared engine): bumps `MARKETING_VERSION`, the Sparkle build number (`scripts/bump-build-number.sh`), and the README version marker in one commit, then tags `vX.Y.Z`; `--push` triggers `.github/workflows/release.yml` (test → build → notarize → publish). The tag must match the committed version.
+- Release machinery beyond that — `package-release.sh`, `notarize-release.sh`, `update-appcast.sh`, `verify-update-feed.sh`, `stage-private-update.sh`, `verify-private-update-feed.sh`, `prune-renderer-resources.sh`, `check-task-spec-registry.sh` — is documented in `docs/system-specs/operations/build-and-release.md`, the authoritative runbook.
+
 ## Task-spec writing
 
 - Keep task specs concise and non-redundant.
