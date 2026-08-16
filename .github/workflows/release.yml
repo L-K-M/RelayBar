@@ -8,8 +8,11 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Least privilege at the workflow level; only the release job escalates to
+# write (checkout persists the token in the work tree, so the test job should
+# never hold one that can create releases).
 permissions:
-  contents: write       # needed to create the GitHub Release
+  contents: read
 
 jobs:
   # Gate publication on the test suite: a v* tag can land on a commit CI never
@@ -31,6 +34,8 @@ jobs:
     name: Build, notarize & publish
     needs: test
     runs-on: macos-15
+    permissions:
+      contents: write     # needed to create the GitHub Release
     timeout-minutes: 60   # notarytool --wait can be slow, but a wedged build must not run 6h
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

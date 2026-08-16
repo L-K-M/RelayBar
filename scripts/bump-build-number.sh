@@ -12,9 +12,13 @@ cd "$(git rev-parse --show-toplevel)"
 
 PBXPROJ="RelayBar.xcodeproj/project.pbxproj"
 
-current="$(awk -F' = |;' '/CURRENT_PROJECT_VERSION = /{print $2; exit}' "$PBXPROJ")"
+# Read every occurrence: if the configurations have diverged (a hand-edit), the
+# distinct values arrive newline-joined, fail the numeric check, and the release
+# stops instead of silently normalizing both to the same next number — which
+# could reuse a build number the appcast already published.
+current="$(awk -F' = |;' '/CURRENT_PROJECT_VERSION = /{print $2}' "$PBXPROJ" | sort -u)"
 [[ "$current" =~ ^[0-9]+$ ]] || {
-  echo "error: could not read a numeric CURRENT_PROJECT_VERSION from $PBXPROJ (got '${current}')" >&2
+  echo "error: CURRENT_PROJECT_VERSION must be one numeric value across all configurations in $PBXPROJ (got '${current//$'\n'/, }')" >&2
   exit 1
 }
 next=$((current + 1))
