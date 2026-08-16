@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Builds, signs, and packages a release (via package-release.sh), submits it with
+# notarytool, waits, staples + validates the app, re-zips the stapled app as the
+# final .build/RelayBarScion.zip (printed on success), and Gatekeeper-assesses it.
+# Requires NOTARY_PROFILE, a notarytool keychain profile created with
+# `xcrun notarytool store-credentials`.
+#
+# Usage: NOTARY_PROFILE=<profile> scripts/notarize-release.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

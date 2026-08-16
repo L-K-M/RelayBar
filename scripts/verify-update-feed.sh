@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Verifies the production appcast end-to-end: Info.plist must declare a
+# fork-owned SUFeedURL + SUPublicEDKey with signed-feed and pre-extraction
+# verification on, the keychain signing key must match the embedded public key,
+# and every retained enclosure is downloaded and checked for HTTPS, declared
+# byte length, EdDSA signature, and strictly descending build numbers.
+#
+# Usage: scripts/verify-update-feed.sh [appcast.xml]   (default: docs/appcast.xml)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
