@@ -5,8 +5,7 @@ native macOS menu-bar app for structured SSH forwarding profiles and exact-path 
 file access. A scion is the cutting taken from a parent plant and grown on separately;
 the name says where this came from without claiming to be it.
 
-Current source version: <!-- version -->2.0.1<!-- /version -->. This fork has not
-yet published a release.
+Current version: <!-- version -->2.0.1<!-- /version -->. [Download](https://github.com/L-K-M/RelayBar/releases/latest).
 
 Start at the
 [upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
@@ -60,7 +59,8 @@ belong to the old identity: Launch at Login must be re-enabled, and macOS will a
 for Accessibility or Local Network access when a connection first needs it.
 
 It also ships no update feed. Upstream's feed and signing key are deliberately absent,
-because a build pointing at them would replace itself with upstream's app.
+because a build pointing at them would replace itself with upstream's app. You can use
+[Obtainintosh](https://github.com/L-K-M/Obtainintosh/) to handle updates.
 
 ## Build
 
