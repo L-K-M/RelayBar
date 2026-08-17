@@ -5,7 +5,7 @@ native macOS menu-bar app for structured SSH forwarding profiles and exact-path 
 file access. A scion is the cutting taken from a parent plant and grown on separately;
 the name says where this came from without claiming to be it.
 
-Current source version: <!-- version -->1.4.0<!-- /version -->. This fork has not
+Current source version: <!-- version -->2.0.0<!-- /version -->. This fork has not
 yet published a release.
 
 Start at the
