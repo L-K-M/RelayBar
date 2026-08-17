@@ -75,9 +75,10 @@ open .build/RelayBarScion.app
 `scripts/build.sh` is a thin stub over the shared
 [release-tool](https://github.com/L-K-M/release-tool) build engine (adding
 `--clean`, `--debug`, `--run`, `--install`, `--zip`, `--dmg`); the build itself stays
-in `scripts/build-app.sh`, which writes `.build/RelayBarScion.app` and signs it with
-the first valid **Developer ID Application** certificate in your login keychain; set
-`SIGNING_IDENTITY` to choose a different one.
+in `scripts/build-app.sh`, which writes `.build/RelayBarScion.app`. With a
+**Developer ID Application** certificate in your login keychain the build is signed
+for distribution (set `SIGNING_IDENTITY` to choose one); without one it is ad-hoc
+signed — it runs fine on your own Mac, but cannot be notarized or distributed.
 
 Releases are cut with `scripts/release.sh X.Y.Z [--push]` (a stub over the same
 engine): it bumps the version, build number, and the version line above in one

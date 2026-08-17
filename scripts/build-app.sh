@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Builds and signs .build/RelayBarScion.app. Both configurations require and sign
-# with the first Developer ID Application certificate found in the keychain
-# (override with SIGNING_IDENTITY), signing Sparkle's XPC services, Autoupdate,
-# Updater, and framework inside-out before the outer bundle so every nested
-# boundary keeps a valid hardened-runtime identity. Usually invoked via the
-# scripts/build.sh stub.
+# Builds and signs .build/RelayBarScion.app. With a Developer ID Application
+# certificate in the keychain (or SIGNING_IDENTITY set), Sparkle's XPC services,
+# Autoupdate, Updater, and framework are signed inside-out before the outer
+# bundle so every nested boundary keeps a valid hardened-runtime identity —
+# that build is what notarize-release.sh distributes. Without one, the build
+# falls back to ad-hoc signing (same inside-out order, no hardened runtime or
+# timestamp), which runs locally like the sibling apps' dev builds but can
+# never be notarized or distributed; SIGNING_IDENTITY=- forces the fallback.
 #
 # Usage: scripts/build-app.sh [debug|release|--debug]   (default: release)
 set -euo pipefail
@@ -39,9 +41,24 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
 fi
 
 if [[ -z "$SIGNING_IDENTITY" ]]; then
-  echo "No Developer ID Application certificate was found." >&2
-  echo "Set SIGNING_IDENTITY to the certificate name shown by: security find-identity -v -p codesigning" >&2
-  exit 1
+  SIGNING_IDENTITY="-"
+  echo "No Developer ID Application certificate found — falling back to ad-hoc signing." >&2
+  echo "The app will run locally but cannot be notarized or distributed. For a" >&2
+  echo "distributable build, install one or set SIGNING_IDENTITY to a certificate" >&2
+  echo "shown by: security find-identity -v -p codesigning" >&2
+fi
+
+# Ad-hoc signatures reject --timestamp, and the hardened runtime's library
+# validation has no team identity to match against ad-hoc-signed frameworks —
+# so the fallback signs plainly (still inside-out), like the sibling apps'
+# unsigned dev builds. notarize-release.sh refuses ad-hoc input outright.
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  COMPONENT_SIGN_ARGS=(--force --sign -)
+  BUNDLE_SIGN_ARGS=(--force --sign -)
+else
+  COMPONENT_SIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --options runtime --timestamp
+    --preserve-metadata=entitlements,requirements,flags)
+  BUNDLE_SIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --options runtime --timestamp)
 fi
 
 # xcodebuild writes diagnostics to stdout and only the failure summary to
@@ -88,27 +105,11 @@ for component in \
   "$SPARKLE_VERSION/Autoupdate" \
   "$SPARKLE_VERSION/Updater.app"
 do
-  codesign \
-    --force \
-    --sign "$SIGNING_IDENTITY" \
-    --options runtime \
-    --timestamp \
-    --preserve-metadata=entitlements,requirements,flags \
-    "$component" >/dev/null
+  codesign "${COMPONENT_SIGN_ARGS[@]}" "$component" >/dev/null
 done
 
-codesign \
-  --force \
-  --sign "$SIGNING_IDENTITY" \
-  --options runtime \
-  --timestamp \
-  "$SPARKLE_FRAMEWORK" >/dev/null
-codesign \
-  --force \
-  --sign "$SIGNING_IDENTITY" \
-  --options runtime \
-  --timestamp \
-  "$APP" >/dev/null
+codesign "${BUNDLE_SIGN_ARGS[@]}" "$SPARKLE_FRAMEWORK" >/dev/null
+codesign "${BUNDLE_SIGN_ARGS[@]}" "$APP" >/dev/null
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 for component in \
@@ -120,5 +121,9 @@ do
   codesign --verify --strict --verbose=2 "$component"
 done
 
-echo "Signed with: $SIGNING_IDENTITY"
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  echo "Signed: ad-hoc (local use only — not distributable)"
+else
+  echo "Signed with: $SIGNING_IDENTITY"
+fi
 echo "$APP"

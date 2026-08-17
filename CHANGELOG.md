@@ -38,6 +38,11 @@ Notable RelayBar Scion changes are recorded here.
   published archive byte-for-byte. The app's version is now single-sourced in
   the Xcode build settings instead of hand-synced literals in the property
   list.
+- Builds no longer require a Developer ID certificate: without one,
+  `build.sh`/`build-app.sh` fall back to an ad-hoc-signed app (same inside-out
+  signing order) that runs locally, like the sibling apps' dev builds.
+  Distribution is unchanged — `notarize-release.sh` refuses an ad-hoc build
+  outright, and releases stay Developer-ID signed, notarized, and stapled.
 - Profiles can be duplicated from the row menu. The copy gets fresh profile
   and rule identities, lands right after the original, and starts stopped —
   clone-then-tweak without retyping a connection.
