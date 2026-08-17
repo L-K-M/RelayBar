@@ -30,13 +30,17 @@ jobs:
       - name: Test Swift package
         run: swift test -Xswiftc -warnings-as-errors
 
+  # CI publishes unsigned, ad-hoc-signed builds — the same release model as the
+  # sibling family apps (maintainer decision, task 062). This repository holds
+  # no Developer ID certificate or App Store Connect key, so no signing secrets
+  # are read here; users bypass Gatekeeper manually per the release notes.
   release:
-    name: Build, notarize & publish
+    name: Build & publish (unsigned)
     needs: test
     runs-on: macos-15
     permissions:
       contents: write     # needed to create the GitHub Release
-    timeout-minutes: 60   # notarytool --wait can be slow, but a wedged build must not run 6h
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,69 +68,19 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      # RelayBar Scion has no unsigned release fallback: every published build is
-      # Developer ID signed, notarized, and stapled. Fail closed with a clear
-      # message rather than half-configuring the keychain.
-      - name: Require signing and notarization secrets
+      # package-release.sh builds through build-app.sh, which signs every Sparkle
+      # component inside-out before the outer bundle — ad-hoc here (like the
+      # siblings' unsigned builds), since a plain `codesign --deep` on this bundle
+      # would leave the nested XPC services with seals the outer signature does
+      # not cover. The result runs locally and is what CI publishes; it can never
+      # be notarized (notarize-release.sh refuses ad-hoc input outright).
+      - name: Build & package (ad-hoc signed)
         env:
-          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
-          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
-          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
-          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+          SIGNING_IDENTITY: '-'
         run: |
-          missing=""
-          for s in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD KEYCHAIN_PASSWORD AC_API_KEY_ID AC_API_ISSUER_ID AC_API_KEY_P8; do
-            eval "v=\${$s:-}"
-            [ -n "$v" ] || missing="$missing $s"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::missing repository secrets:$missing — RelayBar Scion publishes no unsigned builds"
-            exit 1
-          fi
-
-      - name: Import the Developer ID identity into a throwaway keychain
-        env:
-          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
-          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/cert.p12"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-          # Make the throwaway keychain both searchable and the default, so
-          # codesign finds the identity and notarytool finds its profile.
-          security list-keychains -d user -s "$KEYCHAIN"
-          security default-keychain -s "$KEYCHAIN"
-          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-
-      - name: Store notarization credentials
-        env:
-          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
-          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
-          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
-        run: |
-          printf '%s' "$AC_API_KEY_P8" > "$RUNNER_TEMP/ac-api-key.p8"
-          xcrun notarytool store-credentials ci \
-            --key "$RUNNER_TEMP/ac-api-key.p8" \
-            --key-id "$AC_API_KEY_ID" \
-            --issuer "$AC_API_ISSUER_ID"
-          rm -f "$RUNNER_TEMP/ac-api-key.p8"
-
-      # One call runs the whole preserved pipeline: build-app.sh (universal build,
-      # inside-out Developer ID signing of Sparkle's XPC services/Autoupdate/
-      # Updater/framework, strict verification), zip, notarytool submit --wait,
-      # staple + validate, re-zip the stapled app, spctl assess.
-      - name: Build, sign, notarize, staple
-        env:
-          NOTARY_PROFILE: ci
-        run: ./scripts/notarize-release.sh
+          ZIP="$(./scripts/package-release.sh)"
+          [ -f "$ZIP" ] || { echo "::error::$ZIP was not produced"; exit 1; }
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
       # The asset keeps the runbook-mandated immutable name RelayBarScion.zip
       # (update-appcast.sh derives the enclosure URL from it); the tag path in the
@@ -135,34 +89,38 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: RelayBar Scion ${{ env.VERSION }}
-          files: .build/RelayBarScion.zip
+          files: ${{ env.ZIP }}
           # A pre-release tag (contains a hyphen, e.g. v1.5.0-beta.1) must be marked
           # as a prerelease and NOT made "latest".
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ !contains(github.ref_name, '-') }}
           # Published assets are immutable (runbook): on a job re-run the rebuilt
-          # archive has different bytes (fresh signatures + notarization ticket), and
-          # the default overwrite would silently replace the public asset in place.
-          # With overwrite off, the re-upload is skipped and the byte-compare below
+          # archive has different bytes (fresh ad-hoc signatures), and the default
+          # overwrite would silently replace the public asset in place. With
+          # overwrite off, the re-upload is skipped and the byte-compare below
           # fails closed against the preserved original instead.
           overwrite_files: false
           generate_release_notes: true
           body: |
-            This build is Developer ID signed, notarized, and stapled.
+            ### Unsigned build
 
-            The Sparkle appcast (if this fork publishes one) is regenerated manually
-            after publication, per `docs/system-specs/operations/build-and-release.md`.
+            This app is **not** code-signed with a Developer ID or notarized, so macOS
+            Gatekeeper will warn on first launch. To open it:
+
+            - **Right-click** (or Control-click) the app → **Open** → **Open**, or
+            - run `xattr -dr com.apple.quarantine /Applications/RelayBarScion.app`
 
       # Never trust an upload: download what GitHub actually serves for the tag
-      # and byte-compare it against the stapled archive that was just built.
+      # and byte-compare it against the archive that was just built.
       - name: Verify the published asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir "$RUNNER_TEMP/published"
-          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published"
-          if ! cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip"; then
-            # The published copy provably differs from the stapled archive: take it
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published" \
+            --pattern "RelayBarScion.zip"
+          if ! cmp -- "$ZIP" "$RUNNER_TEMP/published/RelayBarScion.zip"; then
+            # The published copy provably differs from the built archive: take it
             # down before failing — a corrupt upload must not stay downloadable.
             # (Removing a never-valid upload is damage control, not an in-place
             # replacement; the runbook's immutability rule still forbids uploading
@@ -171,11 +129,3 @@ jobs:
             echo "::error::published RelayBarScion.zip differed from the built archive and was removed"
             exit 1
           fi
-
-      - name: Clean up the keychain
-        if: always()
-        run: |
-          if [ -n "${KEYCHAIN:-}" ] && [ -f "$KEYCHAIN" ]; then
-            security delete-keychain "$KEYCHAIN"
-          fi
-          security default-keychain -s login.keychain 2>/dev/null || true

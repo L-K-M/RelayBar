@@ -6,6 +6,13 @@ Notable RelayBar Scion changes are recorded here.
 
 ### Changed
 
+- Tag-triggered releases now publish an **unsigned, ad-hoc-signed**
+  `RelayBarScion.zip` — the same release model as the sibling family apps
+  (maintainer decision, task 062) — instead of failing closed on absent
+  Developer ID and App Store Connect secrets. Gatekeeper warns on first
+  launch; the release notes explain how to open the app. The
+  maintainer-local notarized pipeline is unchanged and still refuses ad-hoc
+  builds.
 - This fork is now **RelayBar Scion**, with its own bundle identifier
   (`com.relaybarscion.RelayBarScion`), bundle name, and `RelayBarScion.app`
   executable. It installs and runs alongside an upstream RelayBar instead of
@@ -33,16 +40,18 @@ Notable RelayBar Scion changes are recorded here.
   thin stubs over the shared engines from
   [release-tool](https://github.com/L-K-M/release-tool). One command bumps the
   version, the Sparkle build number, and the README version line together,
-  commits, and tags; a new tag-triggered workflow then tests, builds, signs,
-  notarizes, staples, and publishes the GitHub release, and verifies the
+  commits, and tags; a new tag-triggered workflow then tests, builds,
+  packages, and publishes the GitHub release, and verifies the
   published archive byte-for-byte. The app's version is now single-sourced in
   the Xcode build settings instead of hand-synced literals in the property
   list.
 - Builds no longer require a Developer ID certificate: without one,
   `build.sh`/`build-app.sh` fall back to an ad-hoc-signed app (same inside-out
   signing order) that runs locally, like the sibling apps' dev builds.
-  Distribution is unchanged — `notarize-release.sh` refuses an ad-hoc build
-  outright, and releases stay Developer-ID signed, notarized, and stapled.
+  CI releases are ad-hoc signed too — same model as the sibling apps'
+  releases, with release notes explaining the Gatekeeper bypass — while
+  `notarize-release.sh` still refuses an ad-hoc build outright, keeping the
+  notarized pipeline honest.
 - Profiles can be duplicated from the row menu. The copy gets fresh profile
   and rule identities, lands right after the original, and starts stopped —
   clone-then-tweak without retyping a connection.

@@ -5,8 +5,8 @@
 # bundle so every nested boundary keeps a valid hardened-runtime identity —
 # that build is what notarize-release.sh distributes. Without one, the build
 # falls back to ad-hoc signing (same inside-out order, no hardened runtime or
-# timestamp), which runs locally like the sibling apps' dev builds but can
-# never be notarized or distributed; SIGNING_IDENTITY=- forces the fallback.
+# timestamp), which runs locally, is what CI publishes (task 062), and can
+# never be notarized; SIGNING_IDENTITY=- forces the fallback.
 #
 # Usage: scripts/build-app.sh [debug|release|--debug]   (default: release)
 set -euo pipefail
@@ -43,7 +43,7 @@ fi
 if [[ -z "$SIGNING_IDENTITY" ]]; then
   SIGNING_IDENTITY="-"
   echo "No Developer ID Application certificate found — falling back to ad-hoc signing." >&2
-  echo "The app will run locally but cannot be notarized or distributed. For a" >&2
+  echo "The app will run locally but cannot be notarized. For a notarized" >&2
   echo "distributable build, install one or set SIGNING_IDENTITY to a certificate" >&2
   echo "shown by: security find-identity -v -p codesigning" >&2
 fi
@@ -122,7 +122,7 @@ do
 done
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-  echo "Signed: ad-hoc (local use only — not distributable)"
+  echo "Signed: ad-hoc (unsigned release model — not notarizable)"
 else
   echo "Signed with: $SIGNING_IDENTITY"
 fi
