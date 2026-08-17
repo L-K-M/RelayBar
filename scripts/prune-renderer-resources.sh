@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Xcode build phase: prunes unused renderer resources from the built app bundle —
+# alternate highlight themes, alternate SwiftMath fonts, and SwiftMath's package
+# conversion script — keeping the formatter, the two selected themes, Latin
+# Modern with its metrics, and the bundled font licenses. Refuses to delete
+# outside the expected bundle path. Not meant to be run by hand.
 set -euo pipefail
 
 bundle_root="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SwiftMath_SwiftMath.bundle"

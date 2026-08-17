@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Stages a private loopback update rehearsal: copies a final stapled archive into
+# a new directory with a one-build signed appcast pointing at
+# http://127.0.0.1:<port>, without reading or changing the production appcast.
+# See the runbook for the maintainer launch argument that consumes it.
+#
+# Usage: scripts/stage-private-update.sh <final-stapled-RelayBarScion.zip> <loopback-port> <new-output-directory>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

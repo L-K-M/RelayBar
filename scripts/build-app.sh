@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Builds and signs .build/RelayBarScion.app. Both configurations require and sign
+# with the first Developer ID Application certificate found in the keychain
+# (override with SIGNING_IDENTITY), signing Sparkle's XPC services, Autoupdate,
+# Updater, and framework inside-out before the outer bundle so every nested
+# boundary keeps a valid hardened-runtime identity. Usually invoked via the
+# scripts/build.sh stub.
+#
+# Usage: scripts/build-app.sh [debug|release|--debug]   (default: release)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -6,7 +14,8 @@ CONFIGURATION="${1:-release}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 
 case "$CONFIGURATION" in
-  debug|Debug)
+  # --debug is what the shared lkm-build engine passes for a Debug build.
+  debug|Debug|--debug)
     XCODE_CONFIGURATION="Debug"
     DESTINATION="platform=macOS"
     ;;

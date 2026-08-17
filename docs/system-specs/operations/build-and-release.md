@@ -4,6 +4,9 @@
 
 - macOS 13 or newer
 - Xcode command-line tools
+- The shared `lkm-release`/`lkm-build` engines for the `scripts/release.sh` and
+  `scripts/build.sh` stubs: clone
+  [release-tool](https://github.com/L-K-M/release-tool) and run `./install.sh`
 - Developer ID Application certificate for packaged builds
 - Sparkle's EdDSA private key in the login Keychain under account
   `com.relaybarscion.RelayBarScion`, for the update-publication scripts only.
@@ -14,6 +17,16 @@
 ## Commands
 
 - `swift test` runs the package tests.
+- `./scripts/build.sh` is the family entry point: a thin stub over the shared
+  build engine from [release-tool](https://github.com/L-K-M/release-tool)
+  (`--clean/--debug/--run/--install/--zip/--dmg`, Finder reveal), delegating the
+  build and signing to `build-app.sh`.
+- `./scripts/release.sh X.Y.Z [--push]` cuts a release through the shared
+  release engine: it bumps `MARKETING_VERSION` (single-sourced — the property
+  list expands the build settings), runs `bump-build-number.sh` to increment
+  the committed Sparkle build number, rewrites the README version marker,
+  commits, and tags `vX.Y.Z`; `--push` pushes branch + tag, which triggers the
+  release workflow below. Nothing publishes without `--push`.
 - `./scripts/build-app.sh` builds and signs `.build/RelayBarScion.app`.
 - `./scripts/package-release.sh` creates `.build/RelayBarScion.zip`.
 - `./scripts/notarize-release.sh` submits, waits, staples, and validates a release.
@@ -66,6 +79,25 @@ A stable release starts from a clean commit with consistent marketing version,
 monotonic build number, bundle identifier, and deployment target. Any
 post-freeze application change requires a new build number and a complete
 rebuild and notarization.
+
+### Tag-triggered publication
+
+`.github/workflows/release.yml` runs on every `v*` tag: it re-runs the package
+tests, asserts the tag matches the committed marketing version (versions are
+never injected at build time), imports the Developer ID identity and App Store
+Connect API key from repository secrets — failing closed when any of the six
+secrets is absent, because this fork publishes no unsigned builds — runs
+`notarize-release.sh` under a throwaway keychain, publishes the immutable
+`RelayBarScion.zip` on the GitHub release (hyphenated tags are marked
+prerelease and never "latest"), and byte-compares the asset GitHub serves
+against the archive it just built.
+
+When CI publishes, the canonical bytes are the CI-built notarized archive:
+perform this section's independent verification against the *published* asset
+(downloaded without repository credentials) before any appcast, website, or
+cask step, and feed that downloaded archive to `update-appcast.sh`. The
+maintainer-local pipeline below remains the fallback when CI cannot sign, and
+steps 1–2 of the strict publication order are what the workflow automates.
 
 Before tagging, run the complete tests, warnings-as-errors universal Release
 build, property-list and license checks, resource-pruning checks, executable

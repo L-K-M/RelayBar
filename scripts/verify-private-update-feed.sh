@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Verifies a staged loopback rehearsal feed (from stage-private-update.sh):
+# exactly one enclosure on http://127.0.0.1:<port>, embedded/keychain EdDSA key
+# match, declared byte length, a positive build number, and valid feed and
+# archive signatures.
+#
+# Usage: scripts/verify-private-update-feed.sh <appcast.xml> <RelayBarScion.zip> <loopback-port>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

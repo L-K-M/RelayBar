@@ -14,10 +14,14 @@
     <string>RelayBar Scion</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <!-- Both version keys expand from the Xcode build settings (Info.plist files
+         named by INFOPLIST_FILE get build-setting substitution), so the pbxproj's
+         MARKETING_VERSION / CURRENT_PROJECT_VERSION are the single source of truth
+         and scripts/release.sh can bump every copy in lockstep. -->
     <key>CFBundleShortVersionString</key>
-    <string>1.4.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSApplicationCategoryType</key>

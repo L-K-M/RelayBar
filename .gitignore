@@ -4,3 +4,8 @@
 *.xcarchive
 DerivedData/
 xcuserdata/
+.idea/
+.vscode/
+build/
+dist/
+*.xcresult

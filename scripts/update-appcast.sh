@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Regenerates and signs docs/appcast.xml from a published release archive,
+# refusing unless the public download byte-matches the local final stapled zip
+# (publication order is strict: the immutable asset goes public first — see
+# docs/system-specs/operations/build-and-release.md). Preserves prior full-update
+# entries and finishes by running verify-update-feed.sh. Needs Sparkle's release
+# tools (resolved Xcode packages) and the fork's EdDSA key in the login Keychain.
+#
+# Usage: scripts/update-appcast.sh <final-stapled-RelayBarScion.zip> <immutable-download-url>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -26,11 +26,13 @@ phantom=$(comm -23 <(printf '%s\n' "$listed") <(printf '%s\n' "$present"))
 
 if [ -n "$unlisted" ]; then
   echo "Accepted specs missing from $archive/README.md:" >&2
+  # shellcheck disable=SC2086  # word-splitting prints one filename per line
   printf '  %s\n' $unlisted >&2
   status=1
 fi
 if [ -n "$phantom" ]; then
   echo "$archive/README.md links to files that do not exist:" >&2
+  # shellcheck disable=SC2086  # word-splitting prints one filename per line
   printf '  %s\n' $phantom >&2
   status=1
 fi
