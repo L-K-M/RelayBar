@@ -40,6 +40,7 @@ active and accepted directories. Run it before claiming a number.
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
 - [Task 053 — Auto-start Profiles at Launch](053-auto-start-profiles-at-launch.md)
 - [Task 060 — Family Release Tooling](060-family-release-tooling.md)
+- [Task 061 — Certless Local Builds](061-certless-local-builds.md)
 
 ## Backlog
 
