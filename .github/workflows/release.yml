@@ -77,10 +77,10 @@ jobs:
       - name: Build & package (ad-hoc signed)
         env:
           SIGNING_IDENTITY: '-'
-        run: |
-          ZIP="$(./scripts/package-release.sh)"
-          [ -f "$ZIP" ] || { echo "::error::$ZIP was not produced"; exit 1; }
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+        run: ./scripts/package-release.sh
+        # package-release.sh writes the archive to the fixed path below (its stdout
+        # also carries build-app.sh's signing notices, so it must not be captured
+        # as a path — notarize-release.sh relies on the same constant).
 
       # The asset keeps the runbook-mandated immutable name RelayBarScion.zip
       # (update-appcast.sh derives the enclosure URL from it); the tag path in the
@@ -89,7 +89,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: RelayBar Scion ${{ env.VERSION }}
-          files: ${{ env.ZIP }}
+          files: .build/RelayBarScion.zip
           # A pre-release tag (contains a hyphen, e.g. v1.5.0-beta.1) must be marked
           # as a prerelease and NOT made "latest".
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -119,7 +119,7 @@ jobs:
           mkdir "$RUNNER_TEMP/published"
           gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published" \
             --pattern "RelayBarScion.zip"
-          if ! cmp -- "$ZIP" "$RUNNER_TEMP/published/RelayBarScion.zip"; then
+          if ! cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip"; then
             # The published copy provably differs from the built archive: take it
             # down before failing — a corrupt upload must not stay downloadable.
             # (Removing a never-valid upload is damage control, not an in-place
