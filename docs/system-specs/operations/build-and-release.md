@@ -7,7 +7,10 @@
 - The shared `lkm-release`/`lkm-build` engines for the `scripts/release.sh` and
   `scripts/build.sh` stubs: clone
   [release-tool](https://github.com/L-K-M/release-tool) and run `./install.sh`
-- Developer ID Application certificate for packaged builds
+- Developer ID Application certificate for distributable (notarizable) builds
+  only — without one, `build-app.sh` falls back to an ad-hoc-signed build (same
+  inside-out signing order, no hardened runtime or timestamp) that runs locally
+  but is refused by `notarize-release.sh`
 - Sparkle's EdDSA private key in the login Keychain under account
   `com.relaybarscion.RelayBarScion`, for the update-publication scripts only.
   Every script reads the account from `SPARKLE_ACCOUNT` and falls back to that

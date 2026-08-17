@@ -16,6 +16,15 @@ ZIP="$ROOT/.build/RelayBarScion.zip"
 
 "$ROOT/scripts/package-release.sh"
 
+# build-app.sh falls back to ad-hoc signing when no Developer ID certificate is
+# available; that build can never be notarized. Refuse it here, before a
+# pointless round-trip to Apple — and before anything ad-hoc gets near a release.
+if ! codesign -dvv "$APP" 2>&1 | grep -q "^Authority=Developer ID Application"; then
+  echo "The built app is not Developer ID signed (ad-hoc fallback?)." >&2
+  echo "Install a Developer ID Application certificate or set SIGNING_IDENTITY, then rerun." >&2
+  exit 1
+fi
+
 xcrun notarytool submit "$ZIP" \
   --keychain-profile "$NOTARY_PROFILE" \
   --wait

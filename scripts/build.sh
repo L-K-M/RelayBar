@@ -3,8 +3,9 @@
 # success. Thin stub for the shared lkm-build engine; the heavy lifting stays in
 # scripts/build-app.sh (xcodebuild + the inside-out Developer ID signing of
 # Sparkle's XPC services, Autoupdate, Updater, and framework), which the engine
-# runs as the swiftpm-kind assemble script. A Developer ID Application
-# certificate is required — set SIGNING_IDENTITY to pick a specific one.
+# runs as the swiftpm-kind assemble script. With a Developer ID Application
+# certificate the build is distributable (set SIGNING_IDENTITY to pick one);
+# without one it is ad-hoc signed — runs locally, can't be notarized.
 #
 # Usage: scripts/build.sh [--clean] [--debug] [--run] [--install] [--zip] [--dmg]
 # Shared engine: https://github.com/L-K-M/release-tool (this stub only sets config).
