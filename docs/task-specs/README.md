@@ -41,6 +41,7 @@ active and accepted directories. Run it before claiming a number.
 - [Task 053 — Auto-start Profiles at Launch](053-auto-start-profiles-at-launch.md)
 - [Task 060 — Family Release Tooling](060-family-release-tooling.md)
 - [Task 061 — Certless Local Builds](061-certless-local-builds.md)
+- [Task 062 — Unsigned GitHub Releases](062-unsigned-github-releases.md)
 
 ## Backlog
 
