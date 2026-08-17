@@ -77,13 +77,15 @@ open .build/RelayBarScion.app
 `--clean`, `--debug`, `--run`, `--install`, `--zip`, `--dmg`); the build itself stays
 in `scripts/build-app.sh`, which writes `.build/RelayBarScion.app`. With a
 **Developer ID Application** certificate in your login keychain the build is signed
-for distribution (set `SIGNING_IDENTITY` to choose one); without one it is ad-hoc
-signed — it runs fine on your own Mac, but cannot be notarized or distributed.
+for notarization (set `SIGNING_IDENTITY` to choose one); without one it is ad-hoc
+signed — it runs fine on your own Mac and is what CI publishes, but cannot be
+notarized.
 
 Releases are cut with `scripts/release.sh X.Y.Z [--push]` (a stub over the same
 engine): it bumps the version, build number, and the version line above in one
-commit, tags `vX.Y.Z`, and with `--push` lets CI test, build, notarize, and publish
-the GitHub Release.
+commit, tags `vX.Y.Z`, and with `--push` lets CI test, build, and publish an
+unsigned (ad-hoc-signed) GitHub Release, like the sibling family apps' releases
+— Gatekeeper warns on first launch, and the release notes explain the bypass.
 
 Bundled third-party license text is in
 [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).

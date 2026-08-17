@@ -7,10 +7,11 @@
 - The shared `lkm-release`/`lkm-build` engines for the `scripts/release.sh` and
   `scripts/build.sh` stubs: clone
   [release-tool](https://github.com/L-K-M/release-tool) and run `./install.sh`
-- Developer ID Application certificate for distributable (notarizable) builds
-  only — without one, `build-app.sh` falls back to an ad-hoc-signed build (same
-  inside-out signing order, no hardened runtime or timestamp) that runs locally
-  but is refused by `notarize-release.sh`
+- Developer ID Application certificate for notarized builds only — CI publishes
+  ad-hoc-signed releases (see "Tag-triggered publication"), and without a
+  certificate `build-app.sh` falls back to the same ad-hoc signing locally
+  (same inside-out signing order, no hardened runtime or timestamp), which
+  runs locally but is refused by `notarize-release.sh`
 - Sparkle's EdDSA private key in the login Keychain under account
   `com.relaybarscion.RelayBarScion`, for the update-publication scripts only.
   Every script reads the account from `SPARKLE_ACCOUNT` and falls back to that
@@ -81,26 +82,28 @@ The app is distributed outside the Mac App Store, uses the hardened runtime, and
 A stable release starts from a clean commit with consistent marketing version,
 monotonic build number, bundle identifier, and deployment target. Any
 post-freeze application change requires a new build number and a complete
-rebuild and notarization.
+rebuild and republication.
 
 ### Tag-triggered publication
 
 `.github/workflows/release.yml` runs on every `v*` tag: it re-runs the package
 tests, asserts the tag matches the committed marketing version (versions are
-never injected at build time), imports the Developer ID identity and App Store
-Connect API key from repository secrets — failing closed when any of the six
-secrets is absent, because this fork publishes no unsigned builds — runs
-`notarize-release.sh` under a throwaway keychain, publishes the immutable
-`RelayBarScion.zip` on the GitHub release (hyphenated tags are marked
-prerelease and never "latest"), and byte-compares the asset GitHub serves
-against the archive it just built.
+never injected at build time), builds and packages an **ad-hoc-signed**
+archive through `package-release.sh` — no signing secrets are read: this
+repository holds no Developer ID certificate or App Store Connect key, and per
+the maintainer decision recorded in task 062 the release is unsigned like the
+sibling family apps, with release notes explaining the Gatekeeper bypass —
+publishes the immutable `RelayBarScion.zip` on the GitHub release (hyphenated
+tags are marked prerelease and never "latest"), and byte-compares the asset
+GitHub serves against the archive it just built.
 
-When CI publishes, the canonical bytes are the CI-built notarized archive:
-perform this section's independent verification against the *published* asset
-(downloaded without repository credentials) before any appcast, website, or
-cask step, and feed that downloaded archive to `update-appcast.sh`. The
-maintainer-local pipeline below remains the fallback when CI cannot sign, and
-steps 1–2 of the strict publication order are what the workflow automates.
+An ad-hoc archive cannot be notarized, appcast-signed into an update chain, or
+cask-audited: `notarize-release.sh` refuses ad-hoc input, and Sparkle update
+publication stays dormant while this fork ships no feed. The strict
+publication order below therefore applies only to the maintainer-local
+notarized pipeline — and to any future resumption of signed distribution,
+which requires repository secrets and an explicit reversal of task 062's
+recorded decision.
 
 Before tagging, run the complete tests, warnings-as-errors universal Release
 build, property-list and license checks, resource-pruning checks, executable

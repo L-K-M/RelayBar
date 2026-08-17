@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Builds a signed Release app via build-app.sh and packages it as the
-# pre-notarization .build/RelayBarScion.zip (printed on success).
+# Builds a Release app via build-app.sh and packages it as
+# .build/RelayBarScion.zip (printed on success). With a Developer ID
+# Application certificate (or SIGNING_IDENTITY set) the app is signed for
+# notarization; otherwise it is ad-hoc signed — which is what CI publishes
+# (task 062) and what notarize-release.sh refuses outright.
 #
 # Usage: scripts/package-release.sh
 set -euo pipefail
