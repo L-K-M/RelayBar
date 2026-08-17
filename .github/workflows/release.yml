@@ -39,6 +39,10 @@ jobs:
     timeout-minutes: 60   # notarytool --wait can be slow, but a wedged build must not run 6h
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing in this job runs git after checkout; don't leave the
+          # contents:write token sitting in .git/config for the whole build.
+          persist-credentials: false
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
@@ -157,8 +161,16 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/published"
           gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published"
-          cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip" \
-            || { echo "::error::published RelayBarScion.zip differs from the built archive"; exit 1; }
+          if ! cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip"; then
+            # The published copy provably differs from the stapled archive: take it
+            # down before failing — a corrupt upload must not stay downloadable.
+            # (Removing a never-valid upload is damage control, not an in-place
+            # replacement; the runbook's immutability rule still forbids uploading
+            # different bytes under the same tag — corrections use a higher build.)
+            gh release delete-asset "$GITHUB_REF_NAME" "RelayBarScion.zip" -y || true
+            echo "::error::published RelayBarScion.zip differed from the built archive and was removed"
+            exit 1
+          fi
 
       - name: Clean up the keychain
         if: always()
