@@ -1,14 +1,17 @@
 # Task 034 — Open Direct Remote File Paths
 
-Status: In Progress
+Status: Complete
 
 Created: 2026-08-03
+
+Accepted: 2026-08-18
 
 ## Outcome
 
 Remote Files opens an absolute path that identifies a supported remote file in
 its existing preview instead of treating the file as a directory and failing.
-The correction ships as RelayBar 1.4.0 Beta 2, build 8.
+The correction shipped in RelayBar 1.4.0 build 8; the tested Beta 2 artifact
+was promoted byte-for-byte as the stable release.
 
 ## Delivery Boundary
 
@@ -17,9 +20,8 @@ The correction ships as RelayBar 1.4.0 Beta 2, build 8.
 - Direct image and Markdown paths use the existing bounded previews. Other
   regular files remain visible and selected so the existing download action is
   available without starting a download automatically.
-- The maintainer has approved committing, notarizing, publishing, and testing
-  Beta 2 and its signed appcast. Stable website and Homebrew publication remain
-  outside this beta.
+- Preserve existing directory behavior, retry, cancellation, connection reuse,
+  path validation, and preview limits.
 
 ## Work
 
@@ -27,11 +29,9 @@ The correction ships as RelayBar 1.4.0 Beta 2, build 8.
   SFTP listing operation, without adding a remote shell command.
 - Open a previewable direct file immediately while retaining a coherent Back
   path; present a non-previewable direct file as the selected browser item.
-- Preserve cancellation, retry, connection reuse, path validation, preview
-  limits, and ordinary directory navigation.
-- Publish the signed, notarized universal build 8 archive and signed appcast,
-  then exercise the public Beta 1-to-Beta 2 update from an application stored
-  in an `/Applications` subdirectory.
+- Publish, notarize, and verify the universal build 8 archive and signed
+  appcast, then exercise the public Beta 1-to-build 8 updater path from an
+  application stored in an `/Applications` subdirectory.
 
 ## Acceptance
 
@@ -41,10 +41,11 @@ The correction ships as RelayBar 1.4.0 Beta 2, build 8.
 - A direct path to another regular file shows that exact file selected without
   a directory error or unsolicited download, while a directory path retains
   existing behavior.
-- Parser, model, retry, preview, and complete automated checks pass, including
-  `git diff --check` and the warnings-as-errors universal Release build.
-- Apple accepts the build 8 notarization; the public Beta 2 ZIP and appcast are
-  signed, byte-matched, and independently verified.
-- An installed public Beta 1 in an `/Applications` subdirectory discovers,
-  installs, and relaunches Beta 2 in place through the public feed, after which
-  the supplied `TRANSCRIPTION_LEARNINGS.md` path opens successfully.
+- Parser, model, retry, preview, live SFTP, and complete automated checks pass,
+  including `git diff --check` and the warnings-as-errors universal Release
+  build.
+- Apple accepted build 8 notarization. The public ZIP and appcast are signed,
+  byte-matched, and independently verified.
+- An installed public Beta 1 in an `/Applications` subdirectory discovered,
+  installed, and relaunched build 8 in place through the public feed. The exact
+  supplied Markdown path passed the live SSH path and bounded preview checks.
