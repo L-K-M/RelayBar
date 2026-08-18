@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 @testable import RelayBar
@@ -86,7 +87,7 @@ final class ApplicationAboutTests: XCTestCase {
         )
     }
 
-    func testCopyWritesDisplayTextAndAnnouncesSuccess() async throws {
+    func testCopyWritesDisplayTextAndAnnouncesSuccess() async {
         let pasteboard = PasteboardWriterSpy()
         let announcer = AccessibilityAnnouncerSpy()
         let model = ApplicationAboutModel(
@@ -101,6 +102,14 @@ final class ApplicationAboutTests: XCTestCase {
             announcer: announcer,
             confirmationDuration: .milliseconds(10)
         )
+        let confirmationCleared = expectation(
+            description: "Copy confirmation clears"
+        )
+        let cancellable = model.$didCopyVersion
+            .dropFirst()
+            .filter { !$0 }
+            .first()
+            .sink { _ in confirmationCleared.fulfill() }
 
         model.copyVersion()
 
@@ -108,7 +117,8 @@ final class ApplicationAboutTests: XCTestCase {
         XCTAssertEqual(announcer.messages, ["Copied"])
         XCTAssertTrue(model.didCopyVersion)
 
-        try await Task.sleep(for: .milliseconds(30))
+        await fulfillment(of: [confirmationCleared], timeout: 1)
+        cancellable.cancel()
         XCTAssertFalse(model.didCopyVersion)
     }
 
