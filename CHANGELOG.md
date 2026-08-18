@@ -2,6 +2,32 @@
 
 Notable RelayBar changes are recorded here.
 
+## [1.4.0] - 2026-08-18
+
+### Added
+
+- Signed in-app updates with an explicit manual check and optional weekly
+  checks. RelayBar still asks before installing and never stops active tunnels
+  without a decision.
+- A compact Settings footer shows the packaged version and build, copies that
+  identity, and links to the project website and repository.
+
+### Changed
+
+- An exact remote Markdown or supported image path opens directly in the
+  existing bounded preview. Other regular files remain selected for explicit
+  download instead of being treated as directories.
+- New and Edit Profile forms keep balanced scrolling insets without reducing
+  the usable content width.
+
+### Security
+
+- Sparkle 2.9.4 is pinned exactly, uses the embedded EdDSA public key and signed
+  HTTPS appcast, and disables automatic download and installation.
+- The universal stable ZIP is signed with a timestamped hardened-runtime
+  Developer ID, notarized by Apple, and stapled for offline Gatekeeper
+  verification.
+
 ## [1.3.0] - 2026-07-30
 
 ### Added
@@ -136,6 +162,7 @@ Notable RelayBar changes are recorded here.
 - Remote Markdown remains inert: raw HTML is not activated, remote embeds are not fetched, and unsafe links are blocked.
 - Release builds retain the hardened runtime, Developer ID signing, notarization, and Gatekeeper verification workflow.
 
+[1.4.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.4.0
 [1.3.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0
 [1.3.0-beta.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0-beta.1
 [1.2.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.2.1

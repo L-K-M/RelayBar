@@ -81,7 +81,10 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - Tunnel definitions contain no passwords and remain in local application preferences.
 - Remote paths are not persisted. RelayBar does not read or copy private-key contents.
 - Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.
-- There are no analytics, advertising, telemetry, tracking, account, update, or downloaded-code SDKs.
+- There are no analytics, advertising, telemetry, tracking, account, or
+  downloaded-code SDKs. The exact-pinned Sparkle framework checks only the
+  signed HTTPS appcast, sends no system-profile fields, and cannot download or
+  install updates automatically.
 - Markdown rendering dependencies are exact-pinned and their notices are bundled. None replaces the system SSH/SFTP transport.
 - The only reusable GitHub Actions step is the official checkout action, pinned to an immutable commit.
 - Release builds use the hardened runtime and a Developer ID Application signature.
