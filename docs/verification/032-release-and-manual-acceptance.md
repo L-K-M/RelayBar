@@ -1,11 +1,12 @@
 # Task 032 — Release and Manual Acceptance Verification
 
-Updated: 2026-08-02
+Updated: 2026-08-18
 
 Result: In progress. VoiceOver inspection is excluded by maintainer decision.
-The maintainer approved local notarization and installation of 1.4.0 build 7,
-then approved publication of the verified archive as a beta. Stable appcast,
-website-download, and Homebrew publication remain pending.
+RelayBar 1.4.0 build 8 is now the stable GitHub release, signed public appcast,
+website download, and Homebrew cask. Offline recovery-key restore, an actual
+macOS 13 pass, and the remaining scheduled-update/active-tunnel/failure matrix
+remain open.
 
 ## Maintainer checklist
 
@@ -59,9 +60,10 @@ website-download, and Homebrew publication remain pending.
   installed `/Applications/RelayBar.app`.
 - [x] After publication approval, publish the verified archive as a GitHub
   prerelease and verify the anonymously downloaded public asset.
-- [ ] Record the stable signed appcast, prior-to-newer manual/scheduled updates,
-  active-tunnel choices, failure cases, and Homebrew
-  install/update/uninstall evidence.
+- [x] Record the stable signed appcast, a prior-to-newer manual update, and
+  Homebrew install/update/uninstall evidence.
+- [ ] Record weekly scheduled-update behavior, active-tunnel choices, and
+  updater failure cases.
 
 ### Minimum supported system
 
@@ -71,7 +73,8 @@ website-download, and Homebrew publication remain pending.
 
 ## Existing automated evidence
 
-- The strict suite passes 229 tests with 15 expected opt-in skips.
+- The strict suite passes 234 tests with 15 expected opt-in skips. Enabling the
+  live direct-file path runs that check with 14 remaining skips.
 - Fresh light/dark Settings, New/Edit Profile, and scrolled-editor snapshot
   suites pass, including rendered horizontal-containment assertions.
 - The RelayBar-target warnings-as-errors universal Release build passes. The
@@ -111,3 +114,40 @@ website-download, and Homebrew publication remain pending.
   strict signature, stapled-ticket, Gatekeeper, version/build, universal-
   architecture, retained-resource, and launch checks. The stable appcast,
   website download, and Homebrew cask were deliberately left unchanged.
+- 2026-08-18: The direct-file correction shipped in the notarized build 8 Beta
+  2 artifact from commit `ec78e9e07c1af4ed5254ec36e83a22f1c17bc062`.
+  Apple accepted submission `d2157c19-02ff-4195-945a-9f5b3a074c22`. A public
+  Beta 1 installed below `/Applications` discovered, installed, and relaunched
+  build 8 through the signed public feed; the maintainer confirmed success.
+  The live SSH check also opened the exact supplied
+  `TRANSCRIPTION_LEARNINGS.md` path and verified bounded Markdown decoding.
+  See [Task 034 verification](034-open-direct-remote-file-paths.md).
+- 2026-08-18: The exact tested build 8 bytes were promoted as the stable
+  [RelayBar 1.4.0 release](https://github.com/lx2026/RelayBar/releases/tag/v1.4.0).
+  The ZIP is 6,538,729 bytes with SHA-256
+  `292ccadee9e8577c65cac86592778501c51591990a803685c0b71db004e4d105`.
+  Its anonymous download is byte-identical and passes version/build,
+  universal-architecture, nested strict signature, stapled-ticket,
+  Gatekeeper, retained-resource, and executable/dSYM UUID checks.
+- 2026-08-18: [PR 22](https://github.com/lx2026/RelayBar/pull/22)
+  passed CI and published a freshly signed appcast whose stable enclosure uses
+  the already tested ZIP signature. Public Pages deployment
+  [32170121350](https://github.com/lx2026/RelayBar/actions/runs/32170121350)
+  byte-matches the repository feed and verifies successfully.
+- 2026-08-18: [PR 23](https://github.com/lx2026/RelayBar/pull/23)
+  passed CI and published the stable README, changelog, security review, and
+  website. Pages deployment
+  [32170639810](https://github.com/lx2026/RelayBar/actions/runs/32170639810)
+  presents both stable download links at 1440 × 900 and 390 × 844 with no
+  horizontal overflow, missing images, or browser warnings.
+- 2026-08-18: The maintainer tap merged
+  [Homebrew PR 1](https://github.com/lx2026/homebrew-tap/pull/1) at
+  `fc5fd2c31cfa2ae3005488b6a44d65071b4a57d0`. Homebrew style and livecheck
+  passed, and the current strict online/download/signing auditor returned zero
+  findings. A real cask upgrade replaced the 1.3.0 receipt with 1.4.0 build 8.
+  The installed universal app passed strict signature, stapler, and Gatekeeper
+  checks and launched. Uninstall removed the managed app while leaving the
+  preferences checksum and all 54 application-support files unchanged; a
+  clean install restored and relaunched the same stable app. The cask does not
+  declare `auto_updates` because its in-app path has not been certified from a
+  Homebrew-managed prior build.
