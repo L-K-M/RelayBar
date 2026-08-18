@@ -14,6 +14,9 @@
 - Build the Xcode app target with complete Swift strict-concurrency checking and warnings treated as errors.
 - Run `plutil -lint` against the application property list.
 - Run `git diff --check` before committing.
+- Tests for transient published UI state observe the required state transition
+  and await a bounded expectation; they do not assume a short wall-clock sleep
+  determines main-actor scheduling order.
 
 ## Optional live check
 

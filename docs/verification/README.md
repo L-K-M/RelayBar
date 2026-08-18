@@ -12,3 +12,4 @@ Task verification reports record automated, visual, manual, security, and live-s
 - [Task 031 — Fix Edit Profile Insets](031-fix-edit-profile-insets.md)
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
 - [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)
+- [Task 035 — Stabilize Copy Confirmation Test](035-stabilize-copy-confirmation-test.md)
