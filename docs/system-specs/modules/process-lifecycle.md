@@ -35,4 +35,8 @@ Phases are `stopped`, `starting`, `retrying`, `running`, and `failed`.
 - Concurrent initial SFTP operations wait on one serialized startup. The private control socket is considered ready only after it appears while the owned process is still running, with a 120-second bounded readiness ceiling. Cancelling one waiter resumes it immediately without disrupting the shared startup for other or later work.
 - Listings, previews, and downloads remain independent, bounded `/usr/bin/sftp` children. Cancelling or reaping one child does not signal the master.
 - Master exit removes its socket and temporary directory. There is no retry timer or background reconnect; a later explicit operation starts a replacement master.
-- Server change, launcher return, Remote Files window close, and app quit synchronously retire the session so it cannot accept another channel. Process termination, reaping, and directory cleanup finish asynchronously without blocking the main actor.
+- Server change and Back-to-welcome retire the active session and snapshots.
+  Window close cancels active work; when an upload owns a remote staging name,
+  the model remains retained until its bounded cleanup attempt finishes and the
+  master is shut down. App termination uses AppKit's deferred reply to wait for
+  that retirement instead of orphaning the master or abandoning known staging.

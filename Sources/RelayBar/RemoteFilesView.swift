@@ -20,167 +20,622 @@ enum RemoteByteCount {
     }
 }
 
+enum RemoteSidebarFocus: Hashable {
+    case previewEntry(String)
+    case location(UUID)
+    case showAllRecentFolders
+    case host(UUID)
+    case showAllHostPaths(UUID)
+}
+
+enum RemoteSidebarFocusNavigator {
+    static func adjacent(
+        to current: RemoteSidebarFocus?,
+        moving direction: MoveCommandDirection,
+        within items: [RemoteSidebarFocus]
+    ) -> RemoteSidebarFocus? {
+        guard !items.isEmpty else { return nil }
+        guard direction == .up || direction == .down else { return current }
+        guard let current, let index = items.firstIndex(of: current) else {
+            return direction == .up ? items.last : items.first
+        }
+        let offset = direction == .up ? -1 : 1
+        return items[min(max(index + offset, 0), items.count - 1)]
+    }
+}
+
 struct RemoteFilesView: View {
     @ObservedObject var model: RemoteFilesModel
-    @FocusState private var isPathFocused: Bool
-    @State private var isAddingServer = false
+    @FocusState private var focusedSidebarItem: RemoteSidebarFocus?
+    @State private var isAddingPath = false
     @State private var isConfirmingServerRemoval = false
+    @State private var pendingServerRemovalID: UUID?
     @State private var isPreviewSidebarVisible = true
+    @State private var expandedHostIDs: Set<UUID> = []
+    @State private var showsAllRecentFolders = false
+    @State private var showsAllHostPaths: Set<UUID> = []
+    @State private var isConfirmingRecentClear = false
+    private let initialFocusedSidebarItem: RemoteSidebarFocus?
 
-    init(model: RemoteFilesModel, previewSidebarVisible: Bool = true) {
+    init(
+        model: RemoteFilesModel,
+        previewSidebarVisible: Bool = true,
+        expandedHostIDs: Set<UUID> = [],
+        initialFocusedSidebarItem: RemoteSidebarFocus? = nil
+    ) {
         self.model = model
         _isPreviewSidebarVisible = State(initialValue: previewSidebarVisible)
+        _expandedHostIDs = State(initialValue: expandedHostIDs)
+        self.initialFocusedSidebarItem = initialFocusedSidebarItem
     }
 
     var body: some View {
         Group {
-            if model.screen == .launcher {
-                launcher
-            } else {
-                ZStack {
-                    browser
-                        .opacity(model.screen == .browser ? 1 : 0)
-                        .allowsHitTesting(model.screen == .browser)
-                        .accessibilityHidden(model.screen != .browser)
-
-                    if model.screen == .preview {
-                        preview
-                            .background(Color(nsColor: .windowBackgroundColor))
-                            .zIndex(1)
-                    }
+            if isPreviewSidebarVisible {
+                HSplitView {
+                    workspaceSidebar
+                        .frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
+                    workspaceDetail
+                        .frame(minWidth: 430)
+                        .layoutPriority(1)
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                focusedSidebarItem = nil
+                            }
+                        )
                 }
+            } else {
+                workspaceDetail
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var launcher: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Remote path")
-                    .font(.system(size: 12, weight: .semibold))
-                TextField("/srv/app/output", text: $model.remotePath)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isPathFocused)
-                    .onSubmit {
-                        if model.canOpen {
-                            model.openRemotePath()
-                        }
-                    }
-                if let message = model.pathValidationMessage, !model.remotePath.isEmpty {
-                    Text(message)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Server")
-                    .font(.system(size: 12, weight: .semibold))
-                HStack(spacing: 8) {
-                    if model.servers.isEmpty {
-                        Text("No SSH servers found")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 8)
-                            .frame(height: 25)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary.opacity(0.05))
-                            )
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Picker("Server", selection: $model.selectedServerID) {
-                            ForEach(RemoteServer.Source.pickerOrder, id: \.self) { source in
-                                let sourceServers = model.servers(from: source)
-                                if !sourceServers.isEmpty {
-                                    Section(source.pickerSectionTitle) {
-                                        ForEach(sourceServers) { server in
-                                            Text(server.displayName)
-                                                .tag(Optional(server.id))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    Button {
-                        isAddingServer = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Add SSH host")
-                    .accessibilityLabel("Add SSH host")
-
-                    if model.canRemoveSelectedServer {
-                        Button(role: .destructive) {
-                            isConfirmingServerRemoval = true
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.bordered)
-                        .help("Remove saved host")
-                        .accessibilityLabel("Remove saved host")
-                    }
-                }
-
-                Text("Includes recents, RelayBar profiles, and SSH config.")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
-
-            if let errorMessage = model.errorMessage {
-                ErrorMessage(message: errorMessage)
-            }
-
-            Button {
-                model.openRemotePath()
-            } label: {
-                if model.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text("Open")
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!model.canOpen)
-            .keyboardShortcut(.defaultAction)
-        }
-        .padding(24)
+        .background(
+            RemoteSidebarKeyboardMonitor(
+                onActivate: activateFocusedSidebarItem,
+                isEnabled: isPreviewSidebarVisible
+                    && effectiveFocusedSidebarItem != nil
+            )
+            .frame(width: 0, height: 0)
+        )
         .onAppear {
-            isPathFocused = true
-        }
-        .sheet(isPresented: $isAddingServer) {
-            AddRemoteServerView { name, sshHost in
-                try model.addServer(name: name, sshHost: sshHost)
+            if focusedSidebarItem == nil {
+                focusedSidebarItem = initialFocusedSidebarItem
             }
+        }
+        .sheet(isPresented: $isAddingPath) {
+            AddRemotePathView(model: model)
+        }
+        .confirmationDialog(
+            "Clear all recent remote paths?",
+            isPresented: $isConfirmingRecentClear
+        ) {
+            Button("Clear Recent Locations", role: .destructive) {
+                model.clearRecentLocations()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saved hosts, forwarding profiles, and SSH config will not change.")
         }
         .confirmationDialog(
             "Remove this saved host?",
             isPresented: $isConfirmingServerRemoval
         ) {
             Button("Remove Saved Host", role: .destructive) {
-                model.removeSelectedServer()
+                if let pendingServerRemovalID {
+                    model.removeSavedServer(id: pendingServerRemovalID)
+                }
+                pendingServerRemovalID = nil
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                pendingServerRemovalID = nil
+            }
         } message: {
-            Text("Forwarding profiles and SSH config will not be changed.")
+            Text("Its recent paths are removed. Forwarding profiles and SSH config will not change.")
         }
+    }
+
+    @ViewBuilder private var workspaceDetail: some View {
+        switch model.screen {
+        case .welcome:
+            workspaceWelcome
+        case .browser:
+            browser
+        case .preview:
+            workspacePreview
+        }
+    }
+
+    private var workspaceSidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("Locations")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isAddingPath = true
+                } label: {
+                    Label("Add Path…", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!model.canActivateLocation)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if model.screen == .preview, !model.previewableEntries.isEmpty {
+                        sidebarSection("IN THIS FOLDER") {
+                            ForEach(model.previewableEntries) { entry in
+                                Button {
+                                    model.selectPreviewEntry(id: entry.id)
+                                } label: {
+                                    PreviewSidebarRow(
+                                        entry: entry,
+                                        isSelected: model.previewEntry?.id == entry.id
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!model.canActivateLocation)
+                                .focused(
+                                    $focusedSidebarItem,
+                                    equals: .previewEntry(entry.id)
+                                )
+                            }
+                        }
+                    }
+
+                    if !model.recentLocations.isEmpty {
+                        sidebarSection("RECENT FOLDERS") {
+                            ForEach(globallyVisibleRecentLocations) { location in
+                                RemoteLocationRow(
+                                    location: location,
+                                    isActiveRoot: model.screen == .browser
+                                        && model.activeLocationID == location.id,
+                                    isWorkspaceRoot: model.activeLocationID == location.id,
+                                    isKeyboardFocused: effectiveFocusedSidebarItem
+                                        == .location(location.id),
+                                    onActivate: { model.activate(location) },
+                                    onRemove: { model.removeRecentLocation(id: location.id) }
+                                )
+                                .disabled(!model.canActivateLocation)
+                                .focused(
+                                    $focusedSidebarItem,
+                                    equals: .location(location.id)
+                                )
+                            }
+                            if model.recentLocations.count > model.recentFolderLocations.count {
+                                Button(showsAllRecentFolders ? "Show Less" : "Show All Recent Folders…") {
+                                    showsAllRecentFolders.toggle()
+                                }
+                                .buttonStyle(.plain)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 9)
+                                .padding(.top, 3)
+                                .focused(
+                                    $focusedSidebarItem,
+                                    equals: .showAllRecentFolders
+                                )
+                            }
+                        } menu: {
+                            Button("Clear Recent Locations…", role: .destructive) {
+                                isConfirmingRecentClear = true
+                            }
+                        }
+                    }
+
+                    let recentHosts = model.servers(from: .recent)
+                    if !recentHosts.isEmpty {
+                        sidebarSection("RECENT HOSTS") {
+                            ForEach(recentHosts) { server in
+                                recentHost(server)
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+            }
+            .onMoveCommand(perform: moveSidebarFocus)
+
+            Divider()
+            Text("Recent paths stay on this Mac. RelayBar connects only after you open one.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+        }
+        .background(.ultraThinMaterial)
+        .accessibilityLabel("Remote locations")
+    }
+
+    private func sidebarSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .padding(.horizontal, 9)
+            content()
+        }
+    }
+
+    private func sidebarSection<Content: View, MenuContent: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder menu: () -> MenuContent
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.5)
+                Spacer()
+                Menu {
+                    menu()
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 18)
+                .accessibilityLabel("Recent folders actions")
+            }
+            .padding(.horizontal, 9)
+            content()
+        }
+    }
+
+    @ViewBuilder private func recentHost(_ server: RemoteServer) -> some View {
+        let visibleKeys = Set(globallyVisibleRecentLocations.map(\.key))
+        let allPaths = model.recentLocations.filter {
+            $0.server.connectionIdentity == server.connectionIdentity
+                && !visibleKeys.contains($0.key)
+        }
+        let canExpand = !allPaths.isEmpty
+        let isExpanded = canExpand && expandedHostIDs.contains(server.id)
+        let nestedPaths = showsAllHostPaths.contains(server.id)
+            ? allPaths
+            : model.nestedLocations(
+                for: server,
+                excluding: globallyVisibleRecentLocations
+            )
+
+        Button {
+            if canExpand {
+                if isExpanded {
+                    expandedHostIDs.remove(server.id)
+                } else {
+                    expandedHostIDs.insert(server.id)
+                }
+            } else {
+                model.selectedServerID = server.id
+                isAddingPath = true
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(
+                    systemName: canExpand
+                        ? (isExpanded ? "chevron.down" : "chevron.right")
+                        : "plus"
+                )
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 10)
+                Image(systemName: "server.rack")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(server.displayName)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("\(model.recentLocationCount(for: server)) recent "
+                        + (model.recentLocationCount(for: server) == 1 ? "path" : "paths"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 34)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canActivateLocation)
+        .focused($focusedSidebarItem, equals: .host(server.id))
+        .contextMenu {
+            Button("Add Path…") {
+                model.selectedServerID = server.id
+                isAddingPath = true
+            }
+            .disabled(!model.canActivateLocation)
+            if model.isSavedServer(id: server.id) {
+                Divider()
+                Button("Remove Saved Host…", role: .destructive) {
+                    pendingServerRemovalID = server.id
+                    isConfirmingServerRemoval = true
+                }
+                .disabled(!model.canActivateLocation)
+            }
+        }
+        .accessibilityLabel(
+            "\(server.displayName), \(model.recentLocationCount(for: server)) recent "
+                + (model.recentLocationCount(for: server) == 1 ? "path" : "paths")
+        )
+        .accessibilityHint(
+            canExpand ? "Show remote paths" : "Add a path for this host"
+        )
+
+        if isExpanded {
+            ForEach(nestedPaths) { location in
+                RemoteLocationRow(
+                    location: location,
+                    isActiveRoot: model.screen == .browser
+                        && model.activeLocationID == location.id,
+                    isWorkspaceRoot: model.activeLocationID == location.id,
+                    isKeyboardFocused: effectiveFocusedSidebarItem == .location(location.id),
+                    isNested: true,
+                    onActivate: { model.activate(location) },
+                    onRemove: { model.removeRecentLocation(id: location.id) }
+                )
+                .disabled(!model.canActivateLocation)
+                .focused(
+                    $focusedSidebarItem,
+                    equals: .location(location.id)
+                )
+            }
+            if allPaths.count > model.nestedLocations(
+                for: server,
+                excluding: globallyVisibleRecentLocations
+            ).count {
+                Button(showsAllHostPaths.contains(server.id) ? "Show Less" : "Show All Paths…") {
+                    if showsAllHostPaths.contains(server.id) {
+                        showsAllHostPaths.remove(server.id)
+                    } else {
+                        showsAllHostPaths.insert(server.id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Color.accentColor)
+                .padding(.leading, 40)
+                .padding(.top, 2)
+                .focused(
+                    $focusedSidebarItem,
+                    equals: .showAllHostPaths(server.id)
+                )
+            }
+        }
+    }
+
+    private var sidebarFocusItems: [RemoteSidebarFocus] {
+        var items: [RemoteSidebarFocus] = []
+        if model.screen == .preview {
+            items += model.previewableEntries.map {
+                .previewEntry($0.id)
+            }
+        }
+
+        items += globallyVisibleRecentLocations.map { .location($0.id) }
+        if model.recentLocations.count > model.recentFolderLocations.count {
+            items.append(.showAllRecentFolders)
+        }
+
+        for server in model.servers(from: .recent) {
+            items.append(.host(server.id))
+            guard expandedHostIDs.contains(server.id) else { continue }
+            let visibleKeys = Set(globallyVisibleRecentLocations.map(\.key))
+            let allPaths = model.recentLocations.filter {
+                $0.server.connectionIdentity == server.connectionIdentity
+                    && !visibleKeys.contains($0.key)
+            }
+            let visiblePaths = showsAllHostPaths.contains(server.id)
+                ? allPaths
+                : model.nestedLocations(
+                    for: server,
+                    excluding: globallyVisibleRecentLocations
+                )
+            items += visiblePaths.map { .location($0.id) }
+            if allPaths.count > model.nestedLocations(
+                for: server,
+                excluding: globallyVisibleRecentLocations
+            ).count {
+                items.append(.showAllHostPaths(server.id))
+            }
+        }
+        return items
+    }
+
+    private var globallyVisibleRecentLocations: [RemoteLocation] {
+        showsAllRecentFolders ? model.recentLocations : model.recentFolderLocations
+    }
+
+    private var effectiveFocusedSidebarItem: RemoteSidebarFocus? {
+        focusedSidebarItem ?? initialFocusedSidebarItem
+    }
+
+    @discardableResult
+    private func activateFocusedSidebarItem() -> Bool {
+        guard let focusedSidebarItem = effectiveFocusedSidebarItem else { return false }
+        switch focusedSidebarItem {
+        case .previewEntry(let id):
+            guard model.canActivateLocation else { return false }
+            model.selectPreviewEntry(id: id)
+        case .location(let id):
+            guard
+                model.canActivateLocation,
+                let location = model.recentLocations.first(where: { $0.id == id })
+            else { return false }
+            model.activate(location)
+        case .showAllRecentFolders:
+            showsAllRecentFolders.toggle()
+        case .host(let id):
+            guard
+                model.canActivateLocation,
+                let server = model.servers(from: .recent).first(where: { $0.id == id })
+            else { return false }
+            let hasNestedPaths = model.recentLocations.contains {
+                $0.server.connectionIdentity == server.connectionIdentity
+                    && !Set(globallyVisibleRecentLocations.map(\.key)).contains($0.key)
+            }
+            if hasNestedPaths {
+                if expandedHostIDs.contains(id) {
+                    expandedHostIDs.remove(id)
+                } else {
+                    expandedHostIDs.insert(id)
+                }
+            } else {
+                model.selectedServerID = id
+                isAddingPath = true
+            }
+        case .showAllHostPaths(let id):
+            if showsAllHostPaths.contains(id) {
+                showsAllHostPaths.remove(id)
+            } else {
+                showsAllHostPaths.insert(id)
+            }
+        }
+        return true
+    }
+
+    private func moveSidebarFocus(_ direction: MoveCommandDirection) {
+        if case .host(let serverID) = focusedSidebarItem {
+            if direction == .right {
+                expandedHostIDs.insert(serverID)
+                return
+            }
+            if direction == .left {
+                expandedHostIDs.remove(serverID)
+                return
+            }
+        }
+        focusedSidebarItem = RemoteSidebarFocusNavigator.adjacent(
+            to: focusedSidebarItem,
+            moving: direction,
+            within: sidebarFocusItems
+        )
+    }
+
+    private var workspaceWelcome: some View {
+        VStack(spacing: 0) {
+            HStack {
+                sidebarToggle
+                Spacer()
+                Text(model.isLoading ? model.presentedPath : "Choose a remote location")
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Refresh") {}
+                    .disabled(true)
+                Button("Upload…") {}
+                    .disabled(true)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 52)
+            Divider()
+            if let errorMessage = model.errorMessage {
+                LoadErrorStrip(
+                    message: errorMessage,
+                    onRetry: model.retryLastLoad,
+                    onDismiss: model.dismissLoadError,
+                    showsRemoveFromRecents: model.failedLocationID != nil,
+                    onRemoveFromRecents: model.removeFailedLocation
+                )
+                Divider()
+            }
+            if model.isLoading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Opening remote folder…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 38))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("Open a remote folder")
+                        .font(.title3.weight(.semibold))
+                    Text("Choose a recent folder or a path under a recent host. "
+                        + "RelayBar won’t connect until you open a location.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 390)
+                    Button("Add Path…") {
+                        isAddingPath = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.canActivateLocation)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(32)
+            }
+        }
+    }
+
+    private var workspacePreview: some View {
+        VStack(spacing: 0) {
+            previewToolbar
+            Divider()
+            previewDetail
+        }
+        .background(
+            RemotePreviewKeyboardMonitor(
+                onMovePrevious: { model.movePreviewSelection(by: -1) },
+                onMoveNext: { model.movePreviewSelection(by: 1) },
+                isEnabled: model.screen == .preview,
+                isSidebarFocused: isPreviewSidebarVisible
+                    && focusedSidebarItem != nil
+            )
+            .frame(width: 0, height: 0)
+        )
+        .onExitCommand {
+            model.closePreview()
+        }
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                focusedSidebarItem = nil
+            }
+        )
+    }
+
+    private var sidebarToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isPreviewSidebarVisible.toggle()
+            }
+        } label: {
+            Image(systemName: "sidebar.leading")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.control, .command])
+        .help(isPreviewSidebarVisible ? "Hide location sidebar" : "Show location sidebar")
+        .accessibilityLabel(
+            isPreviewSidebarVisible ? "Hide location sidebar" : "Show location sidebar"
+        )
     }
 
     private var browser: some View {
         VStack(spacing: 0) {
             browserToolbar
             Divider()
+
+            if let upload = model.upload {
+                UploadStrip(model: model, upload: upload)
+                Divider()
+            }
 
             if let transfer = model.transfer {
                 TransferStrip(model: model, transfer: transfer)
@@ -191,7 +646,9 @@ struct RemoteFilesView: View {
                 LoadErrorStrip(
                     message: errorMessage,
                     onRetry: model.retryLastLoad,
-                    onDismiss: model.dismissLoadError
+                    onDismiss: model.dismissLoadError,
+                    showsRemoveFromRecents: model.failedLocationID != nil,
+                    onRemoveFromRecents: model.removeFailedLocation
                 )
                 Divider()
             }
@@ -200,7 +657,7 @@ struct RemoteFilesView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text("Opening folder…")
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -211,7 +668,7 @@ struct RemoteFilesView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Empty folder")
                     Text("This folder is empty")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.headline)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -232,7 +689,9 @@ struct RemoteFilesView: View {
                     model.activate(entry)
                     return true
                 },
-                isEnabled: model.screen == .browser
+                isEnabled: model.screen == .browser,
+                isSidebarFocused: isPreviewSidebarVisible
+                    && focusedSidebarItem != nil
             )
             .frame(width: 0, height: 0)
         )
@@ -245,6 +704,8 @@ struct RemoteFilesView: View {
 
     private var browserToolbar: some View {
         HStack(spacing: 12) {
+            sidebarToggle
+
             Button {
                 model.goBack()
             } label: {
@@ -257,7 +718,7 @@ struct RemoteFilesView: View {
             Spacer()
 
             Text(model.presentedPath)
-                .font(.system(size: 12.5, design: .monospaced))
+                .font(.system(.callout, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(model.presentedPath)
@@ -279,10 +740,18 @@ struct RemoteFilesView: View {
                 }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(model.isLoading || model.isRefreshing)
+            .disabled(!model.canActivateLocation)
+
+            Button {
+                model.beginUpload()
+            } label: {
+                Label("Upload…", systemImage: "arrow.up.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!model.canUpload)
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(minHeight: 48)
     }
 
     private var fileList: some View {
@@ -303,53 +772,12 @@ struct RemoteFilesView: View {
             }
         }
         .listStyle(.plain)
-    }
-
-    private var preview: some View {
-        VStack(spacing: 0) {
-            previewToolbar
-            Divider()
-
-            if isPreviewSidebarVisible {
-                HSplitView {
-                    previewSidebar
-                        .frame(minWidth: 210, idealWidth: 250, maxWidth: 360)
-                    previewDetail
-                        .frame(minWidth: 430)
-                        .layoutPriority(1)
-                }
-            } else {
-                previewDetail
-            }
-        }
-        .background(
-            RemotePreviewKeyboardMonitor(
-                onMovePrevious: { model.movePreviewSelection(by: -1) },
-                onMoveNext: { model.movePreviewSelection(by: 1) },
-                isEnabled: model.screen == .preview
-            )
-            .frame(width: 0, height: 0)
-        )
-        .onExitCommand {
-            model.closePreview()
-        }
+        .disabled(!model.canActivateEntry)
     }
 
     private var previewToolbar: some View {
         HStack(spacing: 10) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    isPreviewSidebarVisible.toggle()
-                }
-            } label: {
-                Image(systemName: "sidebar.leading")
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("s", modifiers: [.control, .command])
-            .help(isPreviewSidebarVisible ? "Hide preview sidebar" : "Show preview sidebar")
-            .accessibilityLabel(
-                isPreviewSidebarVisible ? "Hide preview sidebar" : "Show preview sidebar"
-            )
+            sidebarToggle
 
             Button {
                 model.closePreview()
@@ -359,19 +787,20 @@ struct RemoteFilesView: View {
             .buttonStyle(.borderless)
             .keyboardShortcut("[", modifiers: .command)
             .help("Back to folder")
+            .disabled(!model.canGoBack)
 
             Divider()
                 .frame(height: 18)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.previewEntry?.name ?? "Preview")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 if let entry = model.previewEntry {
                     Text(previewDescription(for: entry))
-                        .font(.system(size: 10.5))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -394,68 +823,7 @@ struct RemoteFilesView: View {
             )
         }
         .padding(.horizontal, 14)
-        .frame(height: 52)
-    }
-
-    private var previewSidebar: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("IN THIS FOLDER")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.5)
-
-                    Text(model.currentPath)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(model.currentPath)
-                }
-
-                Spacer(minLength: 8)
-
-                Text("\(model.previewableEntries.count)")
-                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityLabel(
-                        "\(model.previewableEntries.count) previewable files"
-                    )
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-
-            Divider()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(model.previewableEntries) { entry in
-                            Button {
-                                model.selectPreviewEntry(id: entry.id)
-                            } label: {
-                                PreviewSidebarRow(
-                                    entry: entry,
-                                    isSelected: model.previewEntry?.id == entry.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .id(entry.id)
-                        }
-                    }
-                    .padding(8)
-                }
-                .onChange(of: model.previewEntry?.id) { selectedID in
-                    guard let selectedID else { return }
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(selectedID, anchor: .center)
-                    }
-                }
-            }
-        }
-        .background(.ultraThinMaterial)
-        .accessibilityLabel("Preview files in \(model.currentPath)")
+        .frame(minHeight: 52)
     }
 
     private var previewDetail: some View {
@@ -469,7 +837,7 @@ struct RemoteFilesView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text("Loading preview…")
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -517,7 +885,7 @@ struct RemoteFilesView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(.red)
             Text(message)
-                .font(.system(size: 12))
+                .font(.callout)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
             Button("Try Again", action: retry)
@@ -525,6 +893,195 @@ struct RemoteFilesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
+    }
+}
+
+struct AddRemotePathView: View {
+    @ObservedObject var model: RemoteFilesModel
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var isAddingHost = false
+    @State private var isOpening = false
+    @FocusState private var isPathFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Add Remote Path")
+                    .font(.title3.weight(.semibold))
+                Text("Choose an SSH host and enter an exact absolute path.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Host")
+                    .font(.caption.weight(.medium))
+                HStack(spacing: 8) {
+                    if model.servers.isEmpty {
+                        Text("No SSH hosts available")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Picker("Host", selection: $model.selectedServerID) {
+                            ForEach(RemoteServer.Source.pickerOrder, id: \.self) { source in
+                                let servers = model.servers(from: source)
+                                if !servers.isEmpty {
+                                    Section(source.pickerSectionTitle) {
+                                        ForEach(servers) { server in
+                                            Text(server.displayName)
+                                                .tag(Optional(server.id))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                        .disabled(!model.canActivateLocation)
+                    }
+                    Button("Add Host…") {
+                        isAddingHost = true
+                    }
+                    .disabled(!model.canActivateLocation)
+                }
+                Text("Recents, saved hosts, forwarding profiles, and SSH config")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Remote path")
+                    .font(.caption.weight(.medium))
+                TextField("/srv/app/output", text: $model.remotePath)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isPathFocused)
+                    .onSubmit(open)
+                if let message = model.pathValidationMessage, !model.remotePath.isEmpty {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                } else {
+                    Text("Enter an absolute path beginning with /")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if isOpening, let errorMessage = model.errorMessage {
+                ErrorMessage(message: errorMessage)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isOpening && model.isLoading)
+                Button(action: open) {
+                    if isOpening && model.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Open")
+                    }
+                }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!model.canOpen)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 430)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            isPathFocused = true
+        }
+        .onChange(of: model.successfulOpenSequence) { _ in
+            if isOpening {
+                dismiss()
+            }
+        }
+        .interactiveDismissDisabled(isOpening && model.isLoading)
+        .sheet(isPresented: $isAddingHost) {
+            AddRemoteServerView { name, sshHost in
+                try model.addServer(name: name, sshHost: sshHost)
+            }
+        }
+    }
+
+    private func open() {
+        guard model.canOpen else { return }
+        isOpening = true
+        model.openRemotePath()
+    }
+}
+
+private struct RemoteLocationRow: View {
+    let location: RemoteLocation
+    let isActiveRoot: Bool
+    let isWorkspaceRoot: Bool
+    let isKeyboardFocused: Bool
+    var isNested = false
+    let onActivate: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        Button(action: onActivate) {
+            HStack(spacing: 8) {
+                Image(systemName: isNested ? "arrow.turn.down.right" : "folder.fill")
+                    .font(.system(size: isNested ? 10 : 14))
+                    .foregroundStyle(isActiveRoot ? Color.white : Color.accentColor)
+                    .frame(width: 19)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(isNested ? location.path : location.displayName)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !isNested {
+                        Text("\(location.server.displayName) · \(location.path)")
+                            .font(.caption2)
+                            .foregroundStyle(isActiveRoot ? Color.white.opacity(0.78) : .secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 4)
+                if isWorkspaceRoot && !isActiveRoot {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 6))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityLabel("Workspace root")
+                }
+            }
+            .padding(.horizontal, isNested ? 20 : 8)
+            .frame(minHeight: isNested ? 29 : 38)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isActiveRoot ? Color.accentColor : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(
+                        isKeyboardFocused
+                            ? (isActiveRoot ? Color.white : Color.accentColor)
+                            : Color.clear,
+                        lineWidth: 2
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Open", action: onActivate)
+            Button("Remove from Recents", role: .destructive, action: onRemove)
+        }
+        .accessibilityLabel(
+            "\(location.displayName), \(location.server.displayName), \(location.path)"
+                + (isWorkspaceRoot ? ", workspace root" : "")
+        )
+        .accessibilityHint("Open this remote folder")
+        .accessibilityAddTraits(isActiveRoot ? .isSelected : [])
     }
 }
 
@@ -541,12 +1098,12 @@ private struct PreviewSidebarRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
-                    .font(.system(size: 11.5))
+                    .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Text(metadata)
-                    .font(.system(size: 9.5))
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -597,30 +1154,30 @@ private struct AddRemoteServerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add SSH Host")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.title3.weight(.semibold))
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Name · Optional")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.caption.weight(.medium))
                 TextField("Development server", text: $name)
                     .textFieldStyle(.roundedBorder)
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("SSH host")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.caption.weight(.medium))
                 TextField("user@server", text: $sshHost)
                     .textFieldStyle(.roundedBorder)
                     .focused($isHostFocused)
                     .onSubmit(add)
                 Text("RelayBar uses your existing OpenSSH config, keys, and agent.")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(.red)
             }
 
@@ -669,19 +1226,19 @@ private struct RemoteFileRow: View {
                 .frame(width: 22)
 
             Text(entry.name)
-                .font(.system(size: 12.5, weight: entry.isDirectory ? .medium : .regular))
+                .font(.callout.weight(entry.isDirectory ? .medium : .regular))
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Spacer(minLength: 20)
 
             Text(entry.modificationText)
-                .font(.system(size: 11))
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 132, alignment: .trailing)
 
             Text(sizeText)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(width: 72, alignment: .trailing)
 
@@ -700,7 +1257,7 @@ private struct RemoteFileRow: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 43)
+        .frame(minHeight: 43)
         .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onActivate)
@@ -769,7 +1326,7 @@ private struct TransferStrip: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.callout.weight(.medium))
                     .lineLimit(1)
                 if transfer.phase == .active || transfer.phase == .cancelling {
                     if let fraction = transfer.fraction {
@@ -784,7 +1341,7 @@ private struct TransferStrip: View {
                     }
                 } else if let message = transfer.message {
                     Text(message)
-                        .font(.system(size: 10.5))
+                        .font(.caption)
                         .foregroundStyle(transfer.phase == .failed ? .red : .secondary)
                         .lineLimit(2)
                 }
@@ -794,14 +1351,14 @@ private struct TransferStrip: View {
 
             if transfer.phase == .active {
                 Text(progressText)
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Button("Cancel") {
                     model.cancelTransfer()
                 }
             } else if transfer.phase == .cancelling {
                 Text(progressText)
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Button("Canceling…") {}
                     .disabled(true)
@@ -887,10 +1444,102 @@ private struct TransferStrip: View {
     }
 }
 
+private struct UploadStrip: View {
+    @ObservedObject var model: RemoteFilesModel
+    let upload: RemoteFilesModel.UploadPresentation
+
+    var body: some View {
+        HStack(spacing: 11) {
+            statusIcon
+                .accessibilityLabel(statusAccessibilityLabel)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                if upload.phase == .active || upload.phase == .cancelling {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel(title)
+                        .accessibilityValue(upload.message ?? "In progress")
+                } else if let message = upload.message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(upload.phase == .failed ? .red : .secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            if upload.phase == .active {
+                Text(upload.message ?? "Staging safely…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Cancel") { model.cancelUpload() }
+            } else if upload.phase == .cancelling {
+                Button("Canceling…") {}
+                    .disabled(true)
+            } else if upload.phase == .failed || upload.phase == .cancelled {
+                Button("Try Again") { model.retryUpload() }
+                Button("Dismiss") { model.dismissUpload() }
+            } else {
+                Button("Dismiss") { model.dismissUpload() }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(Color.accentColor.opacity(0.06))
+    }
+
+    @ViewBuilder private var statusIcon: some View {
+        switch upload.phase {
+        case .active:
+            Image(systemName: "arrow.up.circle")
+                .foregroundStyle(Color.accentColor)
+        case .cancelling:
+            ProgressView()
+                .controlSize(.small)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+        case .cancelled:
+            Image(systemName: "xmark.circle")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var title: String {
+        let name = upload.localFile.lastPathComponent
+        switch upload.phase {
+        case .active: return "Uploading \(name)"
+        case .cancelling: return "Canceling \(name)"
+        case .completed: return "Uploaded \(name)"
+        case .failed: return "Couldn’t upload \(name)"
+        case .cancelled: return "Canceled \(name)"
+        }
+    }
+
+    private var statusAccessibilityLabel: String {
+        switch upload.phase {
+        case .active: return "Upload in progress"
+        case .cancelling: return "Canceling upload"
+        case .completed: return "Upload complete"
+        case .failed: return "Upload failed"
+        case .cancelled: return "Upload canceled"
+        }
+    }
+}
+
 private struct LoadErrorStrip: View {
     let message: String
     let onRetry: () -> Void
     let onDismiss: () -> Void
+    let showsRemoveFromRecents: Bool
+    let onRemoveFromRecents: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -899,12 +1548,17 @@ private struct LoadErrorStrip: View {
                 .accessibilityLabel("Load error")
 
             Text(message)
-                .font(.system(size: 11))
+                .font(.caption)
                 .lineLimit(2)
 
             Spacer(minLength: 12)
 
             Button("Try Again", action: onRetry)
+            if showsRemoveFromRecents {
+                Button("Remove from Recents", role: .destructive) {
+                    onRemoveFromRecents()
+                }
+            }
             Button {
                 onDismiss()
             } label: {
@@ -924,7 +1578,7 @@ private struct ErrorMessage: View {
 
     var body: some View {
         Label(message, systemImage: "exclamationmark.circle.fill")
-            .font(.system(size: 11))
+            .font(.caption)
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -943,16 +1597,82 @@ enum RemoteFilesKeyboardShortcut {
     }
 }
 
+private struct RemoteSidebarKeyboardMonitor: NSViewRepresentable {
+    let onActivate: () -> Bool
+    let isEnabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onActivate: onActivate, isEnabled: isEnabled)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.view = nsView
+        context.coordinator.onActivate = onActivate
+        context.coordinator.isEnabled = isEnabled
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        var onActivate: () -> Bool
+        var isEnabled: Bool
+        private var monitor: Any?
+
+        init(onActivate: @escaping () -> Bool, isEnabled: Bool) {
+            self.onActivate = onActivate
+            self.isEnabled = isEnabled
+        }
+
+        func install() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let mainThreadEvent = MainThreadNSEvent(value: event)
+                let result = MainActor.assumeIsolated { () -> MainThreadNSEvent? in
+                    guard let self else { return mainThreadEvent }
+                    guard
+                        self.isEnabled,
+                        event.window === self.view?.window,
+                        event.keyCode == 36 || event.keyCode == 76,
+                        RemoteFilesKeyboardShortcut.isUnmodified(event.modifierFlags)
+                    else { return mainThreadEvent }
+                    return self.onActivate() ? nil : mainThreadEvent
+                }
+                return result?.value
+            }
+        }
+
+        func uninstall() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+    }
+}
+
 private struct RemoteFilesKeyboardMonitor: NSViewRepresentable {
     let onPreview: () -> Bool
     let onActivate: () -> Bool
     let isEnabled: Bool
+    let isSidebarFocused: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onPreview: onPreview,
             onActivate: onActivate,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            isSidebarFocused: isSidebarFocused
         )
     }
 
@@ -968,6 +1688,7 @@ private struct RemoteFilesKeyboardMonitor: NSViewRepresentable {
         context.coordinator.onPreview = onPreview
         context.coordinator.onActivate = onActivate
         context.coordinator.isEnabled = isEnabled
+        context.coordinator.isSidebarFocused = isSidebarFocused
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -980,16 +1701,19 @@ private struct RemoteFilesKeyboardMonitor: NSViewRepresentable {
         var onPreview: () -> Bool
         var onActivate: () -> Bool
         var isEnabled: Bool
+        var isSidebarFocused: Bool
         private var monitor: Any?
 
         init(
             onPreview: @escaping () -> Bool,
             onActivate: @escaping () -> Bool,
-            isEnabled: Bool
+            isEnabled: Bool,
+            isSidebarFocused: Bool
         ) {
             self.onPreview = onPreview
             self.onActivate = onActivate
             self.isEnabled = isEnabled
+            self.isSidebarFocused = isSidebarFocused
         }
 
         func install() {
@@ -1011,6 +1735,7 @@ private struct RemoteFilesKeyboardMonitor: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> NSEvent? {
             guard
                 isEnabled,
+                !isSidebarFocused,
                 event.window === view?.window,
                 isFileListResponder(event.window?.firstResponder),
                 RemoteFilesKeyboardShortcut.isUnmodified(event.modifierFlags)
@@ -1062,12 +1787,14 @@ private struct RemotePreviewKeyboardMonitor: NSViewRepresentable {
     let onMovePrevious: () -> Bool
     let onMoveNext: () -> Bool
     let isEnabled: Bool
+    let isSidebarFocused: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onMovePrevious: onMovePrevious,
             onMoveNext: onMoveNext,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            isSidebarFocused: isSidebarFocused
         )
     }
 
@@ -1083,6 +1810,7 @@ private struct RemotePreviewKeyboardMonitor: NSViewRepresentable {
         context.coordinator.onMovePrevious = onMovePrevious
         context.coordinator.onMoveNext = onMoveNext
         context.coordinator.isEnabled = isEnabled
+        context.coordinator.isSidebarFocused = isSidebarFocused
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -1095,16 +1823,19 @@ private struct RemotePreviewKeyboardMonitor: NSViewRepresentable {
         var onMovePrevious: () -> Bool
         var onMoveNext: () -> Bool
         var isEnabled: Bool
+        var isSidebarFocused: Bool
         private var monitor: Any?
 
         init(
             onMovePrevious: @escaping () -> Bool,
             onMoveNext: @escaping () -> Bool,
-            isEnabled: Bool
+            isEnabled: Bool,
+            isSidebarFocused: Bool
         ) {
             self.onMovePrevious = onMovePrevious
             self.onMoveNext = onMoveNext
             self.isEnabled = isEnabled
+            self.isSidebarFocused = isSidebarFocused
         }
 
         func install() {
@@ -1126,6 +1857,7 @@ private struct RemotePreviewKeyboardMonitor: NSViewRepresentable {
             }
             guard
                 isEnabled,
+                !isSidebarFocused,
                 event.window === window || NSApplication.shared.keyWindow === window,
                 !hasActiveDocumentTextResponder(in: window),
                 RemoteFilesKeyboardShortcut.isUnmodified(event.modifierFlags)

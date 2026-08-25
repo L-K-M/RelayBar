@@ -35,7 +35,18 @@ previewable Markdown file.
 
 Remote Files changes should additionally exercise that server and absolute path manually for nested navigation, cached Back and revisit, uncached-open cancellation, refresh, file download, recursive folder download, cancellation, image preview, Markdown preview, connection loss, window close, and representative failures. For transport-reuse changes, record cold initial-open and at least five warm uncached nested-folder timings against a genuinely high-latency server, and confirm the warm operations reuse one master without another key exchange or authentication.
 
-Before a live server is available, use the DEBUG-only Remote Files fixture to review light and dark appearance, minimum-window truncation, empty folders, long names, immediate target-path and **Opening folder…** feedback, cached revalidation, rapid navigation and Back cancellation, split image and Markdown previews, sibling selection, Left/Right switching, sidebar dragging and Control-Command-S visibility, focused reading, refresh recovery, initial connection errors, and active, completed, failed, and canceled transfers. Fixture downloads must remain inside their private temporary directory and must not open Finder.
+Workspace or upload changes additionally exercise one-click recent-folder
+revisit, Add Path retry, individual and complete history removal, sidebar
+focus-only traversal plus Return activation, and sidebar/detail preview arrow
+ownership. Against an isolated writable remote directory, record the server's
+exact hard-link and POSIX-rename advertisements; verify a new upload, approved
+replacement, cancel during staging, cancel after publication, hard-link target
+race, unsupported-extension failure, master loss, cleanup retry/failure, and
+window-close/app-quit retirement. Use unique test names and remove only those
+exact names. Never treat a skipped or unreachable live target as passing live
+evidence.
+
+Before a live server is available, use the DEBUG-only Remote Files fixture to review light and dark appearance, minimum-window truncation, empty folders, long names, recent-folder and recent-host overflow, Add Path validation, immediate target-path and **Opening folder…** feedback, cached revalidation, rapid navigation and Back cancellation, split image and Markdown previews, sibling selection, sidebar focus and Return activation, Left/Right switching, sidebar dragging and Control-Command-S visibility, focused reading, refresh recovery, initial connection errors, and active, completed, failed, and canceled uploads and downloads. Fixture downloads must remain inside their private temporary directory and must not open Finder.
 
 Start a DEBUG build with `--preview-window --flexible-forwarding-preview` to review rule-aware profile rows and the editor without reading or changing the user's saved profiles. Review add, type switching, duplicate, reorder, remove, automatic ports, Unix fields, exposure warnings, reverse-SOCKS policy, scrolling, keyboard focus, and accessibility labels in light and dark appearance.
 

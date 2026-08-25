@@ -17,6 +17,21 @@
 - Remote paths must be absolute, single-line, and no more than 32 KiB of UTF-8. SFTP batch values escape quotes and backslashes. Listing basenames containing path separators or control characters are ignored; absolute listing names are accepted only when they resolve to direct children of the requested folder.
 - Remote listings are capped at 10,000 supported entries, 32 KiB per line, and 4 KiB per entry name; negative sizes are rejected. Captured SFTP output is capped at 32 MiB, captured SFTP diagnostics at 1 MiB, image previews at 100 MiB, and Markdown previews at 2 MiB.
 - Command output and previews use private temporary directories. Downloads use a hidden `0700` staging directory beside the chosen destination and replace existing content only after success.
+- Upload accepts one local regular non-symbolic-link file, validates the complete
+  remote path, and uses a unique exact same-directory staging name. A new name
+  is published only with the advertised SFTP hard-link extension; an explicitly
+  approved regular-file replacement is published only with advertised POSIX
+  rename. Observed directories and symbolic links, missing extensions, master
+  replacement before publish, and raced-in hard-link targets fail closed.
+- Upload capability detection parses only exact extension-advertisement lines
+  from an app-controlled debug-level-2 probe tied to the current owned master.
+  Debug lines are removed from user-visible errors and are not persisted or
+  logged by RelayBar.
+- Upload cleanup removes only the exact app-generated staging path, without a
+  shell, wildcard, recursion, or remote arbitrary command. Confirmed
+  publication wins over a late cancellation; otherwise cancellation reports
+  no publication, and cleanup uncertainty is explicit. App termination waits
+  for in-flight upload cleanup before retiring the SSH master.
 - Cancellation, failure, preview exit, window close, and app quit clean up owned temporary content.
 - Markdown accepts UTF-8 without NULs. HTML-looking spans, including multi-line tags and tags in link labels, are escaped before parsing so raw tags stay literal and never execute; images and embeds never load; Mermaid never executes.
 - Only clicked absolute HTTP, HTTPS, and email links without credentials or raw/percent-decoded control characters reach macOS. Relative Markdown references apply the same decoded-control rejection. Private wiki, tag, footnote, and math references require a random per-preview capability token; remote-authored forgeries remain blocked.

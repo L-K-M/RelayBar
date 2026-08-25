@@ -82,6 +82,26 @@ struct RemoteServer: Identifiable, Hashable, Sendable {
     }
 }
 
+struct RemoteLocation: Identifiable, Hashable, Sendable {
+    struct Key: Hashable, Sendable {
+        let connection: RemoteServer.ConnectionIdentity
+        let path: String
+    }
+
+    let id: UUID
+    let server: RemoteServer
+    let path: String
+
+    var key: Key {
+        Key(connection: server.connectionIdentity, path: RemotePath.normalized(path))
+    }
+
+    var displayName: String {
+        guard path != "/" else { return "/" }
+        return (path as NSString).lastPathComponent
+    }
+}
+
 struct RemoteFileEntry: Identifiable, Hashable, Sendable {
     enum Kind: Hashable, Sendable {
         case directory
@@ -128,6 +148,20 @@ struct RemoteFileEntry: Identifiable, Hashable, Sendable {
 enum RemotePathLoadResult: Equatable, Sendable {
     case directory([RemoteFileEntry])
     case file(RemoteFileEntry)
+}
+
+enum RemoteUploadPhase: Equatable, Sendable {
+    case staging
+    case publishing
+    case cleaningUp
+
+    var presentationText: String {
+        switch self {
+        case .staging: "Staging safely…"
+        case .publishing: "Publishing…"
+        case .cleaningUp: "Removing the remote staging file…"
+        }
+    }
 }
 
 enum RemotePath {
@@ -213,6 +247,11 @@ enum RemoteFileError: LocalizedError, Equatable {
     case malformedListing
     case commandFailed(String)
     case missingDownload
+    case invalidUploadSource
+    case uploadConflict
+    case unsupportedUploadTarget
+    case uploadCapabilityUnavailable(String)
+    case uploadCleanupUnconfirmed(String)
 
     var errorDescription: String? {
         switch self {
@@ -242,14 +281,44 @@ enum RemoteFileError: LocalizedError, Equatable {
             return message
         case .missingDownload:
             return "The transfer finished without creating the requested item."
+        case .invalidUploadSource:
+            return "Choose one local regular file to upload."
+        case .uploadConflict:
+            return "A remote item with this name already exists."
+        case .unsupportedUploadTarget:
+            return "RelayBar will not replace a remote folder or symbolic link."
+        case .uploadCapabilityUnavailable(let capability):
+            return "This server does not advertise the safe \(capability) capability required for upload."
+        case .uploadCleanupUnconfirmed(let message):
+            return "\(message) RelayBar could not confirm removal of its remote staging file."
         }
+    }
+}
+
+struct RemoteUploadCapabilities: Equatable, Sendable {
+    let supportsHardLink: Bool
+    let supportsPOSIXRename: Bool
+
+    static func parse(_ diagnostics: String) -> RemoteUploadCapabilities {
+        let lines = Set(
+            diagnostics.split(whereSeparator: \.isNewline).map(String.init)
+        )
+        return RemoteUploadCapabilities(
+            supportsHardLink: lines.contains(
+                "debug2: Server supports extension \"hardlink@openssh.com\" revision 1"
+            ),
+            supportsPOSIXRename: lines.contains(
+                "debug2: Server supports extension \"posix-rename@openssh.com\" revision 1"
+            )
+        )
     }
 }
 
 enum SFTPCommandBuilder {
     static func processArguments(
         for server: RemoteServer,
-        controlSocket: URL? = nil
+        controlSocket: URL? = nil,
+        diagnosticLevel: Int = 0
     ) throws -> [String] {
         guard
             SSHArgumentPolicy.isValidHostTarget(server.sshHost),
@@ -308,6 +377,10 @@ enum SFTPCommandBuilder {
             index += 1
         }
 
+        if diagnosticLevel > 0 {
+            result.append("-" + String(repeating: "v", count: diagnosticLevel))
+        }
+
         result.append(server.sshHost)
         return result
     }
@@ -324,6 +397,24 @@ enum SFTPCommandBuilder {
         let recursiveFlag = recursively ? "-R " : ""
         return "get \(recursiveFlag)\(try RemotePath.batchQuoted(remotePath)) \(try RemotePath.batchQuoted(localPath))\n"
     }
+
+    static func uploadCommand(localPath: String, remotePath: String) throws -> String {
+        "put \(try RemotePath.batchQuoted(localPath)) \(try RemotePath.batchQuoted(remotePath))\n"
+    }
+
+    static func hardLinkCommand(existingPath: String, newPath: String) throws -> String {
+        "ln \(try RemotePath.batchQuoted(existingPath)) \(try RemotePath.batchQuoted(newPath))\n"
+    }
+
+    static func renameCommand(existingPath: String, newPath: String) throws -> String {
+        "rename \(try RemotePath.batchQuoted(existingPath)) \(try RemotePath.batchQuoted(newPath))\n"
+    }
+
+    static func removeCommand(path: String) throws -> String {
+        "rm \(try RemotePath.batchQuoted(path))\n"
+    }
+
+    static let quitCommand = "quit\n"
 
     private static func append(option: String, value: String, to result: inout [String]) {
         switch option {

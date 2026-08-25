@@ -31,7 +31,7 @@ will not overwrite an application that it does not manage.
 </p>
 
 <p align="center">
-  <img src="docs/designs/media/001/remote-files-concept-a.png" alt="RelayBar Remote Files flow from the menu through browsing, preview, and download" width="760">
+  <img src="docs/designs/media/036/remote-files-workspace.png" alt="RelayBar Remote Files workspace with recent folders, recent hosts, Add Path, upload, and preview" width="760">
 </p>
 
 ## What it does
@@ -47,7 +47,8 @@ will not overwrite an application that it does not manage.
 - Stores tunnel definitions in local `UserDefaults`
 - Stops child SSH processes when RelayBar quits
 - Checks for signed updates on demand or, when enabled, once a week
-- Opens an exact remote folder or supported preview file through a recent connection, saved host, forwarding profile, or concrete `~/.ssh/config` alias
+- Reopens successful remote folders from a bounded local recent-location sidebar, or opens an exact path through a recent connection, saved host, forwarding profile, or concrete `~/.ssh/config` alias
+- Uploads one local file into the open remote folder through failure-safe hidden staging, with explicit replacement consent
 - Downloads remote files or folders with progress, cancellation, and Finder reveal
 - Previews supported remote images without adding editing or gallery features
 - Renders remote Markdown in a safe, read-only view with GFM, callouts, inert tags, syntax highlighting, footnotes, and native math
@@ -87,8 +88,12 @@ RelayBar handles the few steps between a remote server and your Mac. Use Claude 
    4. ~~**Download a folder:** transfer a folder recursively, show progress, and allow cancellation.~~
    5. ~~**Preview images:** preview one supported remote image at a time.~~
    6. ~~**Render Markdown:** render GFM and common Obsidian reading syntax in a bounded, read-only native view. Remote images and embeds are not fetched, raw HTML is inert, and Mermaid remains source-only.~~
+   7. ~~**Revisit common folders:** keep a bounded local list of successful host-and-folder pairs in one persistent split workspace.~~
+   8. ~~**Upload one file safely:** stage one chosen local regular file and publish it only with the server's advertised hard-link or POSIX-rename guarantee.~~
 
-Remote file operations stop at opening, previewing, and downloading.
+Remote file operations stop at opening, previewing, downloading, and explicit
+single-file upload. RelayBar does not search, mount, synchronize, or edit remote
+content.
 
 Markdown rendering uses exactly pinned open-source packages. Required license text is bundled from [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
 
