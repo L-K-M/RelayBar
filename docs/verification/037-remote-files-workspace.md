@@ -58,8 +58,9 @@ final check.
 The maintainer installed the Developer-ID-signed universal application in
 `/Applications`, opened the redesigned Remote Files workspace, and reported on
 2026-08-24 that the overall installed experience looks good. The accepted beta
-identity is RelayBar 1.5.0 build 9, tagged `v1.5.0-beta.1` when beta publication
-evidence is complete.
+identity is RelayBar 1.5.0 build 9. Commit
+`f9026fe9e58eda92b3c1d451fd54a2229b3699b1` is tagged
+`v1.5.0-beta.1`.
 
 ## Safety and lifecycle evidence
 
@@ -108,7 +109,20 @@ and actual server extension advertisements remain unverified. Fake-process
 tests prove both advertised-support and failure-closed paths, but do not replace
 the required live evidence.
 
-The initial implementation-verification pass performed no commit, push,
-release, notarization, publication, or deployment. The maintainer subsequently
-authorized committing and pushing the accepted implementation and preparing
-RelayBar 1.5.0 Beta 1.
+## Beta release evidence
+
+The maintainer subsequently authorized committing, pushing, and publishing
+RelayBar 1.5.0 Beta 1. Apple accepted notarization submission
+`ea496e01-26d1-45be-bf8d-791757062bd7`; the stapled universal app passes strict
+nested signature validation and Gatekeeper reports `Notarized Developer ID`.
+The executable and dSYM UUIDs match for both architectures.
+
+The non-draft GitHub prerelease
+[RelayBar 1.5.0 Beta 1](https://github.com/lx2026/RelayBar/releases/tag/v1.5.0-beta.1)
+contains a 6,757,777-byte `RelayBar.zip` with SHA-256
+`fa292463fb2336de3f93d1fec1d18ddea5088c51151c871cdf0323cde43be8ae`.
+An anonymous download was byte-identical to the final post-staple local archive
+and independently passed clean extraction, version/build, universal
+architecture, macOS 13 minimum, retained notices, strict signature, stapler,
+and Gatekeeper checks. The stable 1.4.0 appcast, download, website, and Homebrew
+metadata were not changed.
