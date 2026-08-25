@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import RelayBarCore
 
 @MainActor
 protocol RemoteFilePresenting: AnyObject {

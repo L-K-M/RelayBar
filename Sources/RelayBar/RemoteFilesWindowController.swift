@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import RelayBarCore
 
 enum RemoteFilesWindowSizing {
     static let launcher = NSSize(width: 360, height: 300)
