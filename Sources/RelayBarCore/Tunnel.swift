@@ -47,13 +47,13 @@ public struct TCPListenEndpoint: Codable, Equatable, Hashable, Sendable {
     }
 
     public var displayText: String {
-        public let host = bindAddress.flatMap { $0.isEmpty ? nil : $0 } ?? "localhost"
+        let host = bindAddress.flatMap { $0.isEmpty ? nil : $0 } ?? "localhost"
         return "\(host):\(port)"
     }
 
     public var exposesBeyondLoopback: Bool {
         guard let bindAddress else { return false }
-        public let normalized = SSHForwardingFormat.unbracket(bindAddress).lowercased()
+        let normalized = SSHForwardingFormat.unbracket(bindAddress).lowercased()
         return !["localhost", "127.0.0.1", "::1"].contains(normalized)
     }
 }
@@ -230,12 +230,12 @@ public struct ForwardingRule: Identifiable, Codable, Equatable, Hashable, Sendab
             kind.listensRemotely,
             case .tcp = listen.kind,
             listen.tcp?.port == 0,
-            public let runtimePort
+            let runtimePort
         else {
             return displaySummary
         }
 
-        public var resolved = self
+        var resolved = self
         resolved.listen.tcp?.port = runtimePort
         return resolved.displaySummary
     }
@@ -258,19 +258,19 @@ public struct ForwardingRule: Identifiable, Codable, Equatable, Hashable, Sendab
         guard
             kind == .local,
             listen.kind == .tcp,
-            public let endpoint = listen.tcp
+            let endpoint = listen.tcp
         else {
             return nil
         }
 
-        public var host = endpoint.bindAddress?
+        var host = endpoint.bindAddress?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         host = SSHForwardingFormat.unbracket(host)
         if host.isEmpty || ["*", "0.0.0.0", "::"].contains(host.lowercased()) {
             host = "localhost"
         }
 
-        public var components = URLComponents()
+        var components = URLComponents()
         components.scheme = "http"
         components.host = host.contains(":") ? "[\(host)]" : host
         components.port = endpoint.port
@@ -284,7 +284,7 @@ public struct ForwardingRule: Identifiable, Codable, Equatable, Hashable, Sendab
         switch listen.kind {
         case .tcp:
             guard let tcp = listen.tcp else { return false }
-            public let validPortRange = kind.listensRemotely ? 0...65_535 : 1...65_535
+            let validPortRange = kind.listensRemotely ? 0...65_535 : 1...65_535
             guard
                 validPortRange.contains(tcp.port),
                 SSHArgumentPolicy.isValidBindAddress(tcp.bindAddress)
@@ -294,7 +294,7 @@ public struct ForwardingRule: Identifiable, Codable, Equatable, Hashable, Sendab
         case .unix:
             guard
                 !kind.isDynamic,
-                public let path = listen.path,
+                let path = listen.path,
                 SSHArgumentPolicy.isValidSocketPath(path)
             else {
                 return false
@@ -363,7 +363,7 @@ extension ReverseSOCKSPolicy: Codable {
     }
 
     public init(from decoder: Decoder) throws {
-        public let container = try decoder.container(keyedBy: CodingKeys.self)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
         case .any:
             self = .any
@@ -375,7 +375,7 @@ extension ReverseSOCKSPolicy: Codable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        public var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .any:
             try container.encode(Kind.any, forKey: .kind)
@@ -414,12 +414,12 @@ public enum TunnelGroupTag {
         case valid(String)
         case invalid(String)
 
-        public var normalizedName: String? {
+        var normalizedName: String? {
             guard case .valid(let name) = self else { return nil }
             return name
         }
 
-        public var errorMessage: String? {
+        var errorMessage: String? {
             guard case .invalid(let message) = self else { return nil }
             return message
         }
@@ -435,7 +435,7 @@ public enum TunnelGroupTag {
             )
         }
 
-        public let normalized = rawValue
+        let normalized = rawValue
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         guard !normalized.isEmpty else { return .ungrouped }
@@ -451,11 +451,11 @@ public enum TunnelGroupTag {
         _ rawValue: String,
         existingNames: [String]
     ) -> Validation {
-        public let validation = validate(rawValue)
+        let validation = validate(rawValue)
         guard case .valid(let normalized) = validation else {
             return validation
         }
-        public let key = canonicalKey(normalized)
+        let key = canonicalKey(normalized)
         if let existing = existingNames.first(where: { canonicalKey($0) == key }) {
             return .valid(existing)
         }
@@ -555,7 +555,7 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     }
 
     public init(from decoder: Decoder) throws {
-        public let container = try decoder.container(keyedBy: CodingKeys.self)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         sshHost = try container.decode(String.self, forKey: .sshHost)
@@ -602,10 +602,10 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
                 forKey: .streamLocalSettings
             ) ?? StreamLocalSettings()
         } else {
-            public let localPort = try container.decode(Int.self, forKey: .localPort)
-            public let destinationHost = try container.decode(String.self, forKey: .destinationHost)
-            public let destinationPort = try container.decode(Int.self, forKey: .destinationPort)
-            public let bindAddress = try container.decodeIfPresent(String.self, forKey: .bindAddress)
+            let localPort = try container.decode(Int.self, forKey: .localPort)
+            let destinationHost = try container.decode(String.self, forKey: .destinationHost)
+            let destinationPort = try container.decode(Int.self, forKey: .destinationPort)
+            let bindAddress = try container.decodeIfPresent(String.self, forKey: .bindAddress)
             rules = [
                 .localTCP(
                     bindAddress: bindAddress,
@@ -620,7 +620,7 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     }
 
     public func encode(to encoder: Encoder) throws {
-        public var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(sshHost, forKey: .sshHost)
@@ -633,7 +633,7 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var displayName: String {
-        public let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedName.isEmpty ? (rules.first?.displaySummary ?? sshHost) : trimmedName
     }
 
@@ -655,7 +655,7 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         _ rule: ForwardingRule,
         runtimePort: Int?
     ) -> String {
-        public let summary = rule.displaySummary(runtimePort: runtimePort)
+        let summary = rule.displaySummary(runtimePort: runtimePort)
         guard rule.kind == .remoteDynamic, let reverseSOCKSPolicy else {
             return summary
         }
@@ -715,8 +715,8 @@ public struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     public var hasConflictingListeners: Bool {
         for firstIndex in rules.indices {
             for secondIndex in rules.indices where secondIndex > firstIndex {
-                public let first = rules[firstIndex]
-                public let second = rules[secondIndex]
+                let first = rules[firstIndex]
+                let second = rules[secondIndex]
                 guard first.kind.listensRemotely == second.kind.listensRemotely else {
                     continue
                 }
@@ -757,25 +757,25 @@ public struct TunnelGrouping: Equatable {
     public let isGrouped: Bool
 
     public init(tunnels: [Tunnel]) {
-        public var namedBuckets: [String: (name: String, tunnels: [Tunnel])] = [:]
-        public var ungrouped: [Tunnel] = []
+        var namedBuckets: [String: (name: String, tunnels: [Tunnel])] = [:]
+        var ungrouped: [Tunnel] = []
 
         for tunnel in tunnels {
             guard
-                public let rawGroupTag = tunnel.groupTag,
+                let rawGroupTag = tunnel.groupTag,
                 case .valid(let groupTag) = TunnelGroupTag.validate(rawGroupTag)
             else {
                 ungrouped.append(tunnel)
                 continue
             }
-            public let key = TunnelGroupTag.canonicalKey(groupTag)
+            let key = TunnelGroupTag.canonicalKey(groupTag)
             if namedBuckets[key] == nil {
                 namedBuckets[key] = (groupTag, [])
             }
             namedBuckets[key]?.tunnels.append(tunnel)
         }
 
-        public let namedSections = namedBuckets
+        let namedSections = namedBuckets
             .map { key, bucket in
                 TunnelGroupSection(
                     id: .named(key),
@@ -822,7 +822,7 @@ public enum SSHForwardingFormat {
     }
 
     public static func bracketIPv6(_ value: String) -> String {
-        public let unbracketed = unbracket(value)
+        let unbracketed = unbracket(value)
         return unbracketed.contains(":") ? "[\(unbracketed)]" : unbracketed
     }
 
@@ -836,8 +836,8 @@ public enum SSHForwardingFormat {
             return first.path == second.path
         case .tcp:
             guard
-                public let firstTCP = first.tcp,
-                public let secondTCP = second.tcp,
+                let firstTCP = first.tcp,
+                let secondTCP = second.tcp,
                 firstTCP.port == secondTCP.port
             else {
                 return false
@@ -848,8 +848,8 @@ public enum SSHForwardingFormat {
     }
 
     private static func bindAddressesOverlap(_ first: String?, _ second: String?) -> Bool {
-        public let first = normalizedBind(first)
-        public let second = normalizedBind(second)
+        let first = normalizedBind(first)
+        let second = normalizedBind(second)
         if first == "any" || second == "any" { return true }
         if first == "loopback" && second == "loopback" { return true }
         return first == second
@@ -857,7 +857,7 @@ public enum SSHForwardingFormat {
 
     private static func normalizedBind(_ bindAddress: String?) -> String {
         guard let bindAddress else { return "any" }
-        public let value = unbracket(bindAddress)
+        let value = unbracket(bindAddress)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         if ["", "*", "0.0.0.0", "::"].contains(value) {

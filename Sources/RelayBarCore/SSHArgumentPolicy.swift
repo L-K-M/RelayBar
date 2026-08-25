@@ -36,7 +36,7 @@ public enum SSHArgumentPolicy {
     ]
 
     public static func isValidHostTarget(_ value: String) -> Bool {
-        public let target = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty, !target.hasPrefix("-") else { return false }
         return !target.unicodeScalars.contains {
             CharacterSet.whitespacesAndNewlines.contains($0)
@@ -45,7 +45,7 @@ public enum SSHArgumentPolicy {
     }
 
     public static func isValidDestinationHost(_ value: String) -> Bool {
-        public let host = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty, !host.hasPrefix("-") else { return false }
         return !host.unicodeScalars.contains {
             CharacterSet.whitespacesAndNewlines.contains($0)
@@ -56,7 +56,7 @@ public enum SSHArgumentPolicy {
     public static func isValidBindAddress(_ value: String?) -> Bool {
         guard let value else { return true }
         if value.isEmpty { return true }
-        public let address = SSHForwardingFormat.unbracket(value)
+        let address = SSHForwardingFormat.unbracket(value)
         guard !address.isEmpty, !address.hasPrefix("-") else { return false }
         return !address.unicodeScalars.contains {
             CharacterSet.whitespacesAndNewlines.contains($0)
@@ -86,7 +86,7 @@ public enum SSHArgumentPolicy {
     public static func isValidPermitRemoteOpenDestination(_ value: String) -> Bool {
         guard isSafeOptionValue(value) else { return false }
         guard
-            public let expression = permitRemoteOpenExpression,
+            let expression = permitRemoteOpenExpression,
             expression.firstMatch(
                 in: value,
                 range: NSRange(value.startIndex..., in: value)
@@ -96,7 +96,7 @@ public enum SSHArgumentPolicy {
         }
 
         guard let separator = value.lastIndex(of: ":") else { return false }
-        public let port = value[value.index(after: separator)...]
+        let port = value[value.index(after: separator)...]
         if port == "*" { return true }
         guard let number = Int(port) else { return false }
         return (1...65_535).contains(number)
@@ -109,24 +109,24 @@ public enum SSHArgumentPolicy {
 
     public static func splitOpenSSHOption(_ value: String) -> (key: String, value: String)? {
         guard isSafeOptionValue(value) else { return nil }
-        public let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let keyEnd = trimmed.firstIndex(where: { character in
             character == "=" || character.isWhitespace
         }) else {
             return nil
         }
-        public let key = String(trimmed[..<keyEnd])
-        public let optionValue = trimmed[keyEnd...]
+        let key = String(trimmed[..<keyEnd])
+        let optionValue = trimmed[keyEnd...]
             .drop(while: { $0 == "=" || $0.isWhitespace })
         guard !key.isEmpty, !optionValue.isEmpty else { return nil }
         return (key, String(optionValue))
     }
 
     public static func areAdditionalArgumentsSafe(_ arguments: [String]) -> Bool {
-        public var index = 0
+        var index = 0
 
         while index < arguments.count {
-            public let argument = arguments[index]
+            let argument = arguments[index]
 
             if allowedFlags.contains(argument) {
                 index += 1
@@ -136,7 +136,7 @@ public enum SSHArgumentPolicy {
             if optionsWithValues.contains(argument) {
                 index += 1
                 guard index < arguments.count else { return false }
-                public let value = arguments[index]
+                let value = arguments[index]
                 guard isSafeOptionValue(value) else { return false }
                 if argument == "-o", !isSafeOpenSSHOption(value) { return false }
                 index += 1
@@ -148,7 +148,7 @@ public enum SSHArgumentPolicy {
                 argument.hasPrefix($0) && argument.count > $0.count
             }) else { return false }
 
-            public let value = String(argument.dropFirst(prefix.count))
+            let value = String(argument.dropFirst(prefix.count))
             guard isSafeOptionValue(value) else { return false }
             if prefix == "-o" {
                 guard isSafeOpenSSHOption(value) else { return false }
