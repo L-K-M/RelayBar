@@ -414,12 +414,12 @@ public enum TunnelGroupTag {
         case valid(String)
         case invalid(String)
 
-        var normalizedName: String? {
+        public var normalizedName: String? {
             guard case .valid(let name) = self else { return nil }
             return name
         }
 
-        var errorMessage: String? {
+        public var errorMessage: String? {
             guard case .invalid(let message) = self else { return nil }
             return message
         }
