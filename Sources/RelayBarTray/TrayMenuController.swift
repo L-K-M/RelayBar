@@ -115,7 +115,7 @@ final class TrayMenuController: @unchecked Sendable {
         to shell: UnsafeMutableRawPointer?,
         perform action: @escaping (ActionContext) -> Void
     ) {
-        let box = register(ActionBox(action: .custom(title, perform), controller: self))
+        let box = register(ActionBox(action: .custom(title, action), controller: self))
         let item = relaybar_plain_item_new(title)
         relaybar_connect_activate(item, { _, userData in
             guard let userData else { return }

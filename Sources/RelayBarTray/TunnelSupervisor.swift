@@ -102,7 +102,7 @@ final class TunnelSupervisor: @unchecked Sendable {
     func stopAll() {
         stateQueue.sync {
             for id in desiredIDs {
-                terminate(id:)
+                terminate(id: id)
             }
         }
     }
@@ -268,12 +268,10 @@ final class TunnelSupervisor: @unchecked Sendable {
 
         kill(process.processIdentifier, SIGTERM)
 
-        let timer = DispatchWorkItem { [weak self, weak process] in
-            guard
-                let self,
-                let process,
-                process.isRunning
-            else { return }
+        // Only the process handle is needed; the timer outlives this frame
+        // through the stopTimers registry below.
+        let timer = DispatchWorkItem { [weak process] in
+            guard let process, process.isRunning else { return }
             kill(process.processIdentifier, SIGKILL)
         }
         stopTimers[id] = timer
