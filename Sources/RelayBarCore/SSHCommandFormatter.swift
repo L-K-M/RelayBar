@@ -32,6 +32,18 @@ public enum SSHCommandFormatter {
         return parts.joined(separator: " ")
     }
 
+    /// Forwarding flags as raw argv tokens — no shell quoting. The Linux
+    /// supervisor embeds these directly in ssh's argument vector and must
+    /// produce the same normalized grammar as `command(for:)`.
+    public static func forwardingArguments(for tunnel: Tunnel) -> [String] {
+        var arguments: [String] = []
+        for rule in tunnel.rules {
+            arguments.append(rule.kind.sshOption)
+            arguments.append(specification(for: rule))
+        }
+        return arguments
+    }
+
     private static func specification(for rule: ForwardingRule) -> String {
         if rule.kind.isDynamic {
             return listenSpecification(for: rule)

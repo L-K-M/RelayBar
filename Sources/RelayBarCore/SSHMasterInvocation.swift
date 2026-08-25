@@ -30,9 +30,7 @@ public enum SSHMasterInvocation {
             arguments.append(contentsOf: ["-o", "PermitRemoteOpen=\(policy.sshValue)"])
         }
 
-        for rule in tunnel.rules {
-            arguments.append(contentsOf: rule.sshArguments)
-        }
+        arguments.append(contentsOf: SSHCommandFormatter.forwardingArguments(for: tunnel))
 
         arguments.append(contentsOf: tunnel.additionalArguments)
         arguments.append(tunnel.sshHost)
