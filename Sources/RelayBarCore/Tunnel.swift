@@ -870,7 +870,7 @@ public enum SSHForwardingFormat {
     }
 }
 
-public enum TunnelPhase: Equatable {
+public enum TunnelPhase: Equatable, Sendable {
     case stopped
     case starting
     case retrying(attempt: Int, maxAttempts: Int, delay: TimeInterval, message: String)

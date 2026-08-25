@@ -8,8 +8,8 @@ import CAppIndicator
 final class TrayMenuController: @unchecked Sendable {
     private let supervisor: TunnelSupervisor
     private let profileStore: ProfileStore
-    private var indicator: OpaquePointer?
-    private var shell: OpaquePointer?
+    private var indicator: UnsafeMutableRawPointer?
+    private var shell: UnsafeMutableRawPointer?
 
     /// Boxes stay registered between rebuilds; destroying a GTK item does
     /// not release its user_data pointer, so the controller owns them until
@@ -90,7 +90,7 @@ final class TrayMenuController: @unchecked Sendable {
         return "\(name)\(stateSuffix)"
     }
 
-    private func appendToggle(for entry: SupervisedTunnel, shell: OpaquePointer?) {
+    private func appendToggle(for entry: SupervisedTunnel, shell: UnsafeMutableRawPointer?) {
         var name = entry.profile.displayName
         if name.count > Self.maximumLabelCharacterCount {
             name = String(name.prefix(Self.maximumLabelCharacterCount - 1)) + "…"
@@ -106,13 +106,13 @@ final class TrayMenuController: @unchecked Sendable {
         relaybar_menu_append(shell, item)
     }
 
-    private func appendSeparator(to shell: OpaquePointer?) {
+    private func appendSeparator(to shell: UnsafeMutableRawPointer?) {
         relaybar_menu_append(shell, relaybar_separator_new())
     }
 
     private func appendAction(
         _ title: String,
-        to shell: OpaquePointer?,
+        to shell: UnsafeMutableRawPointer?,
         perform action: @escaping (ActionContext) -> Void
     ) {
         let box = register(ActionBox(action: .custom(title, perform), controller: self))
@@ -132,10 +132,12 @@ final class TrayMenuController: @unchecked Sendable {
     private func scheduleRender(_ snapshot: [SupervisedTunnel]) {
         let box = Unmanaged.passRetained(RenderBox(snapshot: snapshot, controller: self)).toOpaque()
         relaybar_idle_add({ userData in
-            guard let userData else { return false }
+            guard let userData else { return 0 }
+            // Consumes the passRetained from scheduleRender: the idle source
+            // has no destroy notify, so this is the box's only release.
             let box = Unmanaged<RenderBox>.fromOpaque(userData).takeRetainedValue()
             box.controller.render(box.snapshot)
-            return false // G_SOURCE_REMOVE
+            return 0 // G_SOURCE_REMOVE
         }, box)
     }
 

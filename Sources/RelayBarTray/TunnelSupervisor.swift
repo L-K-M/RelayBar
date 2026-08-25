@@ -33,7 +33,7 @@ final class TunnelSupervisor: @unchecked Sendable {
     private var stopTimers: [UUID: DispatchWorkItem] = [:]
 
     /// Invoked on `stateQueue` whenever any phase changes.
-    var onStateChange: (() -> Void)?
+    var onStateChange: (@Sendable () -> Void)?
 
     init(sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh")) {
         self.sshExecutableURL = sshExecutableURL
@@ -95,7 +95,7 @@ final class TunnelSupervisor: @unchecked Sendable {
 
     func stop(profileID id: UUID) {
         stateQueue.async { [self] in
-            terminate(id:)
+            terminate(id: id)
         }
     }
 
@@ -188,7 +188,7 @@ final class TunnelSupervisor: @unchecked Sendable {
     private func openStderrCapture(for id: UUID) -> FileHandle {
         let directory = controlDirectories[id]?.path ?? Self.temporaryRoot.path
         let url = URL(fileURLWithPath: directory).appendingPathComponent("stderr")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+        _ = FileManager.default.createFile(atPath: url.path, contents: nil)
         return FileHandle(forWritingAtPath: url.path) ?? FileHandle.nullDevice
     }
 
@@ -253,7 +253,9 @@ final class TunnelSupervisor: @unchecked Sendable {
         guard let process = processes[id] else {
             cancelPendingRetry(id)
             desiredIDs.remove(id)
-            if phases[id] != .failed {
+            // A failed profile keeps its message so the menu can offer a
+            // retry with context; everything else reports stopped.
+            if case .failed = phases[id] {} else {
                 phases[id] = .stopped
             }
             emitChange()

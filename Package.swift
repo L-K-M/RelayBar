@@ -9,7 +9,9 @@ let package = Package(
     ],
     products: [
         .executable(name: "RelayBar", targets: ["RelayBar"]),
+        #if os(Linux)
         .executable(name: "RelayBarTray", targets: ["RelayBarTray"]),
+        #endif
         .library(name: "RelayBarCore", targets: ["RelayBarCore"])
     ],
     dependencies: [
@@ -34,8 +36,10 @@ let package = Package(
                 .enableExperimentalFeature("StrictConcurrency")
             ]
         ),
-        // libayatana-appindicator3 + GTK3 headers, resolved via pkg-config on
-        // Linux only; never built on macOS because nothing there imports it.
+        // Linux-only front end: libayatana-appindicator3 + GTK3 headers,
+        // resolved via pkg-config. Gated out on macOS so `swift test` there
+        // never needs GTK.
+        #if os(Linux)
         .systemLibrary(
             name: "CAppIndicator",
             pkgConfig: "ayatana-appindicator3-0.1",
@@ -54,6 +58,7 @@ let package = Package(
                 .enableExperimentalFeature("StrictConcurrency")
             ]
         ),
+        #endif
         .executableTarget(
             name: "RelayBar",
             dependencies: [
