@@ -86,6 +86,9 @@ engine): it bumps the version, build number, and the version line above in one
 commit, tags `vX.Y.Z`, and with `--push` lets CI test, build, and publish an
 unsigned (ad-hoc-signed) GitHub Release, like the sibling family apps' releases
 — Gatekeeper warns on first launch, and the release notes explain the bypass.
+Each release also carries an experimental Ubuntu build: `relaybar-tray`, a
+system-tray companion that runs the same forwarding profiles from a flat tray
+menu (see [docs/system-specs/modules/linux-tray.md](docs/system-specs/modules/linux-tray.md)).
 
 Bundled third-party license text is in
 [`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).

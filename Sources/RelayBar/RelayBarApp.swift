@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import UniformTypeIdentifiers
+import RelayBarCore
 
 /// Program entry point.
 ///

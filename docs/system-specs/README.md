@@ -11,6 +11,7 @@ Concise specifications for the behavior currently implemented by RelayBar. Last 
 - [Browser launch](modules/browser-launch.md)
 - [Remote files](modules/remote-files.md)
 - [Markdown preview](modules/markdown-preview.md)
+- [Linux system tray](modules/linux-tray.md)
 
 ## Shared contracts
 

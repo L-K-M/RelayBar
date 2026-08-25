@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import RelayBarCore
 
 struct RelayBarRootView: View {
     @EnvironmentObject private var store: TunnelStore

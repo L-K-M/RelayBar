@@ -1,4 +1,5 @@
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 final class TunnelDeletionPromptTests: XCTestCase {

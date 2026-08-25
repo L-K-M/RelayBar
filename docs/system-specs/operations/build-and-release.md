@@ -173,6 +173,16 @@ disable the feed and require a manually downloaded notarized recovery build.
 Never remove an EdDSA key from a build that already participates in the update
 chain.
 
+## Linux .deb asset
+
+Tag-triggered releases also publish `relaybar-tray_<version>_amd64.deb`
+(task 063). The `linux-deb` release job runs after the macOS job has created
+the Release, so it can only attach assets, never create a release. It builds
+in the pinned `swift:6.0-jammy` container (glibc baseline = Ubuntu 22.04) via
+`scripts/package-deb.sh`, uploads with `--clobber=false`, and byte-compares
+the served asset against the built one — the same immutability and verify
+rules as the macOS zip. A corrupt upload is deleted before failing.
+
 ## Homebrew cask
 
 This fork publishes no cask. The tap, formula, and upgrade command below belong

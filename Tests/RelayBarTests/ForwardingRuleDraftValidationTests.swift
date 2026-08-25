@@ -1,4 +1,5 @@
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 /// Task 047. The editor names the first blocking issue instead of disabling

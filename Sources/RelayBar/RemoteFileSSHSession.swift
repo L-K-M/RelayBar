@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import RelayBarCore
 
 /// Owns one foreground OpenSSH multiplexing master for a Remote Files window.
 /// SFTP operations remain independent children; this object only removes their

@@ -1,4 +1,5 @@
 import Foundation
+import RelayBarCore
 
 struct RemoteServer: Identifiable, Hashable, Sendable {
     enum Source: Hashable, Sendable, CaseIterable {

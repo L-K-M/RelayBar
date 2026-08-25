@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 final class PopoverToggleGuardTests: XCTestCase {

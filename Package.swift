@@ -8,7 +8,9 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "RelayBar", targets: ["RelayBar"])
+        .executable(name: "RelayBar", targets: ["RelayBar"]),
+        .executable(name: "RelayBarTray", targets: ["RelayBarTray"]),
+        .library(name: "RelayBarCore", targets: ["RelayBarCore"])
     ],
     dependencies: [
         .package(
@@ -25,9 +27,37 @@ let package = Package(
         )
     ],
     targets: [
+        // Platform-neutral engine shared by the macOS app and the Linux tray.
+        .target(
+            name: "RelayBarCore",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        // libayatana-appindicator3 + GTK3 headers, resolved via pkg-config on
+        // Linux only; never built on macOS because nothing there imports it.
+        .systemLibrary(
+            name: "CAppIndicator",
+            pkgConfig: "ayatana-appindicator3-0.1",
+            providers: [
+                .apt(["libayatana-appindicator3-dev"])
+            ]
+        ),
+        .executableTarget(
+            name: "RelayBarTray",
+            dependencies: [
+                "RelayBarCore",
+                "CAppIndicator"
+            ],
+            path: "Sources/RelayBarTray",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
         .executableTarget(
             name: "RelayBar",
             dependencies: [
+                "RelayBarCore",
                 .product(name: "Highlighter", package: "HighlighterSwift"),
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "SwiftMath", package: "SwiftMath")
@@ -42,8 +72,21 @@ let package = Package(
         ),
         .testTarget(
             name: "RelayBarTests",
-            dependencies: ["RelayBar"],
+            dependencies: [
+                "RelayBar",
+                "RelayBarCore"
+            ],
             path: "Tests/RelayBarTests",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        .testTarget(
+            name: "RelayBarCoreTests",
+            dependencies: [
+                "RelayBarCore"
+            ],
+            path: "Tests/RelayBarCoreTests",
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
             ]

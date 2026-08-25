@@ -1,4 +1,5 @@
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 /// Stands in for `SMAppService.mainApp` so these tests never read or change

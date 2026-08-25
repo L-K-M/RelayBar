@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import RelayBarCore
 
 struct TunnelEditorView: View {
     let tunnel: Tunnel?

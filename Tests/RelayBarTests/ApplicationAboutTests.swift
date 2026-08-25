@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 @MainActor

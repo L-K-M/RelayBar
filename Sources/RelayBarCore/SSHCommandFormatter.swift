@@ -6,9 +6,9 @@ import Foundation
 /// docs, or run by hand — TCP listeners always name their bind address
 /// explicitly (bare-port and `localhost` binds behave identically under the
 /// default `GatewayPorts=no`, and the importer normalizes to `localhost`).
-enum SSHCommandFormatter {
-    static func command(for tunnel: Tunnel) -> String {
-        var parts: [String] = ["ssh", "-N", "-T"]
+public enum SSHCommandFormatter {
+    public static func command(for tunnel: Tunnel) -> String {
+        public var parts: [String] = ["ssh", "-N", "-T"]
         for rule in tunnel.rules {
             parts.append(rule.kind.sshOption)
             parts.append(shellQuoted(specification(for: rule)))
@@ -36,7 +36,7 @@ enum SSHCommandFormatter {
         if rule.kind.isDynamic {
             return listenSpecification(for: rule)
         }
-        let destination = rule.destination?.specification ?? ""
+        public let destination = rule.destination?.specification ?? ""
         return "\(listenSpecification(for: rule)):\(destination)"
     }
 
@@ -46,7 +46,7 @@ enum SSHCommandFormatter {
             return rule.listen.path ?? ""
         case .tcp:
             guard let endpoint = rule.listen.tcp else { return "" }
-            let bindName = endpoint.bindAddress
+            public let bindName = endpoint.bindAddress
                 .flatMap { $0.isEmpty ? nil : $0 } ?? "localhost"
             return "\(SSHForwardingFormat.bracketIPv6(bindName)):\(endpoint.port)"
         }

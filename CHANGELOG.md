@@ -4,6 +4,17 @@ Notable RelayBar Scion changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- **Ubuntu/Linux system tray (experimental).** A new `relaybar-tray` binary
+  puts RelayBar forwarding profiles in the Linux system tray
+  (AppIndicator/StatusNotifierItem): one toggle per profile, shared retry and
+  argument-safety behavior with the macOS app, profiles read from
+  `~/.config/relaybar/tunnels.json` in the same JSON format the macOS app
+  saves. Tag-triggered releases now also publish an amd64 `.deb` built on
+  Ubuntu 22.04. The portable engine now lives in a `RelayBarCore` target used
+  by both front ends; macOS app behavior is unchanged.
+
 ### Changed
 
 - Tag-triggered releases now publish an **unsigned, ad-hoc-signed**

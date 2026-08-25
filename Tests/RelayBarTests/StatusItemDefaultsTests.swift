@@ -1,4 +1,5 @@
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 final class StatusItemSummaryTests: XCTestCase {

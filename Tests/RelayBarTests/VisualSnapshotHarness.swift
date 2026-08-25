@@ -5,6 +5,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 @MainActor

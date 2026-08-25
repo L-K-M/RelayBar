@@ -5,6 +5,7 @@
 import CryptoKit
 import Foundation
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 final class PerformanceClaimTests: XCTestCase {

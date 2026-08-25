@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 final class RemotePathTests: XCTestCase {

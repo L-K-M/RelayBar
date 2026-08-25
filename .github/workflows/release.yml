@@ -129,3 +129,54 @@ jobs:
             echo "::error::published RelayBarScion.zip differed from the built archive and was removed"
             exit 1
           fi
+
+  # Linux tray artifact for the same tag (task 063). Needs the *release* job
+  # rather than just the test gate: the release must exist before an asset is
+  # uploaded, so this job can only ever attach files, never create anything.
+  # The same immutability rules apply — no clobber, byte-compare verification.
+  linux-deb:
+    name: Build & publish Ubuntu .deb
+    needs: [test, release]
+    runs-on: ubuntu-22.04
+    container: swift:6.0-jammy   # glibc baseline = Ubuntu 22.04
+    permissions:
+      contents: write     # attaching assets to the existing Release
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install packaging and tray system dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config \
+            libayatana-appindicator3-dev \
+            dpkg-dev
+
+      - name: Build & package .deb
+        env:
+          VERSION: "${GITHUB_REF_NAME#v}"
+        run: ./scripts/package-deb.sh
+
+      - name: Publish the .deb to the existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" ".build/relaybar-tray_${GITHUB_REF_NAME#v}_amd64.deb" --clobber=false
+
+      # Mirror of the macOS verify step: never trust the upload.
+      - name: Verify the published asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/published"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published" \
+            --pattern "*.deb"
+          if ! cmp -- ".build/relaybar-tray_${GITHUB_REF_NAME#v}_amd64.deb" \
+                      "$RUNNER_TEMP/published/relaybar-tray_${GITHUB_REF_NAME#v}_amd64.deb"; then
+            gh release delete-asset "$GITHUB_REF_NAME" \
+              "relaybar-tray_${GITHUB_REF_NAME#v}_amd64.deb" -y || true
+            echo "::error::published deb differed from the built archive and was removed"
+            exit 1
+          fi

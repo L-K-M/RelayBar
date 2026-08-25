@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import Foundation
+import RelayBarCore
 
 @MainActor
 final class TunnelStore: ObservableObject {
@@ -426,8 +427,8 @@ final class TunnelStore: ObservableObject {
     }
 
     nonisolated static func retryDelay(for attempt: Int) -> TimeInterval {
-        let exponent = min(max(attempt - 1, 0), 6)
-        return min(pow(2, Double(exponent)), 60)
+        // Shared with the Linux tray so both front ends back off identically.
+        TunnelRetryPolicy.delay(for: attempt)
     }
 
     private func launchTunnel(id: UUID) {

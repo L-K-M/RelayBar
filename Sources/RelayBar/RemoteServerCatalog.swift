@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import RelayBarCore
 
 enum RemoteServerCatalogError: LocalizedError, Equatable {
     case invalidHost

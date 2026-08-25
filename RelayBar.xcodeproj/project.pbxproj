@@ -9,10 +9,7 @@
 /* Begin PBXBuildFile section */
 		400000000000000000000001 /* RelayBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000001 /* RelayBarApp.swift */; };
 		400000000000000000000002 /* RelayBarRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000002 /* RelayBarRootView.swift */; };
-		400000000000000000000003 /* SSHArgumentPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000003 /* SSHArgumentPolicy.swift */; };
 		400000000000000000000004 /* SSHCommandParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000004 /* SSHCommandParser.swift */; };
-		40000000000000000000001F /* SSHCommandFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001C /* SSHCommandFormatter.swift */; };
-		400000000000000000000005 /* Tunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000005 /* Tunnel.swift */; };
 		400000000000000000000006 /* TunnelEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000006 /* TunnelEditorView.swift */; };
 		400000000000000000000007 /* TunnelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000007 /* TunnelStore.swift */; };
 		400000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000008 /* Assets.xcassets */; };
@@ -36,18 +33,15 @@
 		40000000000000000000001C /* ApplicationAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001A /* ApplicationAbout.swift */; };
 		40000000000000000000001D /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000004 /* Sparkle */; };
 		40000000000000000000001E /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001B /* Updates.swift */; };
-		400000000000000000000020 /* SSHControlPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001D /* SSHControlPath.swift */; };
 		400000000000000000000021 /* TunnelFailureNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001E /* TunnelFailureNotifier.swift */; };
+		400000000000000000000022 /* RelayBarCore in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000005 /* RelayBarCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		300000000000000000000000 /* RelayBarScion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RelayBarScion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		300000000000000000000001 /* RelayBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBarApp.swift; sourceTree = "<group>"; };
 		300000000000000000000002 /* RelayBarRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBarRootView.swift; sourceTree = "<group>"; };
-		300000000000000000000003 /* SSHArgumentPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHArgumentPolicy.swift; sourceTree = "<group>"; };
 		300000000000000000000004 /* SSHCommandParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHCommandParser.swift; sourceTree = "<group>"; };
-		30000000000000000000001C /* SSHCommandFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHCommandFormatter.swift; sourceTree = "<group>"; };
-		300000000000000000000005 /* Tunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tunnel.swift; sourceTree = "<group>"; };
 		300000000000000000000006 /* TunnelEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelEditorView.swift; sourceTree = "<group>"; };
 		300000000000000000000007 /* TunnelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelStore.swift; sourceTree = "<group>"; };
 		300000000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -69,7 +63,6 @@
 		300000000000000000000019 /* PopoverScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverScrollContainer.swift; sourceTree = "<group>"; };
 		30000000000000000000001A /* ApplicationAbout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationAbout.swift; sourceTree = "<group>"; };
 		30000000000000000000001B /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
-		30000000000000000000001D /* SSHControlPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHControlPath.swift; sourceTree = "<group>"; };
 		30000000000000000000001E /* TunnelFailureNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelFailureNotifier.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -78,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				400000000000000000000022 /* RelayBarCore in Frameworks */,
 				40000000000000000000001D /* Sparkle in Frameworks */,
 				400000000000000000000014 /* Highlighter in Frameworks */,
 				400000000000000000000011 /* MarkdownUI in Frameworks */,
@@ -117,12 +111,8 @@
 				300000000000000000000019 /* PopoverScrollContainer.swift */,
 				300000000000000000000001 /* RelayBarApp.swift */,
 				300000000000000000000002 /* RelayBarRootView.swift */,
-				300000000000000000000003 /* SSHArgumentPolicy.swift */,
 				300000000000000000000004 /* SSHCommandParser.swift */,
-				30000000000000000000001C /* SSHCommandFormatter.swift */,
-				30000000000000000000001D /* SSHControlPath.swift */,
 				30000000000000000000001E /* TunnelFailureNotifier.swift */,
-				300000000000000000000005 /* Tunnel.swift */,
 				300000000000000000000006 /* TunnelEditorView.swift */,
 				300000000000000000000007 /* TunnelStore.swift */,
 				30000000000000000000000B /* RemoteFile.swift */,
@@ -177,6 +167,7 @@
 			);
 			name = RelayBar;
 			packageProductDependencies = (
+				700000000000000000000005 /* RelayBarCore */,
 				700000000000000000000004 /* Sparkle */,
 				700000000000000000000002 /* Highlighter */,
 				700000000000000000000001 /* MarkdownUI */,
@@ -211,6 +202,7 @@
 			);
 			mainGroup = 120000000000000000000000;
 			packageReferences = (
+				800000000000000000000005 /* XCLocalSwiftPackageReference */,
 				800000000000000000000004 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				800000000000000000000002 /* XCRemoteSwiftPackageReference "HighlighterSwift" */,
 				800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
@@ -275,12 +267,8 @@
 				40000000000000000000001B /* PopoverScrollContainer.swift in Sources */,
 				400000000000000000000001 /* RelayBarApp.swift in Sources */,
 				400000000000000000000002 /* RelayBarRootView.swift in Sources */,
-				400000000000000000000003 /* SSHArgumentPolicy.swift in Sources */,
 				400000000000000000000004 /* SSHCommandParser.swift in Sources */,
-				40000000000000000000001F /* SSHCommandFormatter.swift in Sources */,
-				400000000000000000000020 /* SSHControlPath.swift in Sources */,
 				400000000000000000000021 /* TunnelFailureNotifier.swift in Sources */,
-				400000000000000000000005 /* Tunnel.swift in Sources */,
 				400000000000000000000006 /* TunnelEditorView.swift in Sources */,
 				400000000000000000000007 /* TunnelStore.swift in Sources */,
 				40000000000000000000000B /* RemoteFile.swift in Sources */,
@@ -297,6 +285,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		800000000000000000000005 /* XCLocalSwiftPackageReference */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
@@ -334,6 +329,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		700000000000000000000005 /* RelayBarCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 800000000000000000000005 /* XCLocalSwiftPackageReference */;
+			productName = RelayBarCore;
+		};
 		700000000000000000000001 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 800000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;

@@ -49,3 +49,22 @@ jobs:
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
           build
+
+  # Compile-only gate for the Linux tray (task 063): the full test suite
+  # needs AppKit, so on Linux we build the tray product graph (RelayBarCore
+  # + RelayBarTray) with the same warnings-as-errors bar as the macOS tests.
+  # The jammy image keeps the release binary's glibc baseline at Ubuntu 22.04.
+  linux-tray:
+    runs-on: ubuntu-22.04
+    container: swift:6.0-jammy
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install tray system dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config \
+            libayatana-appindicator3-dev
+      - name: Build RelayBarTray (release, warnings as errors)
+        run: swift build -c release --product RelayBarTray -Xswiftc -warnings-as-errors

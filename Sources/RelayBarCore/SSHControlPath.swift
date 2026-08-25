@@ -1,38 +1,47 @@
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 
-struct SSHControlLocations: Sendable {
-    let directory: URL
-    let socket: URL
+public struct SSHControlLocations: Sendable {
+    public let directory: URL
+    public let socket: URL
+
+    public init(directory: URL, socket: URL) {
+        self.directory = directory
+        self.socket = socket
+    }
 }
 
-enum SSHControlPathError: LocalizedError, Equatable {
+public enum SSHControlPathError: LocalizedError, Equatable {
     case directoryCreationFailed
     case pathTooLong
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .directoryCreationFailed:
             "RelayBar could not create a private SSH control directory."
         case .pathTooLong:
-            "The private SSH control path is too long for macOS."
+            "The private SSH control path is too long."
         }
     }
 }
 
-enum SSHControlPath {
-    static let privateDirectoryPrefix = "RelayBar-SSH."
-    static let controlSocketName = "s"
-    static let openSSHBindTemporarySuffixByteCount = 17
-    static let unixSocketPathByteCapacity = MemoryLayout.size(
+public enum SSHControlPath {
+    public static let privateDirectoryPrefix = "RelayBar-SSH."
+    public static let controlSocketName = "s"
+    public static let openSSHBindTemporarySuffixByteCount = 17
+    public static let unixSocketPathByteCapacity = MemoryLayout.size(
         ofValue: sockaddr_un().sun_path
     )
-    static let maximumControlSocketPathByteCount =
+    public static let maximumControlSocketPathByteCount =
         unixSocketPathByteCapacity
         - 1 // NUL terminator
         - openSSHBindTemporarySuffixByteCount
 
-    static func create(
+    public static func create(
         in temporaryDirectory: URL,
         fileManager: FileManager = .default
     ) throws -> SSHControlLocations {
@@ -44,7 +53,8 @@ enum SSHControlPath {
         let didCreateDirectory = template.withUnsafeMutableBufferPointer {
             buffer in
             guard let baseAddress = buffer.baseAddress else { return false }
-            return Darwin.mkdtemp(baseAddress) != nil
+            // mkdtemp exists on both Darwin and Glibc with the same contract.
+            return mkdtemp(baseAddress) != nil
         }
         guard didCreateDirectory else {
             throw SSHControlPathError.directoryCreationFailed
@@ -62,7 +72,7 @@ enum SSHControlPath {
         // OpenSSH's mux listener first binds a sibling path using the
         // `.XXXXXXXXXXXXXXXX` suffix from mux.c, then renames it to the final
         // ControlPath. Both that suffix and the terminating NUL must fit
-        // within Darwin's sockaddr_un.sun_path.
+        // within sockaddr_un.sun_path.
         guard socket.path.utf8.count <= maximumControlSocketPathByteCount else {
             try? fileManager.removeItem(at: directory)
             throw SSHControlPathError.pathTooLong

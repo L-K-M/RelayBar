@@ -1,4 +1,5 @@
 import Foundation
+import RelayBarCore
 
 enum SSHCommandParser {
     struct ImportedTunnel: Equatable {

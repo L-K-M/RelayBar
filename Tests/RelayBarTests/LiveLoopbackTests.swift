@@ -2,6 +2,7 @@
 // loopback sshd. Skipped unless RELAYBAR_LOOPBACK_SSH_DIR points at that setup.
 import Foundation
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 @MainActor

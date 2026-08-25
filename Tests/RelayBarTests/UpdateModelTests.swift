@@ -1,5 +1,6 @@
 import Combine
 import XCTest
+import RelayBarCore
 @testable import RelayBar
 
 @MainActor
