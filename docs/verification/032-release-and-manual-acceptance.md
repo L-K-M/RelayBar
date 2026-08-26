@@ -1,12 +1,13 @@
 # Task 032 — Release and Manual Acceptance Verification
 
-Updated: 2026-08-18
+Updated: 2026-08-25
 
 Result: In progress. VoiceOver inspection is excluded by maintainer decision.
-RelayBar 1.4.0 build 8 is now the stable GitHub release, signed public appcast,
-website download, and Homebrew cask. Offline recovery-key restore, an actual
-macOS 13 pass, and the remaining scheduled-update/active-tunnel/failure matrix
-remain open.
+RelayBar 1.5.0 build 9 is now the stable GitHub release, signed public appcast,
+website download, and Homebrew cask. The maintainer explicitly waived a
+1.4-to-1.5 updater rehearsal for this release. Offline recovery-key restore, an
+actual macOS 13 pass, and the remaining scheduled-update/active-tunnel/failure
+matrix remain open.
 
 ## Maintainer checklist
 
@@ -73,8 +74,7 @@ remain open.
 
 ## Existing automated evidence
 
-- The strict suite passes 234 tests with 15 expected opt-in skips. Enabling the
-  live direct-file path runs that check with 14 remaining skips.
+- The strict suite passes 269 tests with 16 expected opt-in skips.
 - Fresh light/dark Settings, New/Edit Profile, and scrolled-editor snapshot
   suites pass, including rendered horizontal-containment assertions.
 - The RelayBar-target warnings-as-errors universal Release build passes. The
@@ -151,3 +151,38 @@ remain open.
   clean install restored and relaunched the same stable app. The cask does not
   declare `auto_updates` because its in-app path has not been certified from a
   Homebrew-managed prior build.
+- 2026-08-25: The exact notarized build 9 bytes from implementation commit
+  `f9026fe9e58eda92b3c1d451fd54a2229b3699b1` were published as the official
+  [RelayBar 1.5.0 release](https://github.com/lx2026/RelayBar/releases/tag/v1.5.0).
+  Apple accepted notary submission `ea496e01-26d1-45be-bf8d-791757062bd7`.
+  The universal ZIP is 6,757,777 bytes with SHA-256
+  `fa292463fb2336de3f93d1fec1d18ddea5088c51151c871cdf0323cde43be8ae`;
+  an anonymous download was byte-identical and passed clean extraction,
+  version/build, architecture, nested strict-signature, stapled-ticket,
+  Gatekeeper, minimum-system, notices, and executable checks.
+- 2026-08-25: [PR 25](https://github.com/lx2026/RelayBar/pull/25)
+  passed CI and published the signed build 9 appcast. Public Pages deployment
+  [32920339180](https://github.com/lx2026/RelayBar/actions/runs/32920339180)
+  byte-matches the repository feed and verifies both retained signed
+  enclosures. The maintainer explicitly waived the prior-build updater
+  rehearsal for the 1.5.0 release.
+- 2026-08-25: [PR 26](https://github.com/lx2026/RelayBar/pull/26)
+  passed CI and published concise 1.5.0 README, changelog, security review, and
+  website updates with privacy-safe screenshots rendered from the shipped UI.
+  Pages deployment
+  [32920761126](https://github.com/lx2026/RelayBar/actions/runs/32920761126)
+  presents the stable links and images without horizontal overflow or browser
+  errors at 1440 × 900 and 390 × 844; both public images byte-match the
+  committed assets.
+- 2026-08-25: The maintainer tap merged
+  [Homebrew PR 2](https://github.com/lx2026/homebrew-tap/pull/2) at
+  `ff889de81dcd8f64a36b9e830e17c98a01023ef8`. Ruby syntax, Homebrew style,
+  and livecheck passed. A fresh install, launch, uninstall, and reinstall
+  produced RelayBar 1.5.0 build 9 with the verified executable SHA-256
+  `5f3d8a4f751752fe8a7db36fc18cbac18cc6ecccd4d36288864e22d3602cca73`;
+  strict signature, stapler, and Gatekeeper checks passed. Uninstall removed
+  the managed app while leaving the preferences checksum and all 276
+  application-support files unchanged. The final Homebrew-managed app is
+  installed and running. Homebrew's strict online audit could not start cask
+  inspection because Homebrew 6.0.19 requires Xcode 27 while this Mac has
+  Xcode 26.6; no audit finding against the cask was produced.
