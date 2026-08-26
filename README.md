@@ -2,7 +2,7 @@
 
 RelayBar is a tiny native macOS menu-bar app for structured SSH forwarding profiles and exact-path remote file access. It runs macOS's built-in `/usr/bin/ssh` and `/usr/bin/sftp` directly.
 
-[Download v1.4.0](https://github.com/lx2026/RelayBar/releases/download/v1.4.0/RelayBar.zip)
+[Download v1.5.0](https://github.com/lx2026/RelayBar/releases/download/v1.5.0/RelayBar.zip)
 · [Changelog](CHANGELOG.md)
 
 ## Install
@@ -25,13 +25,20 @@ will not overwrite an application that it does not manage.
 
 ## Screenshots
 
+RelayBar 1.5 keeps recent remote folders and host paths one click away, with
+exact-path access and safe single-file upload in the same workspace.
+
 <p align="center">
   <img src="docs/screenshots/relaybar-tunnels.png" alt="RelayBar tunnel list" width="360">
   <img src="docs/screenshots/relaybar-add-tunnel.png" alt="RelayBar new tunnel form" width="360">
 </p>
 
 <p align="center">
-  <img src="docs/designs/media/036/remote-files-workspace.png" alt="RelayBar Remote Files workspace with recent folders, recent hosts, Add Path, upload, and preview" width="760">
+  <img src="docs/screenshots/remote-files-workspace.png" alt="RelayBar 1.5 Remote Files workspace with recent folders, recent hosts, Add Path, browsing, and upload" width="760">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/remote-files-preview.png" alt="RelayBar 1.5 safely previewing a remote Markdown file beside recent locations" width="760">
 </p>
 
 ## What it does
