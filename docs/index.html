@@ -51,7 +51,7 @@
         <a class="brand" href="#top" aria-label="RelayBar home">
           <img src="./favicon.png" alt="" width="30" height="30">
           <span>RelayBar</span>
-          <span class="version-badge">v1.4.0</span>
+          <span class="version-badge">v1.5.0</span>
         </a>
         <div class="nav-links">
           <a href="#remote-files">Remote Files</a>
@@ -74,7 +74,7 @@
         <div class="hero-copy">
           <div class="release-pill">
             <span aria-hidden="true"></span>
-            v1.4.0 · notarized · open source
+            v1.5.0 · notarized · open source
           </div>
           <h1>SSH tunnels,<br>one click away.</h1>
           <p class="hero-lede">
@@ -85,8 +85,8 @@
           <div class="hero-actions">
             <a
               class="button primary"
-              href="https://github.com/lx2026/RelayBar/releases/download/v1.4.0/RelayBar.zip"
-              aria-label="Download RelayBar 1.4.0 for macOS"
+              href="https://github.com/lx2026/RelayBar/releases/download/v1.5.0/RelayBar.zip"
+              aria-label="Download RelayBar 1.5.0 for macOS"
             >
               Download for macOS <span aria-hidden="true">↓</span>
             </a>
@@ -145,7 +145,7 @@
         </div>
         <div>
           <span class="proof-label">stored locally</span>
-          <strong>Your tunnel definitions stay on your Mac.</strong>
+          <strong>Your profiles and recent paths stay on your Mac.</strong>
           <p>No account, analytics SDK, or cloud sync phones home.</p>
         </div>
       </section>
@@ -157,22 +157,21 @@
             <h2>Your server,<br>right where you left it.</h2>
           </div>
           <p>
-            Paste an absolute remote path, choose a saved SSH connection, and
-            open exactly that folder. No indexing. No sync engine. Just SFTP
-            through the SSH setup you already trust.
+            Reopen a recent folder in one click, browse saved paths by host, or
+            add an exact path. RelayBar connects only when you open a location.
           </p>
         </div>
 
         <div class="media-frame remote-frame">
           <div class="frame-bar">
-            <span>remote_files.workflow</span>
-            <span>browse · preview · download</span>
+            <span>remote_files.workspace</span>
+            <span>revisit · browse · upload</span>
           </div>
           <img
-            src="./designs/media/001/remote-files-concept-a.png"
-            alt="RelayBar Remote Files flow from the menu through path selection, folder browsing, image preview, and download progress"
-            width="1804"
-            height="872"
+            src="./screenshots/remote-files-workspace.png"
+            alt="RelayBar 1.5 Remote Files workspace showing recent folders, recent hosts, folder contents, Add Path, and Upload"
+            width="1840"
+            height="1200"
             loading="lazy"
           >
         </div>
@@ -180,26 +179,26 @@
         <div class="feature-grid">
           <article>
             <span class="feature-number">01</span>
-            <h3>Open the exact path</h3>
+            <h3>Reopen recent folders</h3>
             <p>
-              Paste the result of remote <code>pwd</code> and RelayBar opens
-              that folder—without crawling the server.
+              Successful folders stay one click away—without scanning or
+              indexing the server.
             </p>
           </article>
           <article>
             <span class="feature-number">02</span>
-            <h3>Preview safely</h3>
+            <h3>Browse by host</h3>
             <p>
-              Read supported images and Markdown in a bounded, inert preview.
-              Raw HTML and remote embeds stay off.
+              Expand a recent host to revisit its paths, or add another exact
+              absolute path.
             </p>
           </article>
           <article>
             <span class="feature-number">03</span>
-            <h3>Download with control</h3>
+            <h3>Upload safely</h3>
             <p>
-              Transfer files or folders, watch progress, cancel cleanly, and
-              reveal the result in Finder.
+              Stage one local file before publishing it. Preview and download
+              stay in the same workspace.
             </p>
           </article>
         </div>
@@ -266,11 +265,11 @@
 
       <section class="section release-section shell" id="whats-new">
         <div class="section-heading release-heading">
-          <span class="section-kicker">What’s new in 1.4.0</span>
-          <h2>Stay current.<br>Open the file.</h2>
+          <span class="section-kicker">What’s new in 1.5.0</span>
+          <h2>Remote files,<br>fewer clicks.</h2>
           <p>
-            Version 1.4.0 adds signed updates, direct remote-file paths, clear
-            build identity, and quieter profile forms.
+            Version 1.5.0 makes common folders faster to reopen and adds safe
+            single-file upload.
           </p>
         </div>
 
@@ -280,10 +279,10 @@
               <span>01</span>
               <i aria-hidden="true"></i>
             </div>
-            <h3>Signed updates</h3>
+            <h3>Recent folders</h3>
             <p>
-              Check on demand or opt into a weekly check. RelayBar still asks
-              before installing and respects active tunnels.
+              Reopen successful host-and-folder pairs from a bounded local
+              list.
             </p>
           </article>
           <article>
@@ -291,10 +290,9 @@
               <span>02</span>
               <i aria-hidden="true"></i>
             </div>
-            <h3>Direct file paths</h3>
+            <h3>Recent hosts</h3>
             <p>
-              Paste an absolute Markdown or image path and open that exact file
-              in the existing bounded preview.
+              Expand a host to reach its saved paths, or add an exact location.
             </p>
           </article>
           <article>
@@ -302,10 +300,10 @@
               <span>03</span>
               <i aria-hidden="true"></i>
             </div>
-            <h3>Clear build identity</h3>
+            <h3>Failure-safe uploads</h3>
             <p>
-              See and copy the packaged version and build from Settings, with
-              direct links to the website and source.
+              Stage one file first; publish only when the server can do so
+              safely.
             </p>
           </article>
           <article>
@@ -313,10 +311,9 @@
               <span>04</span>
               <i aria-hidden="true"></i>
             </div>
-            <h3>Cleaner forms</h3>
+            <h3>One native workspace</h3>
             <p>
-              New and Edit Profile keep balanced scrolling insets without
-              squeezing the fields that matter.
+              Browse, preview, upload, and download in one resizable window.
             </p>
           </article>
         </div>
@@ -357,8 +354,8 @@
         </div>
         <a
           class="button cta-button"
-          href="https://github.com/lx2026/RelayBar/releases/download/v1.4.0/RelayBar.zip"
-          aria-label="Download RelayBar 1.4.0 for macOS"
+          href="https://github.com/lx2026/RelayBar/releases/download/v1.5.0/RelayBar.zip"
+          aria-label="Download RelayBar 1.5.0 for macOS"
         >
           Download for macOS <span aria-hidden="true">↓</span>
         </a>

@@ -2,6 +2,34 @@
 
 Notable RelayBar changes are recorded here.
 
+## [1.5.0] - 2026-08-25
+
+### Added
+
+- A persistent Remote Files split workspace keeps recent folders and recent
+  hosts one click away, with bounded recent paths nested beneath each host.
+- **Add Path…** opens any validated absolute path through a recent connection,
+  saved host, forwarding profile, or concrete SSH-config alias.
+- Single-file upload stages data under an app-owned hidden name, then publishes
+  only with the server's advertised hard-link or POSIX-rename guarantee.
+
+### Changed
+
+- Remote browsing, previews, downloads, and uploads stay in one resizable
+  native window with a hideable sidebar and responsive narrow layouts.
+- Opening Remote Files is connection-free until a location is selected; stale
+  recent paths remain visible and retryable instead of silently disappearing.
+
+### Security
+
+- Recent history stores only bounded host identities and normalized absolute
+  paths locally; directory listings and file content remain session-only.
+- Upload conflict handling fails closed for missing SFTP extensions, raced-in
+  targets, directories, symbolic links, and SSH-master replacement.
+- The universal stable ZIP is signed with a timestamped hardened-runtime
+  Developer ID, notarized by Apple, and stapled for offline Gatekeeper
+  verification.
+
 ## [1.4.0] - 2026-08-18
 
 ### Added
@@ -162,6 +190,7 @@ Notable RelayBar changes are recorded here.
 - Remote Markdown remains inert: raw HTML is not activated, remote embeds are not fetched, and unsafe links are blocked.
 - Release builds retain the hardened runtime, Developer ID signing, notarization, and Gatekeeper verification workflow.
 
+[1.5.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.5.0
 [1.4.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.4.0
 [1.3.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0
 [1.3.0-beta.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0-beta.1
