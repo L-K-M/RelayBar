@@ -132,15 +132,45 @@ final class RemoteServerCatalog {
         }
     }
 
+    private struct LocationRecord: Codable {
+        let id: UUID
+        let server: Record
+        let path: String
+
+        init(location: RemoteLocation) {
+            id = location.id
+            server = Record(server: location.server)
+            path = RemotePath.normalized(location.path)
+        }
+
+        func location(server canonicalServer: RemoteServer? = nil) -> RemoteLocation {
+            RemoteLocation(
+                id: id,
+                server: canonicalServer ?? server.server(source: .recent),
+                path: RemotePath.normalized(path)
+            )
+        }
+
+        var key: RemoteLocation.Key {
+            RemoteLocation.Key(
+                connection: server.connectionIdentity,
+                path: RemotePath.normalized(path)
+            )
+        }
+    }
+
     private static let savedLimit = 128
     private static let recentLimit = 8
+    private static let recentLocationLimit = 16
     private static let savedStorageKey = "remoteFiles.savedServers.v1"
     private static let recentStorageKey = "remoteFiles.recentServers.v1"
+    private static let recentLocationStorageKey = "remoteFiles.recentLocations.v1"
 
     private let defaults: UserDefaults?
     private let sshConfigURL: URL?
     private var savedRecords: [Record]
     private var recentRecords: [Record]
+    private var recentLocationRecords: [LocationRecord]
 
     init(defaults: UserDefaults? = nil, sshConfigURL: URL? = nil) {
         self.defaults = defaults
@@ -154,6 +184,11 @@ final class RemoteServerCatalog {
             from: defaults,
             key: Self.recentStorageKey,
             limit: Self.recentLimit
+        )
+        recentLocationRecords = Self.loadLocationRecords(
+            from: defaults,
+            key: Self.recentLocationStorageKey,
+            limit: Self.recentLocationLimit
         )
     }
 
@@ -190,6 +225,16 @@ final class RemoteServerCatalog {
             result.append(server)
         }
         return result
+    }
+
+    func recentLocations(from tunnels: [Tunnel]) -> [RemoteLocation] {
+        let canonicalServers = Dictionary(
+            servers(from: tunnels).map { ($0.connectionIdentity, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return recentLocationRecords.map { record in
+            record.location(server: canonicalServers[record.server.connectionIdentity])
+        }
     }
 
     func add(name: String, sshHost: String) throws -> RemoteServer {
@@ -245,8 +290,12 @@ final class RemoteServerCatalog {
         recentRecords.removeAll {
             $0.connectionIdentity == removed.connectionIdentity
         }
+        recentLocationRecords.removeAll {
+            $0.server.connectionIdentity == removed.connectionIdentity
+        }
         persist(savedRecords, key: Self.savedStorageKey)
         persist(recentRecords, key: Self.recentStorageKey)
+        persistLocations()
     }
 
     func recordSuccessfulOpen(_ server: RemoteServer) {
@@ -263,9 +312,56 @@ final class RemoteServerCatalog {
         persist(recentRecords, key: Self.recentStorageKey)
     }
 
+    @discardableResult
+    func recordSuccessfulOpen(_ server: RemoteServer, path: String) -> RemoteLocation? {
+        guard RemotePath.validationMessage(for: path) == nil else { return nil }
+        recordSuccessfulOpen(server)
+
+        let normalizedPath = RemotePath.normalized(path)
+        let key = RemoteLocation.Key(
+            connection: server.connectionIdentity,
+            path: normalizedPath
+        )
+        let existingID = recentLocationRecords.first(where: { $0.key == key })?.id
+        recentLocationRecords.removeAll { $0.key == key }
+        let location = RemoteLocation(
+            id: existingID ?? UUID(),
+            server: server,
+            path: normalizedPath
+        )
+        recentLocationRecords.insert(LocationRecord(location: location), at: 0)
+        if recentLocationRecords.count > Self.recentLocationLimit {
+            recentLocationRecords.removeLast(
+                recentLocationRecords.count - Self.recentLocationLimit
+            )
+        }
+        persistLocations()
+        return location
+    }
+
+    func removeRecentLocation(id: UUID) {
+        recentLocationRecords.removeAll { $0.id == id }
+        persistLocations()
+    }
+
+    func clearRecentLocations() {
+        recentLocationRecords.removeAll()
+        persistLocations()
+    }
+
     private func persist(_ records: [Record], key: String) {
         guard let defaults, let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: key)
+    }
+
+    private func persistLocations() {
+        guard
+            let defaults,
+            let data = try? JSONEncoder().encode(recentLocationRecords)
+        else {
+            return
+        }
+        defaults.set(data, forKey: Self.recentLocationStorageKey)
     }
 
     private static func loadRecords(
@@ -294,6 +390,43 @@ final class RemoteServerCatalog {
                 SSHArgumentPolicy.isValidHostTarget(record.sshHost),
                 SSHArgumentPolicy.areAdditionalArgumentsSafe(record.additionalArguments),
                 seen.insert(record.connectionIdentity).inserted
+            else {
+                continue
+            }
+            result.append(record)
+        }
+        return result
+    }
+
+    private static func loadLocationRecords(
+        from defaults: UserDefaults?,
+        key: String,
+        limit: Int
+    ) -> [LocationRecord] {
+        guard
+            let data = defaults?.data(forKey: key),
+            let decoded = try? JSONDecoder().decode([LocationRecord].self, from: data)
+        else {
+            return []
+        }
+
+        var result: [LocationRecord] = []
+        var seen: Set<RemoteLocation.Key> = []
+        for record in decoded.prefix(limit) {
+            guard
+                RemotePath.validationMessage(for: record.path) == nil,
+                !record.server.name.isEmpty,
+                record.server.name.utf8.count <= 256,
+                !record.server.name.unicodeScalars.contains(where: {
+                    CharacterSet.controlCharacters.contains($0)
+                        || CharacterSet.newlines.contains($0)
+                }),
+                record.server.sshHost.utf8.count <= 1_024,
+                SSHArgumentPolicy.isValidHostTarget(record.server.sshHost),
+                SSHArgumentPolicy.areAdditionalArgumentsSafe(
+                    record.server.additionalArguments
+                ),
+                seen.insert(record.key).inserted
             else {
                 continue
             }

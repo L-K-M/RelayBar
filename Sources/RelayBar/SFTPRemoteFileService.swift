@@ -11,6 +11,13 @@ protocol RemoteFileServing: AnyObject, Sendable {
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws
     func shutdown()
 }
 
@@ -20,6 +27,30 @@ extension RemoteFileServing {
     }
 
     func shutdown() {}
+
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws {
+        throw RemoteFileError.uploadCapabilityUnavailable("remote publication")
+    }
+
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool
+    ) async throws {
+        try await upload(
+            server: server,
+            localFile: localFile,
+            remoteDirectory: remoteDirectory,
+            replaceExisting: replaceExisting
+        ) { _ in }
+    }
 }
 
 /// Configuration is immutable after initialization. Each command owns separate
@@ -30,6 +61,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let output: String
         let error: String
         let exceededOutputLimit: Bool
+        let sessionToken: String?
     }
 
     private final class ProcessBox: @unchecked Sendable {
@@ -208,6 +240,45 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
+    private final class CapabilityBox: @unchecked Sendable {
+        private struct Entry {
+            let capabilities: RemoteUploadCapabilities
+            let sessionToken: String?
+        }
+
+        private let lock = NSLock()
+        private var values: [RemoteServer.ConnectionIdentity: Entry] = [:]
+
+        func value(
+            for identity: RemoteServer.ConnectionIdentity,
+            sessionToken: String?
+        ) -> RemoteUploadCapabilities? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard values[identity]?.sessionToken == sessionToken else { return nil }
+            return values[identity]?.capabilities
+        }
+
+        func store(
+            _ value: RemoteUploadCapabilities,
+            for identity: RemoteServer.ConnectionIdentity,
+            sessionToken: String?
+        ) {
+            lock.lock()
+            values[identity] = Entry(
+                capabilities: value,
+                sessionToken: sessionToken
+            )
+            lock.unlock()
+        }
+
+        func removeAll() {
+            lock.lock()
+            values.removeAll()
+            lock.unlock()
+        }
+    }
+
     private let executableURL: URL
     private let fileManager: FileManager
     private let previewSizeLimit: Int64
@@ -217,6 +288,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private let forceStopDelay: TimeInterval
     private let signalProcess: @Sendable (pid_t, Int32) -> Int32
     private let connectionSession: RemoteFileSSHSession?
+    private let capabilityBox = CapabilityBox()
 
     init(
         executableURL: URL = URL(fileURLWithPath: "/usr/bin/sftp"),
@@ -255,6 +327,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     func shutdown() {
+        capabilityBox.removeAll()
         connectionSession?.shutdown()
     }
 
@@ -270,7 +343,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
 
     private func listingOutput(
         server: RemoteServer,
-        path: String
+        path: String,
+        requiredSessionToken: String? = nil
     ) async throws -> (output: String, normalizedPath: String) {
         guard RemotePath.validationMessage(for: path) == nil else {
             throw RemoteFileError.invalidPath
@@ -278,7 +352,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let normalizedPath = RemotePath.normalized(path)
         let result = try await run(
             server: server,
-            batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
+            batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath),
+            requiredSessionToken: requiredSessionToken
         )
         try validate(result)
         return (result.output, normalizedPath)
@@ -401,6 +476,215 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws {
+        let values = try localFile.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .isAliasFileKey, .fileSizeKey]
+        )
+        guard
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            values.isAliasFile != true,
+            let fileSize = values.fileSize,
+            fileSize >= 0
+        else {
+            throw RemoteFileError.invalidUploadSource
+        }
+        guard RemotePath.validationMessage(for: remoteDirectory) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        let directory = RemotePath.normalized(remoteDirectory)
+        let name = localFile.lastPathComponent
+        guard !name.isEmpty else { throw RemoteFileError.invalidUploadSource }
+        let target = RemotePath.joining(directory, name)
+        guard RemotePath.validationMessage(for: target) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        let initialEntries = try await list(server: server, path: directory)
+        if let existing = initialEntries.first(where: { $0.name == name }) {
+            guard existing.kind == .file else {
+                throw RemoteFileError.unsupportedUploadTarget
+            }
+            guard replaceExisting else {
+                throw RemoteFileError.uploadConflict
+            }
+        }
+
+        let capabilityContext = try await uploadCapabilities(for: server)
+        let capabilities = capabilityContext.capabilities
+        if replaceExisting {
+            guard capabilities.supportsPOSIXRename else {
+                throw RemoteFileError.uploadCapabilityUnavailable("atomic replace")
+            }
+        } else {
+            guard capabilities.supportsHardLink else {
+                throw RemoteFileError.uploadCapabilityUnavailable("no-overwrite publish")
+            }
+        }
+
+        let stagingName = ".relaybar-upload-\(UUID().uuidString).partial"
+        let staging = RemotePath.joining(directory, stagingName)
+        guard RemotePath.validationMessage(for: staging) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        var ownsStaging = false
+        var didPublish = false
+        do {
+            // `put` may create the staging entry before its child is cancelled
+            // or reports failure. Claim the exact name before launching it so
+            // every post-launch exit attempts bounded cleanup.
+            ownsStaging = true
+            phase(.staging)
+            let uploadResult = try await run(
+                server: server,
+                batchInput: SFTPCommandBuilder.uploadCommand(
+                    localPath: localFile.path,
+                    remotePath: staging
+                ),
+                requiredSessionToken: capabilityContext.sessionToken
+            )
+            try validate(uploadResult)
+            try Task.checkCancellation()
+
+            phase(.publishing)
+            let finalEntries = try SFTPListingParser.parse(
+                try await listingOutput(
+                    server: server,
+                    path: directory,
+                    requiredSessionToken: capabilityContext.sessionToken
+                ).output,
+                parentPath: directory
+            )
+            if let existing = finalEntries.first(where: { $0.name == name }) {
+                guard existing.kind == .file else {
+                    throw RemoteFileError.unsupportedUploadTarget
+                }
+                guard replaceExisting else {
+                    throw RemoteFileError.uploadConflict
+                }
+            }
+
+            let publishCommand = replaceExisting
+                ? try SFTPCommandBuilder.renameCommand(
+                    existingPath: staging,
+                    newPath: target
+                )
+                : try SFTPCommandBuilder.hardLinkCommand(
+                    existingPath: staging,
+                    newPath: target
+                )
+            let publishResult = try await run(
+                server: server,
+                batchInput: publishCommand,
+                requiredSessionToken: capabilityContext.sessionToken
+            )
+            do {
+                try validate(publishResult)
+                didPublish = true
+            } catch {
+                let diagnosticEntries = try? SFTPListingParser.parse(
+                    try await listingOutput(
+                        server: server,
+                        path: directory,
+                        requiredSessionToken: capabilityContext.sessionToken
+                    ).output,
+                    parentPath: directory
+                )
+                if !replaceExisting,
+                   diagnosticEntries?.contains(where: { $0.name == name }) == true
+                {
+                    throw RemoteFileError.uploadConflict
+                }
+                throw error
+            }
+
+            if replaceExisting {
+                ownsStaging = false
+            } else {
+                phase(.cleaningUp)
+                let cleanupResult = try await run(
+                    server: server,
+                    batchInput: SFTPCommandBuilder.removeCommand(path: staging)
+                )
+                try validate(cleanupResult)
+                ownsStaging = false
+            }
+        } catch {
+            if ownsStaging {
+                phase(.cleaningUp)
+                let cleaned = await cleanupUploadStaging(server: server, path: staging)
+                if !cleaned {
+                    let context = didPublish
+                        ? "The upload was published."
+                        : error.localizedDescription
+                    throw RemoteFileError.uploadCleanupUnconfirmed(
+                        context
+                    )
+                }
+                if didPublish { return }
+            }
+            throw error
+        }
+    }
+
+    private func uploadCapabilities(
+        for server: RemoteServer
+    ) async throws -> (
+        capabilities: RemoteUploadCapabilities,
+        sessionToken: String?
+    ) {
+        let sessionToken: String?
+        if let connectionSession {
+            sessionToken = try await connectionSession.controlSocket(for: server).path
+        } else {
+            sessionToken = nil
+        }
+        if let cached = capabilityBox.value(
+            for: server.connectionIdentity,
+            sessionToken: sessionToken
+        ) {
+            return (cached, sessionToken)
+        }
+        let result = try await run(
+            server: server,
+            batchInput: SFTPCommandBuilder.quitCommand,
+            diagnosticLevel: 2,
+            requiredSessionToken: sessionToken
+        )
+        try validate(result)
+        let capabilities = RemoteUploadCapabilities.parse(result.error)
+        capabilityBox.store(
+            capabilities,
+            for: server.connectionIdentity,
+            sessionToken: result.sessionToken
+        )
+        return (capabilities, result.sessionToken)
+    }
+
+    private func cleanupUploadStaging(server: RemoteServer, path: String) async -> Bool {
+        let task = Task.detached { [self] in
+            do {
+                let result = try await run(
+                    server: server,
+                    batchInput: SFTPCommandBuilder.removeCommand(path: path)
+                )
+                try validate(result)
+                return true
+            } catch {
+                return false
+            }
+        }
+        return await task.value
+    }
+
     private func runTransfer(
         server: RemoteServer,
         batchInput: String,
@@ -449,7 +733,12 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
-    private func run(server: RemoteServer, batchInput: String) async throws -> CommandResult {
+    private func run(
+        server: RemoteServer,
+        batchInput: String,
+        diagnosticLevel: Int = 0,
+        requiredSessionToken: String? = nil
+    ) async throws -> CommandResult {
         let controlSocket: URL?
         if let connectionSession {
             controlSocket = try await connectionSession.controlSocket(for: server)
@@ -457,6 +746,9 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             controlSocket = nil
         }
         try Task.checkCancellation()
+        if let requiredSessionToken, controlSocket?.path != requiredSessionToken {
+            throw RemoteFileError.connectionSessionUnavailable
+        }
         if
             let controlSocket,
             !fileManager.fileExists(atPath: controlSocket.path)
@@ -465,7 +757,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
         let arguments = try SFTPCommandBuilder.processArguments(
             for: server,
-            controlSocket: controlSocket
+            controlSocket: controlSocket,
+            diagnosticLevel: diagnosticLevel
         )
         let processBox = ProcessBox(
             forceStopDelay: forceStopDelay,
@@ -545,7 +838,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                                 status: status,
                                 output: output,
                                 error: error,
-                                exceededOutputLimit: outputLimitBox.hasExceeded
+                                exceededOutputLimit: outputLimitBox.hasExceeded,
+                                sessionToken: controlSocket?.path
                             )
                         )
                     }
@@ -598,7 +892,9 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                     continuation.resume(throwing: error)
                 }
             }
-            try Task.checkCancellation()
+            if Task.isCancelled, result.status != 0 {
+                throw CancellationError()
+            }
             return result
         } onCancel: {
             processBox.cancel()
@@ -779,7 +1075,13 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let lines = errorOutput
             .split(whereSeparator: \.isNewline)
             .map(String.init)
-            .filter { !$0.hasPrefix("sftp>") }
+            .filter {
+                let lowercase = $0.lowercased()
+                return !$0.hasPrefix("sftp>")
+                    && !lowercase.hasPrefix("debug1:")
+                    && !lowercase.hasPrefix("debug2:")
+                    && !lowercase.hasPrefix("debug3:")
+            }
         let rawDetail = lines.suffix(2).joined(separator: " ")
         let safeScalars = rawDetail.unicodeScalars.filter {
             !CharacterSet.controlCharacters.contains($0)

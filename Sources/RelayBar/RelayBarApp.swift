@@ -34,9 +34,17 @@ final class RelayBarAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
-        UpdateServiceFactory.shared.prepareForApplicationTermination()
-            ? .terminateCancel
-            : .terminateNow
+        if UpdateServiceFactory.shared.prepareForApplicationTermination() {
+            return .terminateCancel
+        }
+        if RemoteFilesWindowController.shared.prepareForApplicationTermination(
+            completion: {
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        ) {
+            return .terminateLater
+        }
+        return .terminateNow
     }
 
     #if DEBUG

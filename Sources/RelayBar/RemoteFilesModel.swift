@@ -5,7 +5,14 @@ import ImageIO
 @MainActor
 protocol RemoteFilePresenting: AnyObject {
     func chooseDestination(for entry: RemoteFileEntry) -> URL?
+    func chooseUploadFile() -> URL?
+    func confirmUploadReplacement(name: String) -> Bool
     func revealInFinder(_ destination: URL)
+}
+
+extension RemoteFilePresenting {
+    func chooseUploadFile() -> URL? { nil }
+    func confirmUploadReplacement(name: String) -> Bool { false }
 }
 
 @MainActor
@@ -46,6 +53,30 @@ final class AppKitRemoteFilePresenter: RemoteFilePresenting {
 
     func revealInFinder(_ destination: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([destination])
+    }
+
+    func chooseUploadFile() -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a file to upload"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.resolvesAliases = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    func confirmUploadReplacement(name: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Replace “\(name)” on the remote server?"
+        alert.informativeText =
+            "RelayBar stages the complete upload before replacing this named item. "
+            + "Another remote client can still change that name during the final check."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
@@ -197,7 +228,7 @@ struct RemoteDirectoryCache {
 @MainActor
 final class RemoteFilesModel: ObservableObject {
     enum Screen: Equatable {
-        case launcher
+        case welcome
         case browser
         case preview
     }
@@ -214,6 +245,8 @@ final class RemoteFilesModel: ObservableObject {
         let id = UUID()
         let entry: RemoteFileEntry
         let destination: URL
+        let connectionIdentity: RemoteServer.ConnectionIdentity
+        let remoteDirectory: String
         var completedBytes: Int64
         let totalBytes: Int64?
         var phase: Phase
@@ -225,8 +258,27 @@ final class RemoteFilesModel: ObservableObject {
         }
     }
 
-    @Published private(set) var screen: Screen = .launcher
+    struct UploadPresentation: Identifiable {
+        enum Phase: Equatable {
+            case active
+            case cancelling
+            case completed
+            case failed
+            case cancelled
+        }
+
+        let id = UUID()
+        let localFile: URL
+        let replaceExisting: Bool
+        let connectionIdentity: RemoteServer.ConnectionIdentity
+        let remoteDirectory: String
+        var phase: Phase
+        var message: String?
+    }
+
+    @Published private(set) var screen: Screen = .welcome
     @Published private(set) var servers: [RemoteServer]
+    @Published private(set) var recentLocations: [RemoteLocation]
     @Published var selectedServerID: UUID?
     @Published var remotePath = ""
     @Published private(set) var currentPath = ""
@@ -241,6 +293,10 @@ final class RemoteFilesModel: ObservableObject {
     @Published private(set) var previewMarkdown: RemoteMarkdownDocument?
     @Published private(set) var isLoadingPreview = false
     @Published private(set) var transfer: TransferPresentation?
+    @Published private(set) var upload: UploadPresentation?
+    @Published private(set) var activeLocationID: UUID?
+    @Published private(set) var failedLocationID: UUID?
+    @Published private(set) var successfulOpenSequence = 0
 
     private let service: RemoteFileServing
     private let presenter: RemoteFilePresenting
@@ -249,15 +305,21 @@ final class RemoteFilesModel: ObservableObject {
     private let markdownDecoder: (URL) async throws -> RemoteMarkdownDocument
     private var tunnels: [Tunnel]
     private var activeServer: RemoteServer?
+    private var isFolderOpen = false
     private var navigationHistory: [String] = []
     private var directoryCache = RemoteDirectoryCache()
     private var loadTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var transferTask: Task<Void, Never>?
+    private var uploadTask: Task<Void, Never>?
     private var previewURL: URL?
     private var loadGeneration = UUID()
     private var previewGeneration = UUID()
     private var transferGeneration = UUID()
+    private var uploadGeneration = UUID()
+    private var pendingRootLocationID: UUID?
+    private var deferredShutdownTask: Task<Void, Never>?
+    private var shutdownCompletions: [@MainActor () -> Void] = []
     private var retryLoadRequest: (
         path: String,
         server: RemoteServer,
@@ -281,6 +343,7 @@ final class RemoteFilesModel: ObservableObject {
         let catalog = serverCatalog ?? RemoteServerCatalog()
         let initialServers = catalog.servers(from: tunnels)
         servers = initialServers
+        recentLocations = catalog.recentLocations(from: tunnels)
         selectedServerID = initialServers.first?.id
         self.service = service
         self.presenter = presenter ?? AppKitRemoteFilePresenter()
@@ -296,6 +359,8 @@ final class RemoteFilesModel: ObservableObject {
 
     var canOpen: Bool {
         selectedServer != nil && pathValidationMessage == nil && !isLoading
+            && !isRefreshing
+            && !isTransferRunning
     }
 
     var presentedPath: String {
@@ -303,10 +368,11 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     var canGoBack: Bool {
+        guard !isTransferRunning else { return false }
         if screen == .preview {
             return true
         }
-        guard screen == .browser, !isTransferRunning else { return false }
+        guard screen == .browser else { return false }
         return !isLoading || pendingPath != nil
     }
 
@@ -333,11 +399,48 @@ final class RemoteFilesModel: ObservableObject {
         return servers.first { $0.id == selectedServerID }
     }
 
+    var canActivateLocation: Bool {
+        !isLoading && !isRefreshing && !isTransferRunning
+    }
+
+    var canActivateEntry: Bool {
+        !isLoading && !isTransferRunning
+    }
+
+    var canUpload: Bool {
+        screen == .browser && isFolderOpen && !currentPath.isEmpty
+            && !isLoading && !isTransferRunning
+    }
+
+    var recentFolderLocations: [RemoteLocation] {
+        Array(recentLocations.prefix(6))
+    }
+
+    func nestedLocations(
+        for server: RemoteServer,
+        excluding visibleLocations: [RemoteLocation]? = nil
+    ) -> [RemoteLocation] {
+        let visibleKeys = Set((visibleLocations ?? recentFolderLocations).map(\.key))
+        return Array(
+            recentLocations.lazy.filter {
+                $0.server.connectionIdentity == server.connectionIdentity
+                    && !visibleKeys.contains($0.key)
+            }.prefix(3)
+        )
+    }
+
+    func recentLocationCount(for server: RemoteServer) -> Int {
+        recentLocations.count {
+            $0.server.connectionIdentity == server.connectionIdentity
+        }
+    }
+
     func updateTunnels(_ tunnels: [Tunnel]) {
         self.tunnels = tunnels
         let selectedConnection = selectedServer?.connectionIdentity
         let updatedServers = serverCatalog.servers(from: tunnels)
         servers = updatedServers
+        recentLocations = serverCatalog.recentLocations(from: tunnels)
 
         if
             let selectedConnection,
@@ -346,7 +449,7 @@ final class RemoteFilesModel: ObservableObject {
             })
         {
             selectedServerID = matchingServer.id
-        } else if screen == .launcher {
+        } else if screen == .welcome {
             selectedServerID = updatedServers.first?.id
         }
     }
@@ -367,8 +470,47 @@ final class RemoteFilesModel: ObservableObject {
 
     func removeSelectedServer() {
         guard let selectedServerID else { return }
-        serverCatalog.removeSavedServer(id: selectedServerID)
+        removeSavedServer(id: selectedServerID)
+    }
+
+    func isSavedServer(id: UUID) -> Bool {
+        serverCatalog.isSavedServer(id: id)
+    }
+
+    func removeSavedServer(id: UUID) {
+        serverCatalog.removeSavedServer(id: id)
         refreshServers(preferredConnection: nil)
+    }
+
+    func activate(_ location: RemoteLocation) {
+        guard canActivateLocation else { return }
+        let server = servers.first(where: {
+            $0.connectionIdentity == location.server.connectionIdentity
+        }) ?? location.server
+        selectedServerID = server.id
+        remotePath = location.path
+        pendingRootLocationID = location.id
+        startOpeningRemotePath(server: server, path: location.path)
+    }
+
+    func removeRecentLocation(id: UUID) {
+        serverCatalog.removeRecentLocation(id: id)
+        if activeLocationID == id { activeLocationID = nil }
+        if failedLocationID == id { failedLocationID = nil }
+        recentLocations = serverCatalog.recentLocations(from: tunnels)
+    }
+
+    func clearRecentLocations() {
+        serverCatalog.clearRecentLocations()
+        activeLocationID = nil
+        failedLocationID = nil
+        recentLocations = []
+    }
+
+    func removeFailedLocation() {
+        guard let failedLocationID else { return }
+        removeRecentLocation(id: failedLocationID)
+        dismissLoadError()
     }
 
     func openRemotePath() {
@@ -381,6 +523,46 @@ final class RemoteFilesModel: ObservableObject {
             return
         }
 
+        pendingRootLocationID = nil
+        startOpeningRemotePath(server: server, path: remotePath)
+    }
+
+    private func startOpeningRemotePath(server: RemoteServer, path: String) {
+        guard !isTransferRunning else { return }
+        let path = RemotePath.normalized(path)
+        let isSameConnection = activeServer?.connectionIdentity
+            == server.connectionIdentity
+
+        if
+            isSameConnection,
+            isFolderOpen,
+            currentPath == path,
+            screen == .browser || screen == .preview
+        {
+            if screen == .preview {
+                retirePreviewForLocationChange()
+                screen = .browser
+            }
+            navigationHistory = []
+            remotePath = path
+            if let location = serverCatalog.recordSuccessfulOpen(server, path: path) {
+                activeLocationID = pendingRootLocationID ?? location.id
+            }
+            recentLocations = serverCatalog.recentLocations(from: tunnels)
+            pendingRootLocationID = nil
+            failedLocationID = nil
+            errorMessage = nil
+            successfulOpenSequence &+= 1
+            refreshServers(preferredConnection: server.connectionIdentity)
+            return
+        }
+
+        if isLoading, isSameConnection, pendingPath == path { return }
+
+        clearFinishedTransfersForNavigation()
+        loadTask?.cancel()
+        loadGeneration = UUID()
+        retirePreviewForLocationChange()
         if
             let activeServer,
             activeServer.connectionIdentity != server.connectionIdentity
@@ -390,8 +572,16 @@ final class RemoteFilesModel: ObservableObject {
         }
         navigationHistory = []
         activeServer = server
+        activeLocationID = nil
+        failedLocationID = nil
+        retryLoadRequest = nil
+        currentPath = ""
+        entries = []
+        selectedEntryID = nil
+        isFolderOpen = false
+        screen = .welcome
         load(
-            path: RemotePath.normalized(remotePath),
+            path: path,
             server: server,
             previousPath: nil,
             resolvesFile: true
@@ -404,7 +594,8 @@ final class RemoteFilesModel: ObservableObject {
             let server = activeServer,
             !currentPath.isEmpty,
             !isLoading,
-            !isRefreshing
+            !isRefreshing,
+            !isTransferRunning
         else { return }
         load(path: currentPath, server: server, previousPath: nil, isRefresh: true)
     }
@@ -414,6 +605,7 @@ final class RemoteFilesModel: ObservableObject {
             refresh()
             return
         }
+        pendingRootLocationID = failedLocationID
         load(
             path: request.path,
             server: request.server,
@@ -456,11 +648,16 @@ final class RemoteFilesModel: ObservableObject {
             errorMessage = nil
             retryLoadRequest = nil
             activeServer = nil
+            isFolderOpen = false
+            activeLocationID = nil
+            failedLocationID = nil
+            pendingRootLocationID = nil
             transfer = nil
+            upload = nil
             selectedServerID = servers.contains(where: { $0.id == selectedServerID })
                 ? selectedServerID
                 : servers.first?.id
-            screen = .launcher
+            screen = .welcome
             return
         }
         load(
@@ -482,7 +679,7 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     func activate(_ entry: RemoteFileEntry) {
-        guard !isLoading else { return }
+        guard canActivateEntry else { return }
         select(entry)
         if entry.isDirectory {
             guard let server = activeServer else { return }
@@ -495,7 +692,11 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     func preview(_ entry: RemoteFileEntry) {
-        guard entry.isPreviewable, let server = activeServer else { return }
+        guard
+            entry.isPreviewable,
+            !isTransferRunning,
+            let server = activeServer
+        else { return }
         select(entry)
         cleanupPreview()
         previewTask?.cancel()
@@ -554,6 +755,7 @@ final class RemoteFilesModel: ObservableObject {
 
     func selectPreviewEntry(id: String?) {
         guard
+            !isTransferRunning,
             let id,
             id != previewEntry?.id,
             let entry = previewableEntries.first(where: { $0.id == id })
@@ -565,6 +767,7 @@ final class RemoteFilesModel: ObservableObject {
 
     @discardableResult
     func movePreviewSelection(by offset: Int) -> Bool {
+        guard !isTransferRunning else { return false }
         let previewableEntries = previewableEntries
         guard
             !previewableEntries.isEmpty,
@@ -590,14 +793,8 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     func closePreview() {
-        previewTask?.cancel()
-        previewGeneration = UUID()
-        previewTask = nil
-        cleanupPreview()
-        previewEntry = nil
-        previewImage = nil
-        previewMarkdown = nil
-        isLoadingPreview = false
+        guard !isTransferRunning else { return }
+        retirePreviewForLocationChange()
         errorMessage = nil
         screen = .browser
     }
@@ -606,6 +803,76 @@ final class RemoteFilesModel: ObservableObject {
         guard !isTransferRunning else { return }
         guard let destination = presenter.chooseDestination(for: entry) else { return }
         startTransfer(entry: entry, destination: destination)
+    }
+
+    func beginUpload() {
+        guard canUpload, let localFile = presenter.chooseUploadFile() else { return }
+        let name = localFile.lastPathComponent
+        let existing = entries.first { $0.name == name }
+        if let existing, existing.kind != .file {
+            errorMessage = RemoteFileError.unsupportedUploadTarget.localizedDescription
+            return
+        }
+        let replaceExisting: Bool
+        if existing != nil {
+            guard presenter.confirmUploadReplacement(name: name) else { return }
+            replaceExisting = true
+        } else {
+            replaceExisting = false
+        }
+        startUpload(localFile: localFile, replaceExisting: replaceExisting)
+    }
+
+    func cancelUpload() {
+        guard upload?.phase == .active else { return }
+        upload?.phase = .cancelling
+        upload?.message = "Removing the remote staging file…"
+        uploadTask?.cancel()
+    }
+
+    func retryUpload() {
+        guard
+            let upload,
+            upload.phase == .failed || upload.phase == .cancelled,
+            !isTransferRunning
+        else {
+            return
+        }
+        guard
+            activeServer?.connectionIdentity == upload.connectionIdentity,
+            RemotePath.normalized(currentPath) == upload.remoteDirectory
+        else {
+            self.upload = nil
+            errorMessage = "Return to the original remote folder and choose Upload again."
+            return
+        }
+        var replaceExisting = upload.replaceExisting
+        if let existing = entries.first(where: {
+            $0.name == upload.localFile.lastPathComponent
+        }) {
+            guard existing.kind == .file else {
+                self.upload?.phase = .failed
+                self.upload?.message = RemoteFileError.unsupportedUploadTarget
+                    .localizedDescription
+                return
+            }
+            if !replaceExisting {
+                guard presenter.confirmUploadReplacement(name: existing.name) else {
+                    return
+                }
+                replaceExisting = true
+            }
+        }
+        self.upload = nil
+        startUpload(
+            localFile: upload.localFile,
+            replaceExisting: replaceExisting
+        )
+    }
+
+    func dismissUpload() {
+        guard upload?.phase != .active, upload?.phase != .cancelling else { return }
+        upload = nil
     }
 
     func cancelTransfer() {
@@ -618,8 +885,17 @@ final class RemoteFilesModel: ObservableObject {
     func retryTransfer() {
         guard
             let transfer,
-            transfer.phase == .failed || transfer.phase == .cancelled
+            transfer.phase == .failed || transfer.phase == .cancelled,
+            !isTransferRunning
         else { return }
+        guard
+            activeServer?.connectionIdentity == transfer.connectionIdentity,
+            RemotePath.normalized(currentPath) == transfer.remoteDirectory
+        else {
+            self.transfer = nil
+            errorMessage = "Return to the original remote folder and choose Download again."
+            return
+        }
         self.transfer = nil
         startTransfer(entry: transfer.entry, destination: transfer.destination)
     }
@@ -634,22 +910,50 @@ final class RemoteFilesModel: ObservableObject {
         presenter.revealInFinder(destination)
     }
 
-    func cancelAll() {
+    @discardableResult
+    func cancelAll(
+        completion: (@MainActor () -> Void)? = nil
+    ) -> Bool {
+        if let completion {
+            shutdownCompletions.append(completion)
+        }
+        let pendingUploadTask = uploadTask
         loadTask?.cancel()
         previewTask?.cancel()
         transferTask?.cancel()
+        uploadTask?.cancel()
         loadGeneration = UUID()
         previewGeneration = UUID()
         transferGeneration = UUID()
+        uploadGeneration = UUID()
         loadTask = nil
         previewTask = nil
         transferTask = nil
+        uploadTask = nil
         pendingPath = nil
         isLoading = false
         isRefreshing = false
         directoryCache.removeAll()
-        service.shutdown()
+        isFolderOpen = false
         cleanupPreview()
+        transfer = nil
+        upload = nil
+
+        if deferredShutdownTask != nil {
+            return true
+        }
+        if let pendingUploadTask {
+            deferredShutdownTask = Task { [weak self, service] in
+                await pendingUploadTask.value
+                service.shutdown()
+                self?.finishDeferredShutdown()
+            }
+            return true
+        } else {
+            service.shutdown()
+            finishDeferredShutdown()
+            return false
+        }
     }
 
     private func load(
@@ -667,6 +971,10 @@ final class RemoteFilesModel: ObservableObject {
         }
         if isRefreshing, currentPath == path {
             return
+        }
+
+        if !isRefresh, path != currentPath {
+            clearFinishedTransfersForNavigation()
         }
 
         loadTask?.cancel()
@@ -715,7 +1023,7 @@ final class RemoteFilesModel: ObservableObject {
             )
             isLoading = !isRefresh
             isRefreshing = isRefresh
-            pendingPath = !isRefresh && screen == .browser ? path : nil
+            pendingPath = !isRefresh ? path : nil
         }
 
         loadTask = Task { [weak self] in
@@ -753,7 +1061,27 @@ final class RemoteFilesModel: ObservableObject {
                 isLoading = false
                 isRefreshing = false
                 retryLoadRequest = nil
-                serverCatalog.recordSuccessfulOpen(server)
+                if resolvesFile {
+                    let recentPath: String
+                    switch result {
+                    case .directory:
+                        recentPath = path
+                    case .file(let entry):
+                        recentPath = RemotePath.parent(of: entry.path)
+                    }
+                    if let location = serverCatalog.recordSuccessfulOpen(
+                        server,
+                        path: recentPath
+                    ) {
+                        activeLocationID = pendingRootLocationID ?? location.id
+                    }
+                    recentLocations = serverCatalog.recentLocations(from: tunnels)
+                    pendingRootLocationID = nil
+                    failedLocationID = nil
+                    successfulOpenSequence &+= 1
+                } else {
+                    serverCatalog.recordSuccessfulOpen(server)
+                }
                 refreshServers(preferredConnection: server.connectionIdentity)
                 if case .file(let entry) = result, entry.isPreviewable {
                     preview(entry)
@@ -770,6 +1098,10 @@ final class RemoteFilesModel: ObservableObject {
                     isLoading = false
                     isRefreshing = false
                     errorMessage = error.localizedDescription
+                    if resolvesFile {
+                        failedLocationID = pendingRootLocationID
+                        pendingRootLocationID = nil
+                    }
                 }
             }
         }
@@ -789,6 +1121,7 @@ final class RemoteFilesModel: ObservableObject {
             navigationHistory.removeLast()
         }
         currentPath = path
+        isFolderOpen = true
         remotePath = path
         entries = loadedEntries
         if
@@ -806,6 +1139,7 @@ final class RemoteFilesModel: ObservableObject {
 
     private func commitLoadedFile(_ entry: RemoteFileEntry) {
         currentPath = RemotePath.parent(of: entry.path)
+        isFolderOpen = false
         remotePath = entry.path
         entries = [entry]
         selectedEntryID = entry.id
@@ -831,7 +1165,7 @@ final class RemoteFilesModel: ObservableObject {
     }
 
     private func startTransfer(entry: RemoteFileEntry, destination: URL) {
-        guard let server = activeServer else {
+        guard !isTransferRunning, let server = activeServer else {
             errorMessage = "Reopen the remote folder before downloading."
             return
         }
@@ -840,6 +1174,8 @@ final class RemoteFilesModel: ObservableObject {
         transfer = TransferPresentation(
             entry: entry,
             destination: destination,
+            connectionIdentity: server.connectionIdentity,
+            remoteDirectory: RemotePath.normalized(currentPath),
             completedBytes: 0,
             totalBytes: entry.isDirectory ? nil : entry.size,
             phase: .active
@@ -885,6 +1221,70 @@ final class RemoteFilesModel: ObservableObject {
         }
     }
 
+    private func startUpload(localFile: URL, replaceExisting: Bool) {
+        guard
+            let server = activeServer,
+            screen == .browser,
+            isFolderOpen,
+            !isTransferRunning
+        else {
+            errorMessage = "Reopen the remote folder before uploading."
+            return
+        }
+        let directory = currentPath
+        let generation = UUID()
+        uploadGeneration = generation
+        upload = UploadPresentation(
+            localFile: localFile,
+            replaceExisting: replaceExisting,
+            connectionIdentity: server.connectionIdentity,
+            remoteDirectory: RemotePath.normalized(directory),
+            phase: .active,
+            message: "Staging safely…"
+        )
+
+        uploadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await service.upload(
+                    server: server,
+                    localFile: localFile,
+                    remoteDirectory: directory,
+                    replaceExisting: replaceExisting
+                ) { [weak self] phase in
+                    Task { @MainActor in
+                        guard
+                            let self,
+                            self.uploadGeneration == generation,
+                            self.upload?.phase == .active
+                        else { return }
+                        self.upload?.message = phase.presentationText
+                    }
+                }
+                guard uploadGeneration == generation else { return }
+                upload?.phase = .completed
+                upload?.message = "Uploaded to \(directory)."
+                uploadTask = nil
+                refresh()
+            } catch is CancellationError {
+                guard uploadGeneration == generation else { return }
+                upload?.phase = .cancelled
+                upload?.message =
+                    "Canceled before publication. No remote file was published, "
+                    + "and RelayBar has no known staging file left."
+                uploadTask = nil
+            } catch {
+                guard uploadGeneration == generation else { return }
+                upload?.phase = .failed
+                upload?.message = error.localizedDescription
+                uploadTask = nil
+                if error as? RemoteFileError == .uploadConflict {
+                    refresh()
+                }
+            }
+        }
+    }
+
     private func cleanupPreview() {
         if let previewURL {
             try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent())
@@ -892,11 +1292,38 @@ final class RemoteFilesModel: ObservableObject {
         previewURL = nil
     }
 
+    private func retirePreviewForLocationChange() {
+        previewTask?.cancel()
+        previewGeneration = UUID()
+        previewTask = nil
+        cleanupPreview()
+        previewEntry = nil
+        previewImage = nil
+        previewMarkdown = nil
+        isLoadingPreview = false
+    }
+
+    private func clearFinishedTransfersForNavigation() {
+        guard !isTransferRunning else { return }
+        upload = nil
+        transfer = nil
+    }
+
+    private func finishDeferredShutdown() {
+        deferredShutdownTask = nil
+        let completions = shutdownCompletions
+        shutdownCompletions = []
+        for completion in completions {
+            completion()
+        }
+    }
+
     private func refreshServers(
         preferredConnection: RemoteServer.ConnectionIdentity?
     ) {
         let updatedServers = serverCatalog.servers(from: tunnels)
         servers = updatedServers
+        recentLocations = serverCatalog.recentLocations(from: tunnels)
         if
             let preferredConnection,
             let preferred = updatedServers.first(where: {
@@ -911,5 +1338,6 @@ final class RemoteFilesModel: ObservableObject {
 
     private var isTransferRunning: Bool {
         transfer?.phase == .active || transfer?.phase == .cancelling
+            || upload?.phase == .active || upload?.phase == .cancelling
     }
 }

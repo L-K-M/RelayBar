@@ -32,6 +32,8 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 ## Active tasks
 
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
+- [Task 037 — Implement Remote Files Workspace](037-implement-remote-files-workspace.md) —
+  in progress
 
 ## Backlog
 
