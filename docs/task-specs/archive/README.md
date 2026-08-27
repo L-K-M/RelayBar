@@ -32,3 +32,4 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 033 — Private Update Rehearsal Correctness](033-private-update-rehearsal-correctness.md)
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
 - [Task 035 — Stabilize Copy Confirmation Test](035-stabilize-copy-confirmation-test.md)
+- [Task 038 — Reliable Homebrew Upgrade and Visible Group Controls](038-homebrew-upgrade-and-group-controls.md)

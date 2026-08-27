@@ -126,16 +126,24 @@ chain.
 The maintainer-owned `lx2026/homebrew-tap` repository publishes
 `Casks/relaybar.rb`. The cask installs the same immutable, versioned
 `RelayBar.zip` attached to the stable GitHub release and pins its SHA-256. It
-uses only the standard `app "RelayBar.app"` artifact, declares the real macOS
-minimum, and does not bypass quarantine, re-sign the bundle, run postflight
-scripts, or remove RelayBar user data.
+uses the standard `app "RelayBar.app"` artifact plus
+`uninstall quit: "com.lx2026.RelayBar"`, declares the real macOS minimum, and
+does not bypass quarantine, re-sign the bundle, run custom lifecycle scripts,
+or remove RelayBar user data. During an upgrade, Homebrew quits and records a
+running registered RelayBar, replaces and registers the bundle, then reopens
+only that successfully quit app. An initially stopped app stays stopped, and
+`brew upgrade --cask --no-quit` remains an explicit user override. Homebrew
+captures uninstall artifacts in the receipt at install time; changing the tap
+does not retrofit a legacy receipt, so an installation made before the quit
+directive needs one reinstall or a manual quit for its first later upgrade.
 
 After publishing and independently verifying a stable release:
 
 1. update the cask version and SHA-256 to that exact release archive;
 2. confirm its URL, homepage, macOS requirement, and app artifact;
 3. run Homebrew style plus strict online and signing audits;
-4. test install, launch, version, Gatekeeper, and uninstall behavior; and
+4. test install, launch, version, Gatekeeper, running-app upgrade/relaunch,
+   stopped-app upgrade, and uninstall behavior; and
 5. confirm the extracted archive and cask installation contain the same signed
    application.
 

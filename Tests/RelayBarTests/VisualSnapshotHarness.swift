@@ -141,6 +141,75 @@ final class VisualSnapshotHarness: XCTestCase {
         }
     }
 
+    func testCaptureTask038GroupControlSnapshots() throws {
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] == nil,
+            "Set RELAYBAR_SNAPSHOT_DIR to capture snapshots."
+        )
+
+        enum FixtureState: String, CaseIterable {
+            case stopped
+            case active
+            case mixed
+            case longName = "long-name"
+        }
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearanceLabel = appearanceName == .aqua ? "light" : "dark"
+
+            for state in FixtureState.allCases {
+                let suiteName = "RelayBarTask038.\(UUID().uuidString)"
+                let defaults = UserDefaults(suiteName: suiteName)!
+                defer { defaults.removePersistentDomain(forName: suiteName) }
+                let store = TunnelStore(defaults: defaults)
+                let groupName = state == .longName
+                    ? "Group " + String(repeating: "🌐", count: 26)
+                    : "Work"
+                let first = Tunnel(
+                    name: "Hermes Dashboard",
+                    localPort: 8_000,
+                    destinationHost: "localhost",
+                    destinationPort: 3_000,
+                    sshHost: "preview-1.example.com",
+                    groupTag: groupName
+                )
+                let second = Tunnel(
+                    name: "Virtual Desktop",
+                    localPort: 8_001,
+                    destinationHost: "localhost",
+                    destinationPort: 3_001,
+                    sshHost: "preview-2.example.com",
+                    groupTag: groupName
+                )
+                store.add(first)
+                store.add(second)
+
+                switch state {
+                case .stopped, .longName:
+                    break
+                case .active:
+                    store.setPreviewPhase(.running, for: first)
+                    store.setPreviewPhase(.starting, for: second)
+                case .mixed:
+                    store.setPreviewPhase(.running, for: first)
+                }
+
+                try capture(
+                    view: RelayBarRootView(
+                        loginItemService: LoginItemServiceSpy(status: .enabled),
+                        updateModel: previewUpdateModel()
+                    )
+                    .environmentObject(store),
+                    appearance: appearanceName,
+                    assertHorizontalContainment: true,
+                    to: outputDirectory.appendingPathComponent(
+                        "task-038-group-controls-\(state.rawValue)-\(appearanceLabel).png"
+                    )
+                )
+            }
+        }
+    }
+
     private func previewUpdateModel(
         result: UpdateCheckResult? = nil
     ) -> UpdateModel {

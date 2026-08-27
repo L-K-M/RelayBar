@@ -15,3 +15,4 @@ Task verification reports record automated, visual, manual, security, and live-s
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
 - [Task 035 — Stabilize Copy Confirmation Test](035-stabilize-copy-confirmation-test.md)
 - [Task 037 — Remote Files Workspace](037-remote-files-workspace.md)
+- [Task 038 — Homebrew Upgrade and Group Controls](038-homebrew-upgrade-and-group-controls.md)

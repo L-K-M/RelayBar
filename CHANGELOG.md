@@ -2,6 +2,23 @@
 
 Notable RelayBar changes are recorded here.
 
+## [1.5.1] - 2026-08-27
+
+### Added
+
+- Named groups keep Start All and Stop All visible at the right side of each
+  header, with state-aware enablement and accessible group-specific labels.
+
+### Fixed
+
+- Homebrew installations now register RelayBar's bundle identifier for the
+  native upgrade lifecycle: a running app quits before replacement and reopens
+  afterward, while an app that was stopped stays stopped.
+
+Existing Homebrew receipts created before 1.5.1 do not gain the new lifecycle
+directive retroactively. Run `brew reinstall --cask lx2026/tap/relaybar` once,
+or quit RelayBar manually for the first later upgrade.
+
 ## [1.5.0] - 2026-08-25
 
 ### Added
@@ -190,6 +207,7 @@ Notable RelayBar changes are recorded here.
 - Remote Markdown remains inert: raw HTML is not activated, remote embeds are not fetched, and unsafe links are blocked.
 - Release builds retain the hardened runtime, Developer ID signing, notarization, and Gatekeeper verification workflow.
 
+[1.5.1]: https://github.com/lx2026/RelayBar/releases/tag/v1.5.1
 [1.5.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.5.0
 [1.4.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.4.0
 [1.3.0]: https://github.com/lx2026/RelayBar/releases/tag/v1.3.0

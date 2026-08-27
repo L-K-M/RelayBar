@@ -50,7 +50,18 @@ Before a live server is available, use the DEBUG-only Remote Files fixture to re
 
 Start a DEBUG build with `--preview-window --flexible-forwarding-preview` to review rule-aware profile rows and the editor without reading or changing the user's saved profiles. Review add, type switching, duplicate, reorder, remove, automatic ports, Unix fields, exposure warnings, reverse-SOCKS policy, scrolling, keyboard focus, and accessibility labels in light and dark appearance.
 
-Start a DEBUG build with `--preview-window --grouping-preview <scenario>` to review saved-profile grouping without reading or changing the user's saved profiles. Supported scenarios are `empty`, `zero-tag`, `all-untagged`, `one-bucket`, `mixed`, `all-tagged`, `long-tag`, and `many-sections`. Review the flat-list threshold, section order, Ungrouped placement, long-label truncation, scrolling, picker and row-menu parity, inline Return/Escape behavior, rename, ungroup-all, the Start All/Stop All/Restart All commands with state-aware enablement, keyboard focus, and accessibility labels in light and dark appearance.
+Start a DEBUG build with `--preview-window --grouping-preview <scenario>` to review saved-profile grouping without reading or changing the user's saved profiles. Supported scenarios are `empty`, `zero-tag`, `all-untagged`, `one-bucket`, `mixed`, `all-tagged`, `long-tag`, and `many-sections`. Review the flat-list threshold, section order, Ungrouped placement, long-label truncation, scrolling, picker and row-menu parity, inline Return/Escape behavior, rename, ungroup-all, the persistent Start All and Stop All controls, menu-only Restart All, keyboard focus, and accessibility labels in light and dark appearance. The Task 038 offscreen matrix additionally captures stopped, active, mixed, and long-name group headers at 380 × 440 so state enablement and horizontal containment are deterministic without creating SSH processes.
+
+Homebrew lifecycle changes require two real cask-managed upgrades from a
+previous-version fixture whose installed receipt contains the current quit
+directive: one while RelayBar is running and one while it is stopped.
+For the running case, record the old process exit, new process identity,
+relaunch count, installed version/build, immutable release checksum, signature,
+stapler, and Gatekeeper evidence. For the stopped case, confirm the upgrade
+does not launch RelayBar. Hash preferences and inventory Application Support
+before and after both paths; the cask must preserve them. Separately exercise a
+legacy receipt without the directive and record that Homebrew cannot apply a
+new uninstall artifact retroactively; do not count that transition as a pass.
 
 Launch at Login changes require a signed packaged build verified manually for enable, login relaunch as the menu-bar-only app with every saved profile stopped, disable without quitting the running app, and state synchronization after changes made directly in System Settings. Use the offscreen snapshot harness for the settings screen and its approval-required caption in light and dark appearance.
 

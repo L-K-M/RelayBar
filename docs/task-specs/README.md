@@ -34,6 +34,8 @@ Completion does not authorize a commit, push, release, or deployment. Follow [`A
 - [Task 032 — Release and Manual Acceptance](032-release-and-manual-acceptance.md)
 - [Task 037 — Implement Remote Files Workspace](037-implement-remote-files-workspace.md) —
   in progress
+- [Task 039 — RelayBar 1.5.1 Stable Release](039-relaybar-1.5.1-release.md) —
+  in progress
 
 ## Backlog
 
