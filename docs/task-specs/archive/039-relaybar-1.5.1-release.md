@@ -1,8 +1,10 @@
 # Task 039 — RelayBar 1.5.1 Stable Release
 
-Status: In progress
+Status: Complete
 
 Started: 2026-08-27
+
+Accepted: 2026-08-27
 
 ## Outcome
 

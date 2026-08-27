@@ -33,3 +33,4 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 034 — Open Direct Remote File Paths](034-open-direct-remote-file-paths.md)
 - [Task 035 — Stabilize Copy Confirmation Test](035-stabilize-copy-confirmation-test.md)
 - [Task 038 — Reliable Homebrew Upgrade and Visible Group Controls](038-homebrew-upgrade-and-group-controls.md)
+- [Task 039 — RelayBar 1.5.1 Stable Release](039-relaybar-1.5.1-release.md)

@@ -2,10 +2,9 @@
 
 Verified: 2026-08-27
 
-Result: The official, stable GitHub release is published and the final
-notarized app is installed. The signed appcast, website update, and Homebrew
-cask update are committed to their feature branches and require merge before
-those public channels identify 1.5.1. Task 039 therefore remains in progress.
+Result: Pass. The official stable GitHub release, GitHub Pages site, signed
+Sparkle appcast, and public Homebrew cask identify 1.5.1. The final notarized
+app is installed and running, main CI passes, and issues 28 and 29 are closed.
 
 ## Source and automated checks
 
@@ -63,10 +62,14 @@ those public channels identify 1.5.1. Task 039 therefore remains in progress.
   and Gatekeeper assessment pass. The displaced 1.5.0 review copy was moved to
   `~/.Trash/RelayBar-pre-1.5.1-review.app` for recoverability.
 
-## Remaining publication boundary
+## Public channel verification
 
-- The GitHub release and versioned download are public now.
-- GitHub Pages and the production appcast remain on the repository's current
-  `main` content until the RelayBar branch is merged.
-- The public Homebrew tap remains on its current `main` content until the tap
-  branch is merged. No pull request was opened because none was requested.
+- RelayBar `main` and the release feature branch both resolve to `1ff3603`;
+  Homebrew tap `main` and its release feature branch both resolve to `7fdaf4e`.
+- GitHub Pages deployment run `33088178321` succeeds from `1ff3603`. The live
+  page and live appcast return 1.5.1, and the public tap returns version 1.5.1,
+  the verified archive checksum, and the exact quit directive.
+- Main CI run `33088179453` passes its Swift package tests and unsigned macOS
+  project build.
+- GitHub issues 28 and 29 are closed as completed with comments linking the
+  official release and the issue-specific verification evidence.
