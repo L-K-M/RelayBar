@@ -64,12 +64,14 @@ app is installed and running, main CI passes, and issues 28 and 29 are closed.
 
 ## Public channel verification
 
-- RelayBar `main` and the release feature branch both resolve to `1ff3603`;
-  Homebrew tap `main` and its release feature branch both resolve to `7fdaf4e`.
+- RelayBar release-channel commit `1ff3603` is contained in both public `main`
+  and the release feature branch. Homebrew tap commit `7fdaf4e` is contained in
+  both tap branches.
 - GitHub Pages deployment run `33088178321` succeeds from `1ff3603`. The live
   page and live appcast return 1.5.1, and the public tap returns version 1.5.1,
   the verified archive checksum, and the exact quit directive.
-- Main CI run `33088179453` passes its Swift package tests and unsigned macOS
-  project build.
+- Main CI runs `33088179453` after channel publication and `33088592680` after
+  task archival pass their Swift package tests and unsigned macOS project
+  builds.
 - GitHub issues 28 and 29 are closed as completed with comments linking the
   official release and the issue-specific verification evidence.
