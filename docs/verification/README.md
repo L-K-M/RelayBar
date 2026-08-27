@@ -16,3 +16,4 @@ Task verification reports record automated, visual, manual, security, and live-s
 - [Task 035 — Stabilize Copy Confirmation Test](035-stabilize-copy-confirmation-test.md)
 - [Task 037 — Remote Files Workspace](037-remote-files-workspace.md)
 - [Task 038 — Homebrew Upgrade and Group Controls](038-homebrew-upgrade-and-group-controls.md)
+- [Task 039 — RelayBar 1.5.1 Release](039-relaybar-1.5.1-release.md)
