@@ -1621,28 +1621,28 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             return false
         }
         XCTAssertTrue(waiting, "Phase: \(store.phase(for: witness))")
-        let launches = masterInvocationCount(
-            try String(contentsOf: fixture.logURL, encoding: .utf8)
-        )
-        let runningPorts = store.runtimePorts(for: tunnel)
+        let runningSpec = try XCTUnwrap(store.tunnels.first?.rules.first?.specification)
+        let logBefore = try String(contentsOf: fixture.logURL, encoding: .utf8)
+        let launches = masterInvocationCount(logBefore)
+        let runningInstalls = forwardInstallCount(logBefore, spec: runningSpec)
+        let witnessInstalls = forwardInstallCount(logBefore, spec: witnessSpec)
 
         network.simulateChange()
 
-        // Exactly one more master: the witness relaunched, the running
-        // profile did not. Two more would mean the pass restarted both.
+        // The witness installs its rule again; the running profile does not
+        // install its own a second time, which it would have to after a
+        // relaunch. One extra master total, and it is the witness's.
         let passRan = await waitUntil {
             let log = (try? String(contentsOf: fixture.logURL, encoding: .utf8)) ?? ""
-            return self.masterInvocationCount(log) == launches + 1
+            return self.forwardInstallCount(log, spec: witnessSpec) == witnessInstalls + 1
         }
         XCTAssertTrue(passRan)
         XCTAssertEqual(store.phase(for: tunnel), .running)
-        XCTAssertEqual(store.runtimePorts(for: tunnel), runningPorts)
 
         try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(
-            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
-            launches + 1
-        )
+        let logAfter = try String(contentsOf: fixture.logURL, encoding: .utf8)
+        XCTAssertEqual(forwardInstallCount(logAfter, spec: runningSpec), runningInstalls)
+        XCTAssertEqual(masterInvocationCount(logAfter), launches + 1)
         XCTAssertEqual(store.phase(for: tunnel), .running)
     }
 
@@ -1723,6 +1723,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             maxRetryAttempts: 0,
             networkPathObserver: network
         )
+        defer { store.stopAll() }
         let deleted = makeGroupedProfile(name: "Deleted", port: 43_290, group: nil)
         let stopped = makeGroupedProfile(name: "Stopped", port: 43_291, group: nil)
         let witness = makeGroupedProfile(name: "Witness", port: 43_292, group: nil)
@@ -1819,9 +1820,11 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let firstBackoff = await waitForBackoff(after: 1)
         XCTAssertTrue(firstBackoff, "Initial phase: \(store.phase(for: tunnel))")
 
-        // Three changes each relaunch at once with a fresh count: attempt 1
+        // The per-ladder reset budget from process-lifecycle.md. Each of
+        // these changes relaunches at once with a fresh count, so attempt 1
         // fails into another attempt-1 backoff instead of exhausting.
-        for change in 1...3 {
+        let ladderResetBudget = 3
+        for change in 1...ladderResetBudget {
             network.simulateChange()
             let relaunched = await waitForBackoff(after: change + 1)
             XCTAssertTrue(relaunched, "Change \(change): \(store.phase(for: tunnel))")
@@ -2195,6 +2198,13 @@ final class TunnelStoreIntegrationTests: XCTestCase {
 
     private func masterInvocationCount(_ log: String) -> Int {
         parsedInvocations(log).count { $0.contains("-M") }
+    }
+
+    /// Forward installs carrying one rule's specification. Masters cannot be
+    /// told apart in the log — same host, same options — but each launch
+    /// installs its own rules, so this attributes work to one profile.
+    private func forwardInstallCount(_ log: String, spec: String) -> Int {
+        parsedInvocations(log).count { $0.contains("forward") && $0.contains(spec) }
     }
 
     private var fakeSSHURL: URL {

@@ -19,11 +19,12 @@ outlasts; when the VPN then dropped, nothing was left to retry.
 - Observe network path changes through one `NWPathMonitor`; treat the first
   report as the baseline and every later report as a change.
 - On a change, relaunch retrying profiles immediately — with a fresh attempt
-  count at most three times within one ladder, so a profile no network can
-  cure still exhausts and notifies — and start again any profile whose
-  retries ran out while it was still wanted. Never touch a running or starting master: a connection the change
-  severed exits on its own through server keepalives, and a connection it did
-  not affect — a split-tunnel VPN — keeps its sessions.
+  count at most three times within one ladder, so a profile no network change
+  can cure still exhausts and notifies — and start again any profile whose
+  retries ran out while it was still wanted. Never touch a running or starting
+  master: a connection the change severed exits on its own through server
+  keepalives, and a connection it did not affect — a split-tunnel VPN — keeps
+  its sessions.
 - An explicit stop, group Stop All, edit, or delete withdraws a failed profile
   from the pending network-change retry. A profile that failed for a
   configuration reason is never started automatically.
