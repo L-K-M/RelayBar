@@ -74,9 +74,9 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   restarts a 2-second settle window on every change (`networkChangeTask`)
   and runs one pass when it expires.
 - Store tests drive the fake `ssh` through an outage file for the reset,
-  end-to-end VPN, stop, Stop All, delete, group-stop, running-master,
-  burst-coalescing, and rationed-reset cases; a monitor test covers the
-  baseline rule. Every
+  end-to-end VPN, stop, Stop All, delete, group-stop, Restart All,
+  running-master, burst-coalescing, and rationed-reset cases; a monitor test
+  covers the baseline rule. Every
   test store injects a fake observer, so no unit test watches the real
   network.
 - `git diff --check` passed on 2026-09-04.

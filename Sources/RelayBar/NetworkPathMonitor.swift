@@ -22,12 +22,29 @@ protocol NetworkPathObserving: AnyObject {
 /// never touches a running master on a path change.
 @MainActor
 final class NetworkPathMonitor: NetworkPathObserving {
-    private let monitor: NWPathMonitor?
+    /// Holds the system monitor so `deinit` — which is nonisolated on a
+    /// main-actor class — can cancel it without reading main-actor state.
+    /// `RemoteFileSSHSession.FileManagerBox` boxes a cross-isolation value
+    /// for the same reason.
+    private final class MonitorBox: @unchecked Sendable {
+        let monitor: NWPathMonitor?
+
+        init(_ monitor: NWPathMonitor?) {
+            self.monitor = monitor
+        }
+
+        func cancel() {
+            monitor?.cancel()
+        }
+    }
+
+    private let box: MonitorBox
     private let queue = DispatchQueue(
         label: "com.relaybarscion.RelayBarScion.network-path"
     )
     private var onChange: (@MainActor () -> Void)?
     private var hasRecordedBaseline = false
+    private var isObserving = false
 
     convenience init() {
         self.init(monitor: NWPathMonitor())
@@ -36,12 +53,21 @@ final class NetworkPathMonitor: NetworkPathObserving {
     /// `nil` skips the system monitor so a test can drive `pathDidUpdate()`
     /// directly and check the baseline rule without a live network.
     init(monitor: NWPathMonitor?) {
-        self.monitor = monitor
+        self.box = MonitorBox(monitor)
     }
 
+    deinit {
+        // Otherwise a released monitor keeps its queue alive and keeps
+        // delivering updates nobody reads.
+        box.cancel()
+    }
+
+    /// `NWPathMonitor.start(queue:)` raises on a second call, so observing
+    /// twice replaces the callback rather than restarting the monitor.
     func startObserving(onChange: @escaping @MainActor () -> Void) {
         self.onChange = onChange
-        guard let monitor else { return }
+        guard let monitor = box.monitor, !isObserving else { return }
+        isObserving = true
         monitor.pathUpdateHandler = { [weak self] _ in
             // Bind before hopping: the task body is a Sendable closure and
             // may capture only immutable values, not the weak variable the

@@ -1626,7 +1626,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             fixture: fixture,
             maxRetryAttempts: 0,
             networkPathObserver: network,
-            networkChangeSettleDelay: 3
+            networkChangeSettleDelay: 5
         )
         let tunnel = makeLocalProfile()
         store.add(tunnel)
@@ -1644,13 +1644,13 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         try FileManager.default.removeItem(at: outage)
 
         network.simulateChange()
-        try await Task.sleep(for: .seconds(2))
+        try await Task.sleep(for: .seconds(3))
         network.simulateChange()
-        // 1.5 s after the second update with a 3 s window: a window measured
-        // from the first update expired 0.5 s ago, one measured from the
-        // second has 1.5 s left — headroom on both sides for sleeps that
-        // only ever overshoot.
-        try await Task.sleep(for: .milliseconds(1_500))
+        // 3.5 s after the second update with a 5 s window: a window measured
+        // from the first update expired 1.5 s ago, one measured from the
+        // second has 1.5 s left. Sleeps only ever overshoot, and either
+        // side has 1.5 s of that to give.
+        try await Task.sleep(for: .milliseconds(3_500))
 
         guard case .failed = store.phase(for: tunnel) else {
             return XCTFail(
@@ -1792,6 +1792,55 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let resetAgain = await waitForBackoff(after: 7)
         XCTAssertTrue(resetAgain, "After the sixth change: \(store.phase(for: tunnel))")
         XCTAssertEqual(notifications.count, 1)
+    }
+
+    /// Task 063. Restart All acts on members that own lifecycle work, which
+    /// an exhausted profile does not, so it stays failed and stays armed for
+    /// the next network change instead of being launched or withdrawn.
+    func testRestartAllLeavesAnExhaustedMemberArmedForTheNextNetworkChange() async throws {
+        let outage = try makeOutageMarker()
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_OUTAGE_FILE": outage.path]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let network = FakeNetworkPathObserver()
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 0,
+            networkPathObserver: network
+        )
+        let exhausted = makeGroupedProfile(name: "Exhausted", port: 43_300, group: "Work")
+        store.add(exhausted)
+        store.start(exhausted)
+        defer { store.stopAll() }
+
+        let retriesRanOut = await waitUntil {
+            if case .failed = store.phase(for: exhausted) { return true }
+            return false
+        }
+        XCTAssertTrue(retriesRanOut)
+        let failedPhase = store.phase(for: exhausted)
+        let launchesDuringOutage = masterInvocationCount(
+            try String(contentsOf: fixture.logURL, encoding: .utf8)
+        )
+
+        store.restartGroup("Work")
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(store.phase(for: exhausted), failedPhase)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
+            launchesDuringOutage
+        )
+
+        // Still armed: the next change brings it back.
+        try FileManager.default.removeItem(at: outage)
+        network.simulateChange()
+        let reconnected = await waitUntil { store.phase(for: exhausted) == .running }
+        XCTAssertTrue(reconnected, "Phase after the change: \(store.phase(for: exhausted))")
     }
 
     /// Task 063. The system monitor's first report describes the network the
