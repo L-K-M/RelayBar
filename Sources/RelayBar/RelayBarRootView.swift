@@ -124,15 +124,13 @@ private struct TunnelListView: View {
         availableGroups: [String]
     ) -> some View {
         if let name = section.name {
+            let availability = TunnelGroupActionAvailability(
+                phases: section.tunnels.map { store.phase(for: $0) }
+            )
             TunnelGroupHeader(
                 name: name,
                 availableGroups: availableGroups,
-                hasActiveMembers: section.tunnels.contains {
-                    store.phase(for: $0).isLifecycleActive
-                },
-                hasInactiveMembers: section.tunnels.contains {
-                    !store.phase(for: $0).isLifecycleActive
-                },
+                availability: availability,
                 onStartAll: { store.startGroup(name) },
                 onStopAll: { store.stopGroup(name) },
                 onRestartAll: { store.restartGroup(name) },
@@ -696,8 +694,7 @@ private struct TunnelRow: View {
 private struct TunnelGroupHeader: View {
     let name: String
     let availableGroups: [String]
-    let hasActiveMembers: Bool
-    let hasInactiveMembers: Bool
+    let availability: TunnelGroupActionAvailability
     let onStartAll: () -> Void
     let onStopAll: () -> Void
     let onRestartAll: () -> Void
@@ -731,11 +728,15 @@ private struct TunnelGroupHeader: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
 
+                    Spacer(minLength: 0)
+
+                    groupLifecycleControls
+
                     Menu {
-                        groupActions
+                        groupMenuActions
                     } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 22, height: 18)
@@ -752,28 +753,55 @@ private struct TunnelGroupHeader: View {
                 .contentShape(Rectangle())
                 .onHover { isHovered = $0 }
                 .contextMenu {
-                    groupActions
+                    groupMenuActions
                 }
             }
         }
     }
 
     @ViewBuilder
-    private var groupActions: some View {
-        Button("Start All", systemImage: "play") {
-            onStartAll()
+    private var groupLifecycleControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                onStartAll()
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 22, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!availability.canStartAll)
+            .help("Start all tunnels in \(name)")
+            .accessibilityLabel("Start all tunnels in \(name)")
+
+            Button {
+                onStopAll()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 22, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!availability.canStopAll)
+            .help("Stop all tunnels in \(name)")
+            .accessibilityLabel("Stop all tunnels in \(name)")
         }
-        .disabled(!hasInactiveMembers)
-        .accessibilityLabel("Start all tunnels in \(name)")
-        Button("Stop All", systemImage: "stop") {
-            onStopAll()
-        }
-        .disabled(!hasActiveMembers)
-        .accessibilityLabel("Stop all tunnels in \(name)")
+        .foregroundStyle(.secondary)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var groupMenuActions: some View {
         Button("Restart All", systemImage: "arrow.clockwise") {
             onRestartAll()
         }
-        .disabled(!hasActiveMembers)
+        .disabled(!availability.canRestartAll)
         .accessibilityLabel("Restart all tunnels in \(name)")
         Divider()
         Button("Rename Group…", systemImage: "pencil") {
@@ -782,6 +810,18 @@ private struct TunnelGroupHeader: View {
         Button("Ungroup All", systemImage: "rectangle.3.group") {
             onUngroupAll()
         }
+    }
+}
+
+struct TunnelGroupActionAvailability: Equatable {
+    let canStartAll: Bool
+    let canStopAll: Bool
+
+    var canRestartAll: Bool { canStopAll }
+
+    init(phases: [TunnelPhase]) {
+        canStartAll = phases.contains { !$0.isLifecycleActive }
+        canStopAll = phases.contains(where: \.isLifecycleActive)
     }
 }
 
