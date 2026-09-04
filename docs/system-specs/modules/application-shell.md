@@ -49,13 +49,15 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   without announcing routine count-only updates.
 - A retrying row counts down the seconds until the next attempt against the
   retry deadline the store records when scheduling it, instead of freezing
-  the delay that was current when the retry began.- The list header reports the active tunnel count.
+  the delay that was current when the retry began.
+- The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files row opens one 920 × 600 point resizable split workspace with
   a 760 × 440 minimum. Its hideable leading sidebar uses a 210 point minimum,
   250 point ideal, and 360 point maximum while the detail retains at least 430
   points. Entering preview grows an undersized window to at least 980 × 640 and
-  never shrinks a user-enlarged window.
+  never shrinks a user-enlarged window; returning to the browser or the welcome
+  workspace preserves the current size.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.
 - The settings screen's Launch at Login toggle registers or unregisters the main app as the current user's login item through `SMAppService.mainApp` — no helper executable, launch daemon, elevated privilege, or separate settings window.
 - The General card's second row is **Automatically Check for Updates**. It controls
