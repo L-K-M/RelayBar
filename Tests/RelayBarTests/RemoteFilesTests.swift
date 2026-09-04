@@ -3550,6 +3550,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
 
     func testFriendlyMessageNeverSurfacesDebugDiagnostics() {
         XCTAssertEqual(
@@ -4160,6 +4161,7 @@ final class RemoteFilesModelTests: XCTestCase {
 
         XCTAssertEqual(service.loadPathRequests.count, 2)
         XCTAssertEqual(model.currentPath, "/srv/app")
+    }
 
     func testOpeningWorkspaceWithRecentLocationsStartsNoNetworkOperation() throws {
         let catalog = RemoteServerCatalog()
