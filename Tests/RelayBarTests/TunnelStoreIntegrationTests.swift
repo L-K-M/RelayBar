@@ -1920,25 +1920,26 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         }
 
         store.start(tunnel)
-        XCTAssertTrue(await waitForExhaustion(after: 1))
+        let firstExhaustion = await waitForExhaustion(after: 1)
+        XCTAssertTrue(firstExhaustion, "Phase: \(store.phase(for: tunnel))")
         XCTAssertEqual(notifications.entries.count, 1)
 
         // Started again by the change, fails again, stays quiet.
         network.simulateChange()
-        XCTAssertTrue(
-            await waitForExhaustion(after: 2),
-            "Phase: \(store.phase(for: tunnel))"
-        )
+        let secondExhaustion = await waitForExhaustion(after: 2)
+        XCTAssertTrue(secondExhaustion, "Phase: \(store.phase(for: tunnel))")
         XCTAssertEqual(notifications.entries.count, 1)
 
         network.simulateChange()
-        XCTAssertTrue(await waitForExhaustion(after: 3))
+        let thirdExhaustion = await waitForExhaustion(after: 3)
+        XCTAssertTrue(thirdExhaustion, "Phase: \(store.phase(for: tunnel))")
         XCTAssertEqual(notifications.entries.count, 1)
 
         // The user asking again earns another notification.
         store.stop(tunnel)
         store.start(tunnel)
-        XCTAssertTrue(await waitForExhaustion(after: 4))
+        let fourthExhaustion = await waitForExhaustion(after: 4)
+        XCTAssertTrue(fourthExhaustion, "Phase: \(store.phase(for: tunnel))")
         XCTAssertEqual(notifications.entries.count, 2)
     }
 
