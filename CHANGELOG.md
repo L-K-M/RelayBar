@@ -38,7 +38,7 @@ Notable RelayBar Scion changes are recorded here.
 
 - Tunnels come back on their own after a VPN connects or disconnects. RelayBar
   now watches the network path: a change ends any pending retry backoff at
-  once (with a fresh attempt count, a few times per launch), and a profile
+  once (with a fresh attempt count, a few times per retry ladder), and a profile
   whose retries ran out during the VPN session — the ladder gives up after
   about five minutes, which every VPN session outlasts — is started again as
   soon as the network changes. The exhaustion message and notification say

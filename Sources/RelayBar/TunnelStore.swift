@@ -67,8 +67,10 @@ final class TunnelStore: ObservableObject {
     /// withdraws them.
     private var profilesAwaitingNetworkChange: Set<UUID> = []
     private var networkChangeTask: Task<Void, Never>?
-    /// How many times per launch a network change may grant a fresh attempt
-    /// count. Rationing the reset — never the immediate relaunch, which is
+    /// How many times a network change may grant a fresh attempt count
+    /// within one ladder. The budget is cleared whenever the profile starts,
+    /// reaches Running, stops, or runs out of retries, so each ladder gets
+    /// its own. Rationing the reset — never the immediate relaunch, which is
     /// what brings a tunnel back the moment a VPN drops — means a profile
     /// that fails for a reason no network can cure still runs out of
     /// attempts and notifies even on a network that never stops changing.
@@ -1038,8 +1040,10 @@ final class TunnelStore: ObservableObject {
         let attempt = (retryAttempts[id] ?? 0) + 1
         guard attempt <= maxRetryAttempts else {
             let profileName = desiredTunnels[id]?.displayName ?? "A profile"
+            let attemptNoun = maxRetryAttempts == 1 ? "attempt" : "attempts"
             let failureMessage =
-                "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts. "
+                "\(message) Automatic retry stopped after "
+                + "\(maxRetryAttempts) \(attemptNoun). "
                 + "RelayBar tries again when the network changes."
             desiredTunnels[id] = nil
             retryAttempts[id] = nil
@@ -1114,7 +1118,7 @@ final class TunnelStore: ObservableObject {
     /// A changed network path invalidates the evidence behind every pending
     /// backoff and every spent retry budget: those failures happened on a
     /// network that no longer exists. Profiles waiting out a backoff relaunch
-    /// now — with a fresh attempt count, a few times per launch — and
+    /// now — with a fresh attempt count, a few times per ladder — and
     /// profiles whose retries ran out while still wanted are started again
     /// through the normal start path.
     ///

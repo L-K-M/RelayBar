@@ -1346,14 +1346,12 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let network = FakeNetworkPathObserver()
-        let store = TunnelStore(
+        let store = makeFakeStore(
             defaults: defaults,
-            sshExecutableURL: fakeSSHURL,
+            fixture: fixture,
             maxRetryAttempts: 10,
             retryDelayProvider: { attempt in attempt == 1 ? 0.01 : 60 },
-            processEnvironment: fixture.environment,
-            networkPathObserver: network,
-            networkChangeSettleDelay: 0.01
+            networkPathObserver: network
         )
         let tunnel = makeLocalProfile()
         store.start(tunnel)
@@ -1432,7 +1430,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         guard case .failed(let message) = store.phase(for: tunnel) else {
             return XCTFail("Expected the outage to exhaust retries.")
         }
-        XCTAssertTrue(message.contains("Automatic retry stopped after 1 attempts."))
+        XCTAssertTrue(message.contains("Automatic retry stopped after 1 attempt."))
         XCTAssertTrue(message.contains("RelayBar tries again when the network changes."))
         XCTAssertEqual(notifications.count, 1)
         XCTAssertEqual(store.runningCount, 0)
@@ -1530,15 +1528,21 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             group: "Work",
             sshHost: "-blocked"
         )
-        for profile in [exhausted, running, misconfigured] {
+        // Outside the group, so Stop All never touches it: the witness that
+        // the reconnect pass really ran.
+        let armed = makeGroupedProfile(name: "Armed", port: 43_283, group: nil)
+        for profile in [exhausted, running, misconfigured, armed] {
             store.add(profile)
         }
         defer { store.stopAll() }
 
         store.start(exhausted)
+        store.start(armed)
         let retriesRanOut = await waitUntil {
-            if case .failed = store.phase(for: exhausted) { return true }
-            return false
+            var count = 0
+            if case .failed = store.phase(for: exhausted) { count += 1 }
+            if case .failed = store.phase(for: armed) { count += 1 }
+            return count == 2
         }
         XCTAssertTrue(retriesRanOut)
 
@@ -1563,21 +1567,28 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.phase(for: misconfigured), misconfiguredPhase)
 
         network.simulateChange()
-        // Wide margin: a reconnect pass delayed by CI load must land inside
-        // the observation window, not after the assertions.
-        try await Task.sleep(for: .milliseconds(500))
 
+        // The witness comes back, which is what makes the rest a real check
+        // rather than a race against the pass.
+        let witnessReturned = await waitUntil { store.phase(for: armed) == .running }
+        XCTAssertTrue(witnessReturned, "Phase: \(store.phase(for: armed))")
         XCTAssertEqual(store.phase(for: exhausted), .stopped)
         XCTAssertEqual(store.phase(for: running), .stopped)
         XCTAssertEqual(store.phase(for: misconfigured), misconfiguredPhase)
-        XCTAssertEqual(store.runningCount, 0)
     }
 
     /// Task 063. A reconnect pass leaves a Running master alone: a connection
     /// the change did not sever — a split-tunnel VPN, say — keeps its process
     /// and its sessions.
+    ///
+    /// A second profile waiting out a long backoff is the witness. The pass
+    /// must relaunch exactly it, so the launch count proves the pass ran
+    /// rather than merely that the assertions arrived before it did.
     func testNetworkChangeLeavesARunningProfileAlone() async throws {
-        let fixture = try makeFakeSSHFixture()
+        let witnessSpec = "43296:127.0.0.1:80"
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_FAIL_SPEC": witnessSpec]
+        )
         defer { fixture.cleanup() }
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -1585,27 +1596,48 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let store = makeFakeStore(
             defaults: defaults,
             fixture: fixture,
+            maxRetryAttempts: 5,
+            retryDelay: 60,
             networkPathObserver: network
         )
         let tunnel = makeLocalProfile()
+        let witness = makeGroupedProfile(name: "Witness", port: 43_296, group: nil)
         store.add(tunnel)
-        store.start(tunnel)
+        store.add(witness)
         defer { store.stopAll() }
 
+        store.start(tunnel)
         let running = await waitUntil { store.phase(for: tunnel) == .running }
-        XCTAssertTrue(running)
+        XCTAssertTrue(running, "Phase: \(store.phase(for: tunnel))")
+        store.start(witness)
+        let waiting = await waitUntil {
+            if case .retrying = store.phase(for: witness) { return true }
+            return false
+        }
+        XCTAssertTrue(waiting, "Phase: \(store.phase(for: witness))")
         let launches = masterInvocationCount(
             try String(contentsOf: fixture.logURL, encoding: .utf8)
         )
+        let runningPorts = store.runtimePorts(for: tunnel)
 
         network.simulateChange()
-        try await Task.sleep(for: .milliseconds(500))
 
+        // Exactly one more master: the witness relaunched, the running
+        // profile did not. Two more would mean the pass restarted both.
+        let passRan = await waitUntil {
+            let log = (try? String(contentsOf: fixture.logURL, encoding: .utf8)) ?? ""
+            return self.masterInvocationCount(log) == launches + 1
+        }
+        XCTAssertTrue(passRan)
         XCTAssertEqual(store.phase(for: tunnel), .running)
+        XCTAssertEqual(store.runtimePorts(for: tunnel), runningPorts)
+
+        try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
-            launches
+            launches + 1
         )
+        XCTAssertEqual(store.phase(for: tunnel), .running)
     }
 
     /// Task 063. A VPN reconfigures its interface, routes, and DNS in a burst
@@ -1720,11 +1752,12 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     }
 
     /// Task 063. A network change grants a fresh attempt count only a few
-    /// times per launch, so a profile that fails for a reason no network can
-    /// cure still runs out of attempts and notifies on a network that never
-    /// stops changing. The immediate relaunch is not rationed, and neither is
-    /// the start after exhaustion: each later change tries once more.
-    func testNetworkChangesResetTheLadderOnlyAFewTimesPerLaunch() async throws {
+    /// times within one ladder, so a profile that fails for a reason no
+    /// network can cure still runs out of attempts and notifies on a network
+    /// that never stops changing. The immediate relaunch is not rationed, and
+    /// neither is the start after exhaustion: each later change tries once
+    /// more, with a new budget for the ladder it begins.
+    func testNetworkChangesResetTheLadderOnlyAFewTimesPerLadder() async throws {
         let outage = try makeOutageMarker()
         let fixture = try makeFakeSSHFixture(
             overrides: ["RELAYBAR_FAKE_SSH_OUTAGE_FILE": outage.path]
@@ -1777,10 +1810,9 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let ranOut = await waitUntil { notifications.count == 1 }
         XCTAssertTrue(ranOut, "Phase after the fourth change: \(store.phase(for: tunnel))")
         XCTAssertEqual(try launches(), 5)
-        XCTAssertEqual(
+        XCTAssertTrue(
             notifications.first?.message
-                .hasSuffix("RelayBar tries again when the network changes."),
-            true
+                .hasSuffix("RelayBar tries again when the network changes.") == true
         )
 
         // A change after exhaustion starts the profile again, and the new
@@ -1828,9 +1860,13 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         )
 
         store.restartGroup("Work")
-        try await Task.sleep(for: .milliseconds(200))
+        // Sampled across the window: a relaunch that failed back quickly
+        // would be invisible to one reading at the end.
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(10))
+            XCTAssertEqual(store.phase(for: exhausted), failedPhase)
+        }
 
-        XCTAssertEqual(store.phase(for: exhausted), failedPhase)
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
             launchesDuringOutage
@@ -2011,6 +2047,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         fixture: FakeSSHFixture,
         maxRetryAttempts: Int = 1,
         retryDelay: TimeInterval = 0.01,
+        retryDelayProvider: ((Int) -> TimeInterval)? = nil,
         browserOpener: @escaping (URL) -> Void = { _ in },
         failureNotifier: ((String, String) -> Void)? = nil,
         controlOperationTimeout: TimeInterval = 10,
@@ -2030,7 +2067,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             defaults: defaults,
             sshExecutableURL: fakeSSHURL,
             maxRetryAttempts: maxRetryAttempts,
-            retryDelayProvider: { _ in retryDelay },
+            retryDelayProvider: retryDelayProvider ?? { _ in retryDelay },
             browserOpener: browserOpener,
             failureNotifier: failureNotifier,
             processEnvironment: fixture.environment,
@@ -2157,6 +2194,10 @@ extension TunnelStore {
 /// Stands in for the system path monitor so a test can fire a network path
 /// change on demand — a VPN connecting or dropping — without a live network.
 /// Every test store injects one, so no unit test observes the real network.
+///
+/// Two properties every test here relies on: observing delivers nothing by
+/// itself, and only `simulateChange()` notifies. A store built with this
+/// observer therefore sees exactly the changes its test fires.
 @MainActor
 final class FakeNetworkPathObserver: NetworkPathObserving {
     private var onChange: (@MainActor () -> Void)?
