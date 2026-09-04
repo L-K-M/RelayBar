@@ -28,9 +28,10 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   from the pending network-change retry. A profile that failed for a
   configuration reason is never started automatically.
 - Keep the retry ladder and every phase unchanged; add no new phase and no
-  persisted state. The exhaustion notification fires once per dead streak: a
-  profile restarted by a change and exhausted again with no Running in
-  between stays silent until it runs or the user starts it.
+  persisted state, so the pending retry lives for the app's run only. The
+  exhaustion notification fires once per dead streak: a profile restarted by
+  a change and exhausted again with neither Running nor a user start in
+  between stays silent.
 - Coalesce a burst of path updates into one reconnect pass that runs once
   updates have been quiet for a short settle window.
 

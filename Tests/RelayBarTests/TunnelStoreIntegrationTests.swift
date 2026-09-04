@@ -1354,6 +1354,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             networkPathObserver: network
         )
         let tunnel = makeLocalProfile()
+        store.add(tunnel)
         store.start(tunnel)
         defer { store.stop(tunnel) }
 
@@ -1406,13 +1407,13 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let network = FakeNetworkPathObserver()
-        var notifications: [(name: String, message: String)] = []
+        let notifications = NotificationLog()
         let store = makeFakeStore(
             defaults: defaults,
             fixture: fixture,
             maxRetryAttempts: 1,
             failureNotifier: { name, message in
-                notifications.append((name, message))
+                notifications.entries.append((name, message))
             },
             networkPathObserver: network,
             networkChangeSettleDelay: 0.01
@@ -1432,7 +1433,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         }
         XCTAssertTrue(message.contains("Automatic retry stopped after 1 attempt."))
         XCTAssertTrue(message.contains("RelayBar tries again when the network changes."))
-        XCTAssertEqual(notifications.count, 1)
+        XCTAssertEqual(notifications.entries.count, 1)
         XCTAssertEqual(store.runningCount, 0)
         let launchesDuringOutage = masterInvocationCount(
             try String(contentsOf: fixture.logURL, encoding: .utf8)
@@ -1451,7 +1452,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
             launchesDuringOutage + 1
         )
-        XCTAssertEqual(notifications.count, 1)
+        XCTAssertEqual(notifications.entries.count, 1)
     }
 
     /// Task 063. Only the user's standing intent survives exhaustion: stopping
@@ -1680,13 +1681,13 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         try FileManager.default.removeItem(at: outage)
 
         network.simulateChange()
-        try await Task.sleep(for: .seconds(3))
+        try await Task.sleep(for: .seconds(4))
         network.simulateChange()
-        // 3.5 s after the second update with a 5 s window: a window measured
-        // from the first update expired 1.5 s ago, one measured from the
-        // second has 1.5 s left. Sleeps only ever overshoot, and either
-        // side has 1.5 s of that to give.
-        try await Task.sleep(for: .milliseconds(3_500))
+        // 3 s after the second update with a 5 s window: a window measured
+        // from the first update expired 2 s ago, one measured from the second
+        // has 2 s left. Sleeps only ever overshoot, and either side has 2 s
+        // of that to give.
+        try await Task.sleep(for: .seconds(3))
 
         guard case .failed = store.phase(for: tunnel) else {
             return XCTFail(
@@ -1770,14 +1771,14 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let network = FakeNetworkPathObserver()
-        var notifications: [(name: String, message: String)] = []
+        let notifications = NotificationLog()
         let store = makeFakeStore(
             defaults: defaults,
             fixture: fixture,
             maxRetryAttempts: 1,
             retryDelay: 60,
             failureNotifier: { name, message in
-                notifications.append((name, message))
+                notifications.entries.append((name, message))
             },
             networkPathObserver: network
         )
@@ -1805,17 +1806,17 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             network.simulateChange()
             let relaunched = await waitForBackoff(after: change + 1)
             XCTAssertTrue(relaunched, "Change \(change): \(store.phase(for: tunnel))")
-            XCTAssertTrue(notifications.isEmpty)
+            XCTAssertTrue(notifications.entries.isEmpty)
         }
 
         // The fourth relaunch keeps its count, so its failure is attempt 2 of
         // a one-attempt ladder: exhaustion, one notification, still wanted.
         network.simulateChange()
-        let ranOut = await waitUntil { notifications.count == 1 }
+        let ranOut = await waitUntil { notifications.entries.count == 1 }
         XCTAssertTrue(ranOut, "Phase after the fourth change: \(store.phase(for: tunnel))")
         XCTAssertEqual(try launches(), 5)
         XCTAssertTrue(
-            notifications.first?.message
+            notifications.entries.first?.message
                 .hasSuffix("RelayBar tries again when the network changes.") == true
         )
 
@@ -1827,7 +1828,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         network.simulateChange()
         let resetAgain = await waitForBackoff(after: 7)
         XCTAssertTrue(resetAgain, "After the sixth change: \(store.phase(for: tunnel))")
-        XCTAssertEqual(notifications.count, 1)
+        XCTAssertEqual(notifications.entries.count, 1)
     }
 
     /// Task 063. Restart All acts on members that own lifecycle work, which
@@ -2275,16 +2276,17 @@ final class FakeNetworkPathObserver: NetworkPathObserving {
     }
 }
 
-/// A reference-type counter: a main-actor closure may not mutate a captured
-/// local variable under complete concurrency checking.
+/// Shared state a main-actor callback writes and the test reads, held in a
+/// main-actor type rather than a captured local so the isolation is in the
+/// type rather than in an assumption about the caller.
 @MainActor
 private final class ChangeCounter {
     var count = 0
 }
 
-/// A reference-type log for the same reason as `ChangeCounter`: the store
-/// calls its notifier on the main actor, and a captured local would be
-/// mutated from a closure the compiler cannot pin there.
+/// The notification equivalent of `ChangeCounter`, for the same reason: the
+/// store calls its notifier on the main actor, and this puts that in the
+/// type instead of leaving it implicit in a captured local.
 @MainActor
 private final class NotificationLog {
     var entries: [(name: String, message: String)] = []

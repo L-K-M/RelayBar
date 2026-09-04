@@ -366,12 +366,13 @@ final class TunnelStore: ObservableObject {
 
     func start(_ tunnel: Tunnel) {
         // The user asking for this profile again also asks to hear about it
-        // again, so it resumes with a full notification budget.
+        // again, so it resumes with a full notification budget. A reconnect
+        // pass calls `startTunnel` directly and leaves that budget alone.
         notifiedExhaustionWithoutRunning.remove(tunnel.id)
-        start(tunnel, resumingAfterNetworkChange: false)
+        startTunnel(tunnel)
     }
 
-    private func start(_ tunnel: Tunnel, resumingAfterNetworkChange: Bool) {
+    private func startTunnel(_ tunnel: Tunnel) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
         profilesAwaitingNetworkChange.remove(tunnel.id)
         networkChangeLadderResets[tunnel.id] = nil
@@ -1148,6 +1149,10 @@ final class TunnelStore: ObservableObject {
     /// change did not affect — a split-tunnel VPN, say — keeps its sessions.
     private func reconnectAfterNetworkChange() {
         for id in Array(desiredTunnels.keys) {
+            // Only a profile actually waiting out a backoff is relaunched, so
+            // only it spends a reset. A launch already in flight keeps its
+            // place in the ladder: the pass did not intervene.
+            guard retryTasks[id] != nil else { continue }
             if
                 (retryAttempts[id] ?? 0) > 0,
                 (networkChangeLadderResets[id] ?? 0) < maxNetworkChangeLadderResets
@@ -1155,7 +1160,6 @@ final class TunnelStore: ObservableObject {
                 networkChangeLadderResets[id, default: 0] += 1
                 retryAttempts[id] = 0
             }
-            guard retryTasks[id] != nil else { continue }
             cancelRetry(for: id)
             launchTunnel(id: id)
         }
@@ -1163,7 +1167,7 @@ final class TunnelStore: ObservableObject {
         let awaiting = profilesAwaitingNetworkChange
         profilesAwaitingNetworkChange.removeAll()
         for tunnel in tunnels where awaiting.contains(tunnel.id) {
-            start(tunnel, resumingAfterNetworkChange: true)
+            startTunnel(tunnel)
         }
     }
 

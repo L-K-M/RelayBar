@@ -57,8 +57,8 @@ running profile whose SSH host is unreachable through a VPN: connect the VPN,
 confirm the profile retries and then fails with the message promising another
 try and one notification, keep the VPN up past the retry ladder, disconnect
 the VPN, and confirm the profile reaches Running within a few seconds without
-a second notification. Repeat with a VPN that leaves the host reachable and
-confirm the running profile is not restarted when the VPN connects.
+a second notification. Then, with a VPN that leaves the host reachable,
+confirm a running profile is not restarted when the VPN connects.
 
 Start at Launch changes additionally require a launch with one marked safe profile, one unmarked profile, and one marked unsafe profile. The marked safe profile starts, the unmarked profile stays stopped, the unsafe profile fails on its own row, and toggling the preference from the row menu while a profile is running leaves it running and persists the new value. Review the editor switch and row-menu checkmark in light and dark appearance and with VoiceOver.
 
