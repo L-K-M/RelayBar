@@ -28,8 +28,8 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   configuration reason is never started automatically.
 - Keep the retry ladder, the exhaustion notification, and every phase
   unchanged; add no new phase and no persisted state.
-- Coalesce a burst of path updates into one reconnect pass per short settle
-  window.
+- Coalesce a burst of path updates into one reconnect pass that runs once
+  updates have been quiet for a short settle window.
 
 ## Work
 
@@ -55,9 +55,12 @@ outlasts; when the VPN then dropped, nothing was left to retry.
 - Stopping a failed profile, or Stop All on its group, leaves it stopped
   through later path changes; a misconfigured peer keeps its phase and
   message.
-- The monitor's first report does not trigger a reconnect pass.
-- `swift test -Xswiftc -warnings-as-errors`, the unsigned Release build, and
-  `git diff --check` pass.
+- The monitor's first report does not trigger a reconnect pass, a running
+  profile is left alone by one, and a burst of changes produces one pass
+  after the last of them.
+- `swift test -Xswiftc -warnings-as-errors` and the unsigned Release build
+  pass in the macOS CI job for this change; `git diff --check` passes
+  locally.
 
 ## Evidence (2026-09-04)
 
@@ -67,12 +70,15 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   records the profile there, and `start`, `stop(id:)`, `stopGroup`,
   `stopAll`, and the non-tag branch of `update` remove it.
 - `NetworkPathMonitor.pathDidUpdate` swallows the first report; the store
-  coalesces changes through `networkChangeTask` and a 2-second settle delay.
+  restarts a 2-second settle window on every change (`networkChangeTask`)
+  and runs one pass when it expires.
 - Store tests drive the fake `ssh` through an outage file for the reset,
-  end-to-end VPN, stop-withdrawal, and Stop All cases, and a monitor test
-  covers the baseline rule.
+  end-to-end VPN, stop-withdrawal, Stop All, running-master, and
+  burst-coalescing cases; a monitor test covers the baseline rule. Every
+  test store injects a fake observer, so no unit test watches the real
+  network.
 - `git diff --check` passed on 2026-09-04.
-- Local build and test execution were unavailable (Linux environment without
-  Xcode); compile and test verification runs in the macOS CI job. The live
-  VPN check in [Verification](../../system-specs/operations/verification.md)
+- No local toolchain was available (Linux environment without Xcode); the
+  macOS CI job on the pull request is the compile and test verification. The
+  live VPN check in [Verification](../../system-specs/operations/verification.md)
   remains a manual acceptance item.

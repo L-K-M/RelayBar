@@ -26,8 +26,10 @@ final class TunnelStore: ObservableObject {
     private let temporaryDirectory: URL
     private let networkPathObserver: any NetworkPathObserving
     /// Path updates arrive in bursts while a VPN brings its interface, routes,
-    /// and DNS up or down. One pass per window lets the routes finish
-    /// changing before the relaunch and bounds what a flapping link can cause.
+    /// and DNS up or down. The reconnect pass runs once updates have been
+    /// quiet for this long, so it sees the finished routes rather than a
+    /// half-configured network, and a flapping link launches nothing until
+    /// it settles.
     private let networkChangeSettleDelay: TimeInterval
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
@@ -1080,14 +1082,19 @@ final class TunnelStore: ObservableObject {
     }
 
     private func networkPathDidChange() {
-        guard networkChangeTask == nil else { return }
+        // Trailing edge: every update restarts the window, so the pass runs
+        // once the network has been quiet for the whole delay rather than
+        // partway through a burst.
+        networkChangeTask?.cancel()
+        let settleDelay = networkChangeSettleDelay
         networkChangeTask = Task { @MainActor [weak self] in
-            guard let self else { return }
             do {
-                try await Task.sleep(for: .seconds(networkChangeSettleDelay))
+                try await Task.sleep(for: .seconds(settleDelay))
             } catch {
+                // Cancelled: a newer change owns the slot now.
                 return
             }
+            guard let self, !Task.isCancelled else { return }
             self.networkChangeTask = nil
             self.reconnectAfterNetworkChange()
         }

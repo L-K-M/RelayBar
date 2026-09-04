@@ -19,7 +19,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         let tunnel = Tunnel(
             name: "Live local forward",
             localPort: 3000,
@@ -96,7 +96,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let socketURL = directory.appendingPathComponent("listener.sock")
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         let profile = Tunnel(
             name: "Live local Unix",
             sshHost: sshHost,
@@ -160,7 +160,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             forKey: "savedTunnels.v1"
         )
 
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
 
         XCTAssertEqual(store.tunnels.count, 1)
         XCTAssertEqual(store.tunnels[0].id, legacy.id)
@@ -181,7 +181,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let corrupt = Data("{ not a profile list".utf8)
         defaults.set(corrupt, forKey: "savedTunnels.v2")
 
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
 
         XCTAssertTrue(store.tunnels.isEmpty)
         XCTAssertEqual(
@@ -226,7 +226,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             forKey: "savedTunnels.v1"
         )
 
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
 
         XCTAssertEqual(store.tunnels.count, 1)
         XCTAssertEqual(store.tunnels[0].id, legacy.id)
@@ -236,7 +236,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testGroupMutationsNormalizeMergeAndPersistWithoutASeparateGroupStore() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         var dashboard = makeLocalProfile()
         dashboard.name = "Dashboard"
         dashboard.groupTag = "Work"
@@ -295,7 +295,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testDuplicateProfileCreatesIndependentCopyAfterTheOriginal() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         var first = makeGroupedProfile(name: "Web", port: 43_250, group: "Work")
         first.startsAtLaunch = true
         let second = makeGroupedProfile(name: "Other", port: 43_251, group: nil)
@@ -318,7 +318,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertTrue(copy.isSafeToRun)
         XCTAssertEqual(store.phase(for: copy), .stopped)
 
-        let reloaded = TunnelStore(defaults: defaults)
+        let reloaded = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         XCTAssertEqual(reloaded.tunnels.map(\.name), ["Web", "Web copy", "Other"])
     }
 
@@ -327,7 +327,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testDuplicateOfUnnamedProfileStaysUnnamed() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         var profile = makeLocalProfile()
         profile.name = "  "
         store.add(profile)
@@ -343,7 +343,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testRepeatedDuplicatesGainNumberedNames() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         let profile = makeGroupedProfile(name: "Web", port: 43_252, group: nil)
         store.add(profile)
 
@@ -366,7 +366,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testGroupingCacheInvalidatesOnEveryMutationPath() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
 
         XCTAssertFalse(store.grouping.isGrouped)
 
@@ -455,7 +455,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testGroupMovesPreserveStoppedFailedAndRetryingPhases() async throws {
         let (stoppedDefaults, stoppedSuite) = makeIsolatedDefaults()
         defer { stoppedDefaults.removePersistentDomain(forName: stoppedSuite) }
-        let stoppedStore = TunnelStore(defaults: stoppedDefaults)
+        let stoppedStore = TunnelStore(defaults: stoppedDefaults, networkPathObserver: FakeNetworkPathObserver())
         let stopped = makeLocalProfile()
         stoppedStore.add(stopped)
         stoppedStore.move(stopped, toGroup: "Work")
@@ -482,7 +482,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let retryStore = TunnelStore(
             defaults: retryDefaults,
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
-            retryDelayProvider: { _ in 1 }
+            retryDelayProvider: { _ in 1 },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let retrying = makeLocalProfile()
         retryStore.add(retrying)
@@ -1147,7 +1148,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             retryDelayProvider: { _ in 0.01 },
             failureNotifier: { name, message in
                 notifications.append((name, message))
-            }
+            },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let tunnel = makeLocalProfile()
         store.add(tunnel)
@@ -1171,7 +1173,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             defaults: defaults,
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
             maxRetryAttempts: 2,
-            retryDelayProvider: { _ in 0.01 }
+            retryDelayProvider: { _ in 0.01 },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let tunnel = makeLocalProfile()
         store.add(tunnel)
@@ -1210,7 +1213,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             defaults: defaults,
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
             maxRetryAttempts: 0,
-            temporaryDirectory: root
+            temporaryDirectory: root,
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let tunnel = makeLocalProfile()
 
@@ -1233,7 +1237,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let store = TunnelStore(
             defaults: defaults,
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
-            retryDelayProvider: { _ in 0.2 }
+            retryDelayProvider: { _ in 0.2 },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let tunnel = makeLocalProfile()
         store.start(tunnel)
@@ -1259,7 +1264,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         let store = TunnelStore(
             defaults: defaults,
             sshExecutableURL: URL(fileURLWithPath: "/usr/bin/false"),
-            retryDelayProvider: { _ in 5 }
+            retryDelayProvider: { _ in 5 },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let tunnel = makeLocalProfile()
         store.start(tunnel)
@@ -1484,7 +1490,9 @@ final class TunnelStoreIntegrationTests: XCTestCase {
 
         try FileManager.default.removeItem(at: outage)
         network.simulateChange()
-        try await Task.sleep(for: .milliseconds(200))
+        // Wide margin: a reconnect pass delayed by CI load must land inside
+        // the observation window, not after the assertions.
+        try await Task.sleep(for: .milliseconds(500))
 
         XCTAssertEqual(store.phase(for: tunnel), .stopped)
         XCTAssertEqual(store.runningCount, 0)
@@ -1554,12 +1562,107 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.phase(for: misconfigured), misconfiguredPhase)
 
         network.simulateChange()
-        try await Task.sleep(for: .milliseconds(200))
+        // Wide margin: a reconnect pass delayed by CI load must land inside
+        // the observation window, not after the assertions.
+        try await Task.sleep(for: .milliseconds(500))
 
         XCTAssertEqual(store.phase(for: exhausted), .stopped)
         XCTAssertEqual(store.phase(for: running), .stopped)
         XCTAssertEqual(store.phase(for: misconfigured), misconfiguredPhase)
         XCTAssertEqual(store.runningCount, 0)
+    }
+
+    /// Task 063. A reconnect pass leaves a Running master alone: a connection
+    /// the change did not sever — a split-tunnel VPN, say — keeps its process
+    /// and its sessions.
+    func testNetworkChangeLeavesARunningProfileAlone() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let network = FakeNetworkPathObserver()
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            networkPathObserver: network
+        )
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+        store.start(tunnel)
+        defer { store.stopAll() }
+
+        let running = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(running)
+        let launches = masterInvocationCount(
+            try String(contentsOf: fixture.logURL, encoding: .utf8)
+        )
+
+        network.simulateChange()
+        try await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertEqual(store.phase(for: tunnel), .running)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
+            launches
+        )
+    }
+
+    /// Task 063. A VPN reconfigures its interface, routes, and DNS in a burst
+    /// of path updates. Each update restarts the settle window, so one
+    /// reconnect pass runs once the network has been quiet for the whole
+    /// window — not partway through the burst, and not once per update.
+    func testBurstOfNetworkChangesCoalescesIntoOnePassAfterTheLastOne() async throws {
+        let outage = try makeOutageMarker()
+        defer { try? FileManager.default.removeItem(at: outage) }
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_OUTAGE_FILE": outage.path]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let network = FakeNetworkPathObserver()
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 0,
+            networkPathObserver: network,
+            networkChangeSettleDelay: 2
+        )
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+        store.start(tunnel)
+        defer { store.stopAll() }
+
+        let retriesRanOut = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(retriesRanOut)
+        let launchesDuringOutage = masterInvocationCount(
+            try String(contentsOf: fixture.logURL, encoding: .utf8)
+        )
+        try FileManager.default.removeItem(at: outage)
+
+        network.simulateChange()
+        try await Task.sleep(for: .seconds(1))
+        network.simulateChange()
+        // 1.6 s after the second update: a window measured from the first
+        // update has expired, one measured from the second has not.
+        try await Task.sleep(for: .milliseconds(1_600))
+
+        guard case .failed = store.phase(for: tunnel) else {
+            return XCTFail(
+                "The pass ran before the network was quiet for the whole window: "
+                    + "\(store.phase(for: tunnel))"
+            )
+        }
+
+        let reconnected = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(reconnected)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
+            launchesDuringOutage + 1
+        )
     }
 
     /// Task 063. The system monitor's first report describes the network the
@@ -1680,7 +1783,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             1
         )
 
-        let reloaded = TunnelStore(defaults: defaults)
+        let reloaded = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
         XCTAssertTrue(reloaded.tunnels[0].startsAtLaunch)
         store.stopAll()
     }
@@ -1702,7 +1805,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             forKey: "savedTunnels.v2"
         )
 
-        let store = TunnelStore(defaults: defaults)
+        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
 
         XCTAssertEqual(store.tunnels.count, 1)
         XCTAssertFalse(store.tunnels[0].startsAtLaunch)
@@ -1733,9 +1836,17 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         controlOperationTimeout: TimeInterval = 10,
         processTerminationGracePeriod: TimeInterval = 5,
         networkPathObserver: (any NetworkPathObserving)? = nil,
-        networkChangeSettleDelay: TimeInterval = 2
+        networkChangeSettleDelay: TimeInterval = 0.01
     ) -> TunnelStore {
-        TunnelStore(
+        // No unit test observes the real network: a store without an
+        // injected observer gets an inert fake, never the system monitor.
+        let observer: any NetworkPathObserving
+        if let networkPathObserver {
+            observer = networkPathObserver
+        } else {
+            observer = FakeNetworkPathObserver()
+        }
+        return TunnelStore(
             defaults: defaults,
             sshExecutableURL: fakeSSHURL,
             maxRetryAttempts: maxRetryAttempts,
@@ -1745,7 +1856,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             processEnvironment: fixture.environment,
             controlOperationTimeout: controlOperationTimeout,
             processTerminationGracePeriod: processTerminationGracePeriod,
-            networkPathObserver: networkPathObserver,
+            networkPathObserver: observer,
             networkChangeSettleDelay: networkChangeSettleDelay
         )
     }
@@ -1852,8 +1963,9 @@ private struct FakeSSHFixture {
 
 /// Stands in for the system path monitor so a test can fire a network path
 /// change on demand — a VPN connecting or dropping — without a live network.
+/// Every test store injects one, so no unit test observes the real network.
 @MainActor
-private final class FakeNetworkPathObserver: NetworkPathObserving {
+final class FakeNetworkPathObserver: NetworkPathObserving {
     private var onChange: (@MainActor () -> Void)?
 
     func startObserving(onChange: @escaping @MainActor () -> Void) {
