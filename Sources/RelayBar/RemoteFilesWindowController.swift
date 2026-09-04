@@ -3,9 +3,9 @@ import Combine
 import SwiftUI
 
 enum RemoteFilesWindowSizing {
-    static let launcher = NSSize(width: 360, height: 300)
-    static let browser = NSSize(width: 780, height: 520)
-    static let browserMinimum = NSSize(width: 620, height: 400)
+    static let workspace = NSSize(width: 920, height: 600)
+    static let browser = NSSize(width: 920, height: 600)
+    static let browserMinimum = NSSize(width: 760, height: 440)
     static let previewPreferred = NSSize(width: 980, height: 640)
     static let previewMinimum = NSSize(width: 760, height: 440)
 
@@ -25,6 +25,8 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
     private var model: RemoteFilesModel?
     private var screenObserver: AnyCancellable?
     private let serverCatalog = RemoteServerCatalog.appDefault()
+    private var retiringModels: [UUID: RemoteFilesModel] = [:]
+    private var terminationCompletion: (@MainActor () -> Void)?
 
     func show(
         tunnels: [Tunnel],
@@ -48,13 +50,13 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
         )
         let view = RemoteFilesView(model: model)
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: RemoteFilesWindowSizing.launcher),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(origin: .zero, size: RemoteFilesWindowSizing.workspace),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Remote Files"
-        window.contentMinSize = RemoteFilesWindowSizing.launcher
+        window.contentMinSize = RemoteFilesWindowSizing.browserMinimum
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: view)
@@ -75,32 +77,47 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
     }
 
     func close() {
-        model?.cancelAll()
-        window?.close()
-        clear()
+        if let window {
+            window.close()
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
-        model?.cancelAll()
-        clear()
+        guard let closingModel = model else {
+            clearActiveWindow()
+            return
+        }
+        let retirementID = UUID()
+        clearActiveWindow()
+        if closingModel.cancelAll(completion: { [weak self] in
+            self?.finishRetirement(id: retirementID)
+        }) {
+            retiringModels[retirementID] = closingModel
+        }
+    }
+
+    /// Returns true when application termination must wait for upload cleanup
+    /// and the owned SSH master to finish shutting down.
+    func prepareForApplicationTermination(
+        completion: @escaping @MainActor () -> Void
+    ) -> Bool {
+        close()
+        guard !retiringModels.isEmpty else { return false }
+        terminationCompletion = completion
+        return true
     }
 
     private func resizeWindow(for screen: RemoteFilesModel.Screen) {
         guard let window else { return }
 
         switch screen {
-        case .launcher:
-            window.styleMask.remove(.resizable)
-            window.contentMinSize = RemoteFilesWindowSizing.launcher
-            resize(window, to: RemoteFilesWindowSizing.launcher, centersWindow: true)
-
-        case .browser:
-            let wasResizable = window.styleMask.contains(.resizable)
+        case .welcome:
             window.styleMask.insert(.resizable)
             window.contentMinSize = RemoteFilesWindowSizing.browserMinimum
-            if !wasResizable {
-                resize(window, to: RemoteFilesWindowSizing.browser, centersWindow: true)
-            }
+
+        case .browser:
+            window.styleMask.insert(.resizable)
+            window.contentMinSize = RemoteFilesWindowSizing.browserMinimum
 
         case .preview:
             window.styleMask.insert(.resizable)
@@ -138,9 +155,18 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func clear() {
+    private func clearActiveWindow() {
         screenObserver = nil
         model = nil
         window = nil
+    }
+
+    private func finishRetirement(id: UUID) {
+        retiringModels[id] = nil
+        guard retiringModels.isEmpty, let completion = terminationCompletion else {
+            return
+        }
+        terminationCompletion = nil
+        completion()
     }
 }

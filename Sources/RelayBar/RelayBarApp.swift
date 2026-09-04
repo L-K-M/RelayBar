@@ -167,6 +167,15 @@ final class RelayBarAppDelegate:
             RelayBarAppDelegate.userInitiatedQuitRequested,
             store.runningCount > 0
         else {
+            // Upload cleanup and the owned SFTP master finish before the
+            // process exits; the window controller replies once they have.
+            if RemoteFilesWindowController.shared.prepareForApplicationTermination(
+                completion: {
+                    sender.reply(toApplicationShouldTerminate: true)
+                }
+            ) {
+                return .terminateLater
+            }
             return .terminateNow
         }
         // `runningCount` is the store's one definition of active — starting,
@@ -960,7 +969,7 @@ enum LegacyDefaultsMigration {
         "savedTunnels.v1",
         "remoteFiles.savedServers.v1",
         "remoteFiles.recentServers.v1",
-        "remoteFiles.lastPaths.v1"
+        "remoteFiles.recentLocations.v1"
     ]
 
     static let completionKey = "migratedLegacyRelayBarDefaults"

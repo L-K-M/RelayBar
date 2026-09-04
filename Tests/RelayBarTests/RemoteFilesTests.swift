@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import SwiftUI
 import XCTest
 @testable import RelayBar
 
@@ -451,89 +452,6 @@ final class RemoteServerCatalogTests: XCTestCase {
         )
     }
 
-    /// Task 045. The last opened path persists per exact connection and
-    /// survives a catalog reload.
-    func testLastOpenedPathPersistsPerConnection() throws {
-        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let catalog = RemoteServerCatalog(defaults: defaults)
-        let first = RemoteServer(
-            id: UUID(),
-            name: "First",
-            sshHost: "first.example.com",
-            additionalArguments: [],
-            source: .saved
-        )
-        let second = RemoteServer(
-            id: UUID(),
-            name: "Second",
-            sshHost: "first.example.com",
-            additionalArguments: ["-p", "2222"],
-            source: .saved
-        )
-
-        catalog.recordLastOpenedPath("/srv/app/", for: first)
-        catalog.recordLastOpenedPath("/var/log", for: second)
-
-        XCTAssertEqual(catalog.lastOpenedPath(for: first), "/srv/app")
-        XCTAssertEqual(catalog.lastOpenedPath(for: second), "/var/log")
-
-        let reloaded = RemoteServerCatalog(defaults: defaults)
-        XCTAssertEqual(reloaded.lastOpenedPath(for: first), "/srv/app")
-        XCTAssertEqual(reloaded.lastOpenedPath(for: second), "/var/log")
-
-        catalog.recordLastOpenedPath("relative/path", for: first)
-        catalog.recordLastOpenedPath("/srv/app", for: first)
-        let unchanged = RemoteServerCatalog(defaults: defaults)
-        XCTAssertEqual(unchanged.lastOpenedPath(for: first), "/srv/app")
-    }
-
-    /// Task 045. Last-path records stay bounded, most-recently used first.
-    func testLastOpenedPathStorageIsBounded() throws {
-        let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let catalog = RemoteServerCatalog(defaults: defaults)
-
-        for index in 0..<40 {
-            catalog.recordLastOpenedPath(
-                "/path-\(index)",
-                for: RemoteServer(
-                    id: UUID(),
-                    name: "S\(index)",
-                    sshHost: "server-\(index).example.com",
-                    additionalArguments: [],
-                    source: .saved
-                )
-            )
-        }
-
-        let reloaded = RemoteServerCatalog(defaults: defaults)
-        XCTAssertNotNil(
-            reloaded.lastOpenedPath(
-                for: RemoteServer(
-                    id: UUID(),
-                    name: "S39",
-                    sshHost: "server-39.example.com",
-                    additionalArguments: [],
-                    source: .saved
-                )
-            )
-        )
-        XCTAssertNil(
-            reloaded.lastOpenedPath(
-                for: RemoteServer(
-                    id: UUID(),
-                    name: "S0",
-                    sshHost: "server-0.example.com",
-                    additionalArguments: [],
-                    source: .saved
-                )
-            )
-        )
-    }
-
     func testPersistsStandaloneHostsAndRemovalAlsoDropsTheirRecentEntry() throws {
         let suiteName = "RelayBar.RemoteServerCatalog.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -586,6 +504,61 @@ final class RemoteServerCatalogTests: XCTestCase {
         XCTAssertEqual(servers.first?.sshHost, "server-11")
         XCTAssertEqual(servers.last?.sshHost, "server-4")
         XCTAssertTrue(servers.allSatisfy { $0.source == .recent })
+    }
+
+    func testRecentLocationsPersistDeduplicateAndStayBounded() throws {
+        let suiteName = "RelayBar.RemoteLocations.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let server = RemoteServer(
+            id: UUID(),
+            name: "Development",
+            sshHost: "devbox",
+            additionalArguments: []
+        )
+
+        for index in 0..<18 {
+            catalog.recordSuccessfulOpen(server, path: "/srv/project-\(index)/")
+        }
+        let reopened = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(server, path: "/srv/project-10")
+        )
+
+        let reloaded = RemoteServerCatalog(defaults: defaults)
+        let locations = reloaded.recentLocations(from: [])
+        XCTAssertEqual(locations.count, 16)
+        XCTAssertEqual(locations.first?.id, reopened.id)
+        XCTAssertEqual(locations.first?.path, "/srv/project-10")
+        XCTAssertEqual(Set(locations.map(\.key)).count, locations.count)
+        XCTAssertFalse(locations.contains { $0.path == "/srv/project-0" })
+    }
+
+    func testRecentLocationRemovalAndClearDoNotRemoveHosts() throws {
+        let suiteName = "RelayBar.RemoteLocationRemoval.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let server = try catalog.add(name: "Development", sshHost: "devbox")
+        let first = try XCTUnwrap(catalog.recordSuccessfulOpen(server, path: "/srv/one"))
+        _ = catalog.recordSuccessfulOpen(server, path: "/srv/two")
+
+        catalog.removeRecentLocation(id: first.id)
+        XCTAssertEqual(catalog.recentLocations(from: []).map(\.path), ["/srv/two"])
+        catalog.clearRecentLocations()
+
+        XCTAssertTrue(catalog.recentLocations(from: []).isEmpty)
+        XCTAssertEqual(catalog.servers(from: []).first?.sshHost, "devbox")
+    }
+
+    func testRemovingSavedHostAlsoDropsMatchingLocations() throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Development", sshHost: "devbox")
+        _ = catalog.recordSuccessfulOpen(server, path: "/srv/project")
+
+        catalog.removeSavedServer(id: server.id)
+
+        XCTAssertTrue(catalog.recentLocations(from: []).isEmpty)
     }
 }
 
@@ -1951,6 +1924,70 @@ final class SFTPCommandBuilderTests: XCTestCase {
             ),
             "get -R \"/srv/folder\" \"/tmp/folder\"\n"
         )
+        XCTAssertEqual(
+            try SFTPCommandBuilder.uploadCommand(
+                localPath: "/tmp/release 1.zip",
+                remotePath: "/srv/releases/.relaybar-upload.partial"
+            ),
+            "put \"/tmp/release 1.zip\" \"/srv/releases/.relaybar-upload.partial\"\n"
+        )
+        XCTAssertEqual(
+            try SFTPCommandBuilder.hardLinkCommand(
+                existingPath: "/srv/releases/.relaybar-upload.partial",
+                newPath: "/srv/releases/release 1.zip"
+            ),
+            "ln \"/srv/releases/.relaybar-upload.partial\" \"/srv/releases/release 1.zip\"\n"
+        )
+        XCTAssertEqual(
+            try SFTPCommandBuilder.renameCommand(
+                existingPath: "/srv/releases/.relaybar-upload.partial",
+                newPath: "/srv/releases/release 1.zip"
+            ),
+            "rename \"/srv/releases/.relaybar-upload.partial\" \"/srv/releases/release 1.zip\"\n"
+        )
+        XCTAssertEqual(
+            try SFTPCommandBuilder.removeCommand(
+                path: "/srv/releases/.relaybar-upload.partial"
+            ),
+            "rm \"/srv/releases/.relaybar-upload.partial\"\n"
+        )
+    }
+
+    func testAddsAppOwnedDebugLevelAfterUserArguments() throws {
+        let server = RemoteServer(
+            id: UUID(),
+            name: "Quiet",
+            sshHost: "host",
+            additionalArguments: ["-q"]
+        )
+
+        let arguments = try SFTPCommandBuilder.processArguments(
+            for: server,
+            diagnosticLevel: 2
+        )
+
+        XCTAssertEqual(arguments.suffix(3), ["-q", "-vv", "host"])
+    }
+
+    func testParsesOnlyExactAdvertisedUploadExtensions() {
+        let capabilities = RemoteUploadCapabilities.parse(
+            """
+            debug2: Server supports extension "posix-rename@openssh.com" revision 1
+            debug2: Server supports extension "hardlink@openssh.com" revision 1
+            """
+        )
+        let unrelated = RemoteUploadCapabilities.parse(
+            "server text mentions hardlink@openssh.com without an advertisement"
+        )
+
+        XCTAssertEqual(
+            capabilities,
+            RemoteUploadCapabilities(supportsHardLink: true, supportsPOSIXRename: true)
+        )
+        XCTAssertEqual(
+            unrelated,
+            RemoteUploadCapabilities(supportsHardLink: false, supportsPOSIXRename: false)
+        )
     }
 }
 
@@ -2525,6 +2562,441 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         )
     }
 
+    func testUploadPublishesANewNameWithHardLinkThenRemovesStaging() async throws {
+        let fixture = makeUploadFixture(kind: "New")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+        let phases = LockedUploadPhases()
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: localFile,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: false,
+            phase: { phases.record($0) }
+        )
+
+        let commands = try uploadCommands(for: fixture)
+        XCTAssertEqual(commands.map(commandName), ["ls", "quit", "put", "ls", "ln", "rm"])
+        XCTAssertTrue(commands[2].contains(".relaybar-upload-"))
+        XCTAssertTrue(commands[4].hasSuffix(" \"/srv/releases/release.zip\""))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+        XCTAssertEqual(phases.values, [.staging, .publishing, .cleaningUp])
+    }
+
+    func testUploadReplacesAnApprovedRegularFileWithPOSIXRename() async throws {
+        let fixture = makeUploadFixture(kind: "Replace")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: localFile,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: true
+        )
+
+        let commands = try uploadCommands(for: fixture)
+        XCTAssertEqual(commands.map(commandName), ["ls", "quit", "put", "ls", "rename"])
+        XCTAssertTrue(commands[4].hasSuffix(" \"/srv/releases/release.zip\""))
+    }
+
+    func testUploadFailsClosedWhenRequiredPublicationExtensionIsMissing() async throws {
+        let cases = [
+            (kind: "NoHardLink", replaceExisting: false),
+            (kind: "NoRename", replaceExisting: true)
+        ]
+
+        for testCase in cases {
+            let fixture = makeUploadFixture(kind: testCase.kind)
+            defer { removeUploadFixture(fixture) }
+            let localFile = try makeUploadFile(named: "release.zip")
+            defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+            let service = makeFixtureService()
+
+            do {
+                try await service.upload(
+                    server: fixture.server,
+                    localFile: localFile,
+                    remoteDirectory: "/srv/releases",
+                    replaceExisting: testCase.replaceExisting
+                )
+                XCTFail("Expected \(testCase.kind) to fail closed.")
+            } catch let error as RemoteFileError {
+                guard case .uploadCapabilityUnavailable = error else {
+                    XCTFail("Unexpected error: \(error)")
+                    continue
+                }
+            }
+
+            XCTAssertEqual(
+                try uploadCommands(for: fixture).map(commandName),
+                ["ls", "quit"]
+            )
+        }
+    }
+
+    func testUploadNeverReplacesObservedDirectoryOrSymbolicLink() async throws {
+        for kind in ["Directory", "Symlink"] {
+            let fixture = makeUploadFixture(kind: kind)
+            defer { removeUploadFixture(fixture) }
+            let localFile = try makeUploadFile(named: "release.zip")
+            defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+            let service = makeFixtureService()
+
+            do {
+                try await service.upload(
+                    server: fixture.server,
+                    localFile: localFile,
+                    remoteDirectory: "/srv/releases",
+                    replaceExisting: true
+                )
+                XCTFail("Expected \(kind) to be refused.")
+            } catch let error as RemoteFileError {
+                XCTAssertEqual(error, .unsupportedUploadTarget)
+            }
+
+            XCTAssertEqual(try uploadCommands(for: fixture).map(commandName), ["ls"])
+        }
+    }
+
+    func testUploadRaceRemovesStagingWithoutPublishingOverNewTarget() async throws {
+        let fixture = makeUploadFixture(kind: "Race")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        do {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+            XCTFail("Expected the raced-in target to fail.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .uploadConflict)
+        }
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testHardLinkCollisionAfterFinalListingFailsClosedAndCleansStaging() async throws {
+        let fixture = makeUploadFixture(kind: "LinkCollision")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        do {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+            XCTFail("Expected hard-link collision to fail closed.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .uploadConflict)
+        }
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "ln", "ls", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testUploadCancellationRemovesItsExactRemoteStagingName() async throws {
+        let fixture = makeUploadFixture(kind: "Cancel")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            connectionSharing: false
+        )
+        let task = Task {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+        }
+        try await waitUntil(timeout: 2) {
+            FileManager.default.fileExists(atPath: fixture.stateURL.path)
+        }
+
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {
+            // Expected after the detached cleanup has completed.
+        }
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testCancellationAfterPublicationStillReportsUploadSuccess() async throws {
+        let fixture = makeUploadFixture(kind: "PublishCancel")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            connectionSharing: false
+        )
+        let task = Task {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+        }
+        try await waitUntil(timeout: 2) {
+            FileManager.default.fileExists(atPath: fixture.stateURL.path + ".cleanup")
+        }
+
+        task.cancel()
+        try await task.value
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "ln", "rm", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testUploadReportsWhenStagingCleanupCannotBeConfirmed() async throws {
+        let fixture = makeUploadFixture(kind: "CleanupFail")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        do {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+            XCTFail("Expected upload and cleanup to fail.")
+        } catch let error as RemoteFileError {
+            guard case .uploadCleanupUnconfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "rm"]
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testPublishedUploadSucceedsWhenBoundedCleanupRetryIsConfirmed() async throws {
+        let fixture = makeUploadFixture(kind: "CleanupRetry")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: localFile,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: false
+        )
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "ln", "rm", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testPublishedUploadReportsOnlyUnconfirmedStagingCleanup() async throws {
+        let fixture = makeUploadFixture(kind: "PublishCleanupFail")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let service = makeFixtureService()
+
+        do {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+            XCTFail("Expected staging cleanup to remain unconfirmed.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(
+                error,
+                .uploadCleanupUnconfirmed("The upload was published.")
+            )
+        }
+
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "ln", "rm", "rm"]
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testUploadCapabilityProbeIsCachedForTheActiveServiceSession() async throws {
+        let fixture = makeUploadFixture(kind: "Cache")
+        defer { removeUploadFixture(fixture) }
+        let first = try makeUploadFile(named: "first.zip")
+        let directory = first.deletingLastPathComponent()
+        let second = directory.appendingPathComponent("second.zip")
+        try Data("second".utf8).write(to: second)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = makeFixtureService()
+
+        for file in [first, second] {
+            try await service.upload(
+                server: fixture.server,
+                localFile: file,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+        }
+
+        let commandNames = try uploadCommands(for: fixture).map(commandName)
+        XCTAssertEqual(commandNames.filter { $0 == "quit" }.count, 1)
+        XCTAssertEqual(commandNames.filter { $0 == "put" }.count, 2)
+        XCTAssertEqual(commandNames.filter { $0 == "ln" }.count, 2)
+    }
+
+    func testUploadCapabilitiesAreProbedAgainAfterSSHMasterReplacement() async throws {
+        let fixture = makeUploadFixture(kind: "Cache")
+        defer { removeUploadFixture(fixture) }
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(UUID().uuidString.prefix(8))",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let sshLogURL = sessionRoot.appendingPathComponent("ssh.log")
+        let pidURL = sessionRoot.appendingPathComponent("ssh.pid")
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: [
+                "RELAYBAR_FAKE_SSH_LOG": sshLogURL.path,
+                "RELAYBAR_FAKE_SSH_PID": pidURL.path
+            ]
+        )
+        defer { service.shutdown() }
+        let first = try makeUploadFile(named: "first.zip")
+        let localDirectory = first.deletingLastPathComponent()
+        let second = localDirectory.appendingPathComponent("second.zip")
+        try Data("second".utf8).write(to: second)
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: first,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: false
+        )
+        let pidText = try String(contentsOf: pidURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let processIdentifier = try XCTUnwrap(pid_t(pidText))
+        XCTAssertEqual(Darwin.kill(processIdentifier, SIGTERM), 0)
+        try await waitUntil(timeout: 2) {
+            !FileManager.default.fileExists(atPath: pidURL.path)
+                && (try? self.privateSessionDirectories(in: sessionRoot).isEmpty) == true
+        }
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: second,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: false
+        )
+
+        let commandNames = try uploadCommands(for: fixture).map(commandName)
+        XCTAssertEqual(commandNames.filter { $0 == "quit" }.count, 2)
+        let sshLog = try String(contentsOf: sshLogURL, encoding: .utf8)
+        XCTAssertEqual(
+            sshLog.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            2
+        )
+    }
+
+    func testUploadMasterLossBeforePublishFailsClosedAndCleansStaging() async throws {
+        let fixture = makeUploadFixture(kind: "SessionChange")
+        defer { removeUploadFixture(fixture) }
+        let sessionRoot = URL(
+            fileURLWithPath: "/tmp/RelayBarSSHTests-\(UUID().uuidString.prefix(8))",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: sessionRoot,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: sessionRoot) }
+        let sshLogURL = sessionRoot.appendingPathComponent("ssh.log")
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            sshExecutableURL: fakeSSHExecutableURL,
+            sessionTemporaryDirectory: sessionRoot,
+            processEnvironment: ["RELAYBAR_FAKE_SSH_LOG": sshLogURL.path]
+        )
+        defer { service.shutdown() }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+
+        do {
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+            XCTFail("Expected the replaced SSH session to stop publication.")
+        } catch let error as RemoteFileError {
+            XCTAssertEqual(error, .connectionSessionUnavailable)
+        }
+
+        let commands = try uploadCommands(for: fixture).map(commandName)
+        XCTAssertEqual(commands, ["ls", "quit", "put", "rm"])
+        XCTAssertFalse(commands.contains("ln"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+        let sshLog = try String(contentsOf: sshLogURL, encoding: .utf8)
+        XCTAssertEqual(
+            sshLog.split(whereSeparator: \.isNewline).filter { $0 == "BEGIN" }.count,
+            2
+        )
+    }
+
     func testConfiguredRemotePathWhenLiveTestingIsEnabled() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard
@@ -3078,6 +3550,21 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+
+    func testFriendlyMessageNeverSurfacesDebugDiagnostics() {
+        XCTAssertEqual(
+            SFTPRemoteFileService.friendlyMessage(
+                from: "debug1: identity file /Users/alice/.ssh/id_ed25519\n"
+                    + "debug2: local client account alice\n"
+            ),
+            "The remote operation failed."
+        )
+        XCTAssertEqual(
+            SFTPRemoteFileService.friendlyMessage(
+                from: "debug2: noisy probe line\nPermission denied\n"
+            ),
+            "Permission was denied for this server or path."
+        )
     }
 
     func testRejectsProcessOutputBeyondTheConfiguredLimit() async {
@@ -3448,6 +3935,49 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         )
     }
 
+    private typealias UploadFixture = (
+        server: RemoteServer,
+        logURL: URL,
+        stateURL: URL
+    )
+
+    private func makeUploadFixture(kind: String) -> UploadFixture {
+        let host = "RelayBarUpload\(kind)-\(UUID().uuidString)"
+        return (
+            makeFixtureServer(host: host),
+            URL(fileURLWithPath: "/tmp/\(host).log"),
+            URL(fileURLWithPath: "/tmp/\(host).state")
+        )
+    }
+
+    private func removeUploadFixture(_ fixture: UploadFixture) {
+        try? FileManager.default.removeItem(at: fixture.logURL)
+        try? FileManager.default.removeItem(at: fixture.stateURL)
+        try? FileManager.default.removeItem(
+            atPath: fixture.stateURL.path + ".cleanup"
+        )
+        try? FileManager.default.removeItem(
+            atPath: fixture.stateURL.path + ".collision"
+        )
+    }
+
+    private func makeUploadFile(named name: String) throws -> URL {
+        let directory = try makeTemporaryDirectory()
+        let file = directory.appendingPathComponent(name)
+        try Data("payload".utf8).write(to: file)
+        return file
+    }
+
+    private func uploadCommands(for fixture: UploadFixture) throws -> [String] {
+        try String(contentsOf: fixture.logURL, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+
+    private func commandName(_ command: String) -> String {
+        String(command.prefix(while: { !$0.isWhitespace }))
+    }
+
     private func makeFixtureServer(host: String) -> RemoteServer {
         RemoteServer(
             id: UUID(),
@@ -3582,7 +4112,7 @@ final class RemoteDirectoryCacheTests: XCTestCase {
 
 @MainActor
 final class RemoteFilesModelTests: XCTestCase {
-    func testInitialOpenCanBeCancelledWithoutLosingLauncherInput() async throws {
+    func testInitialOpenCanBeCancelledWithoutLosingAddPathInput() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
         service.deferredLoadPaths.insert("/srv/app")
@@ -3593,13 +4123,13 @@ final class RemoteFilesModelTests: XCTestCase {
         model.openRemotePath()
         try await waitUntil { service.pendingDeferredLoadPathCount == 1 }
 
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertTrue(model.isLoading)
         XCTAssertTrue(model.canCancelInitialOpen)
 
         model.cancelInitialOpen()
 
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertFalse(model.isLoading)
         XCTAssertFalse(model.isRefreshing)
         XCTAssertFalse(model.canCancelInitialOpen)
@@ -3620,7 +4150,7 @@ final class RemoteFilesModelTests: XCTestCase {
             model.errorMessage,
             "A late failure from a cancelled request must not publish an error."
         )
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertEqual(model.servers.first?.source, .forwardingProfile)
 
         service.deferredLoadPaths.remove("/srv/app")
@@ -3630,6 +4160,352 @@ final class RemoteFilesModelTests: XCTestCase {
 
         XCTAssertEqual(service.loadPathRequests.count, 2)
         XCTAssertEqual(model.currentPath, "/srv/app")
+
+    func testOpeningWorkspaceWithRecentLocationsStartsNoNetworkOperation() throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Devbox", sshHost: "devbox.local")
+        _ = catalog.recordSuccessfulOpen(server, path: "/srv/project")
+        let service = StubRemoteFileService()
+
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            serverCatalog: catalog
+        )
+
+        XCTAssertEqual(model.screen, .welcome)
+        XCTAssertEqual(model.recentLocations.map(\.path), ["/srv/project"])
+        XCTAssertTrue(service.listRequests.isEmpty)
+        XCTAssertTrue(service.loadPathRequests.isEmpty)
+        XCTAssertEqual(service.shutdownCount, 0)
+    }
+
+    func testRecentLocationActivationPreservesRootAndBackReturnsToWelcome() async throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Devbox", sshHost: "devbox.local")
+        let location = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(server, path: "/srv/project")
+        )
+        let service = StubRemoteFileService()
+        service.pathResults[location.path] = .directory([])
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            serverCatalog: catalog
+        )
+
+        XCTAssertEqual(model.recentLocations.map(\.id), [location.id])
+        model.activate(location)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        XCTAssertEqual(model.activeLocationID, location.id)
+        XCTAssertEqual(model.currentPath, location.path)
+        model.goBack()
+        XCTAssertEqual(model.screen, .welcome)
+        XCTAssertNil(model.activeLocationID)
+        XCTAssertEqual(service.shutdownCount, 1)
+    }
+
+    func testFailedCrossHostActivationCannotOperateOnThePriorHostListing() async throws {
+        let catalog = RemoteServerCatalog()
+        let firstServer = try catalog.add(name: "First", sshHost: "first.example.com")
+        let secondServer = try catalog.add(name: "Second", sshHost: "second.example.com")
+        let firstLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(firstServer, path: "/srv/first")
+        )
+        let secondLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(secondServer, path: "/srv/second")
+        )
+        let priorEntry = makeFileEntry(name: "prior.txt", parentPath: firstLocation.path)
+        let service = StubRemoteFileService()
+        service.pathResults[firstLocation.path] = .directory([priorEntry])
+        service.errors[secondLocation.path] = RemoteFileError.commandFailed("Offline.")
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            serverCatalog: catalog
+        )
+
+        model.activate(firstLocation)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        XCTAssertEqual(model.entries, [priorEntry])
+
+        model.activate(secondLocation)
+        try await waitUntil { model.errorMessage == "Offline." && !model.isLoading }
+
+        XCTAssertEqual(model.screen, .welcome)
+        XCTAssertEqual(model.currentPath, "")
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertFalse(model.canUpload)
+        model.refresh()
+        XCTAssertEqual(service.loadPathRequests.count, 2)
+        XCTAssertEqual(service.shutdownCount, 1)
+    }
+
+    func testLocationActivationCancelsPendingPreviewBeforeOpeningNewRoot() async throws {
+        let catalog = RemoteServerCatalog()
+        let firstServer = try catalog.add(name: "First", sshHost: "first.example.com")
+        let secondServer = try catalog.add(name: "Second", sshHost: "second.example.com")
+        let firstLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(firstServer, path: "/srv/first")
+        )
+        let secondLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(secondServer, path: "/srv/second")
+        )
+        let markdown = makeFileEntry(name: "README.md", parentPath: firstLocation.path)
+        let previewDirectory = try makeTemporaryDirectory()
+        let previewURL = previewDirectory.appendingPathComponent(markdown.name)
+        try Data("# Pending".utf8).write(to: previewURL)
+        let decoder = BlockingMarkdownDecoder()
+        let service = StubRemoteFileService()
+        service.pathResults[firstLocation.path] = .directory([markdown])
+        service.pathResults[secondLocation.path] = .directory([])
+        service.previewURL = previewURL
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            markdownDecoder: decoder.load,
+            serverCatalog: catalog
+        )
+
+        model.activate(firstLocation)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.preview(markdown)
+        try await waitUntil { decoder.hasStarted }
+
+        model.activate(secondLocation)
+        try await waitUntil {
+            model.screen == .browser
+                && model.currentPath == secondLocation.path
+                && !model.isLoading
+        }
+        try await waitUntil {
+            !FileManager.default.fileExists(atPath: previewDirectory.path)
+        }
+
+        XCTAssertNil(model.previewEntry)
+        XCTAssertNil(model.previewMarkdown)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testExpandedGlobalRecentsStayExcludedFromNestedHostPaths() throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Devbox", sshHost: "devbox.local")
+        for index in 1...8 {
+            _ = catalog.recordSuccessfulOpen(server, path: "/srv/project-\(index)")
+        }
+        let model = RemoteFilesModel(tunnels: [], serverCatalog: catalog)
+
+        XCTAssertEqual(model.recentLocations.count, 8)
+        XCTAssertEqual(model.nestedLocations(for: server).count, 2)
+        XCTAssertTrue(
+            model.nestedLocations(
+                for: server,
+                excluding: model.recentLocations
+            ).isEmpty
+        )
+    }
+
+    func testFailedRecentLocationCanBeRemovedWithoutChangingHost() async throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Devbox", sshHost: "devbox.local")
+        let location = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(server, path: "/missing")
+        )
+        let service = StubRemoteFileService()
+        service.errors[location.path] = RemoteFileError.commandFailed("Not found.")
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            serverCatalog: catalog
+        )
+
+        model.activate(location)
+        try await waitUntil { model.errorMessage == "Not found." }
+        XCTAssertEqual(model.failedLocationID, location.id)
+
+        model.removeFailedLocation()
+        XCTAssertTrue(model.recentLocations.isEmpty)
+        XCTAssertEqual(model.servers.first?.sshHost, "devbox.local")
+    }
+
+    func testUploadUsesCurrentFolderAndExplicitReplacementConsent() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let existing = makeFileEntry(name: "release.zip")
+        let service = StubRemoteFileService()
+        service.pathResults["/srv/app"] = .directory([existing])
+        let presenter = StubRemoteFilePresenter()
+        let localDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+        let localFile = localDirectory.appendingPathComponent(existing.name)
+        try Data("archive".utf8).write(to: localFile)
+        presenter.uploadFile = localFile
+        presenter.replacementConfirmation = true
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            presenter: presenter
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+
+        model.beginUpload()
+        try await waitUntil { model.upload?.phase == .completed }
+
+        XCTAssertEqual(presenter.replacementNames, [existing.name])
+        XCTAssertEqual(service.uploadRequests.count, 1)
+        XCTAssertEqual(service.uploadRequests.first?.remoteDirectory, "/srv/app")
+        XCTAssertEqual(service.uploadRequests.first?.replaceExisting, true)
+    }
+
+    func testUploadConflictRefreshesAndRetryRequiresReplacementConsent() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let existing = makeFileEntry(name: "release.zip")
+        let service = StubRemoteFileService()
+        service.pathResults["/srv/app"] = .directory([])
+        service.uploadError = RemoteFileError.uploadConflict
+        let presenter = StubRemoteFilePresenter()
+        let localDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+        let localFile = localDirectory.appendingPathComponent(existing.name)
+        try Data("archive".utf8).write(to: localFile)
+        presenter.uploadFile = localFile
+        presenter.replacementConfirmation = true
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            presenter: presenter
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        service.listings["/srv/app"] = [existing]
+
+        model.beginUpload()
+        try await waitUntil {
+            model.upload?.phase == .failed
+                && !model.isRefreshing
+                && model.entries == [existing]
+        }
+        service.uploadError = nil
+        model.retryUpload()
+        try await waitUntil { model.upload?.phase == .completed }
+
+        XCTAssertEqual(presenter.replacementNames, [existing.name])
+        XCTAssertEqual(service.uploadRequests.map(\.replaceExisting), [false, true])
+    }
+
+    func testApprovedUploadRetryCannotFollowNavigationToAnotherHost() async throws {
+        let catalog = RemoteServerCatalog()
+        let firstServer = try catalog.add(name: "First", sshHost: "first.example.com")
+        let secondServer = try catalog.add(name: "Second", sshHost: "second.example.com")
+        let firstLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(firstServer, path: "/srv/first")
+        )
+        let secondLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(secondServer, path: "/srv/second")
+        )
+        let existing = makeFileEntry(name: "release.zip", parentPath: firstLocation.path)
+        let service = StubRemoteFileService()
+        service.pathResults[firstLocation.path] = .directory([existing])
+        service.pathResults[secondLocation.path] = .directory([])
+        service.uploadError = RemoteFileError.commandFailed("Connection lost.")
+        let presenter = StubRemoteFilePresenter()
+        let localDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+        let localFile = localDirectory.appendingPathComponent(existing.name)
+        try Data("replacement".utf8).write(to: localFile)
+        presenter.uploadFile = localFile
+        presenter.replacementConfirmation = true
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            presenter: presenter,
+            serverCatalog: catalog
+        )
+
+        model.activate(firstLocation)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.beginUpload()
+        try await waitUntil { model.upload?.phase == .failed }
+        XCTAssertEqual(service.uploadRequests.map(\.replaceExisting), [true])
+
+        model.activate(secondLocation)
+        try await waitUntil {
+            model.currentPath == secondLocation.path && !model.isLoading
+        }
+        XCTAssertNil(model.upload)
+        model.retryUpload()
+        XCTAssertEqual(service.uploadRequests.count, 1)
+    }
+
+    func testUploadCancellationBlocksLocationActivationUntilCleanupCompletes() async throws {
+        let catalog = RemoteServerCatalog()
+        let server = try catalog.add(name: "Devbox", sshHost: "devbox.local")
+        let first = try XCTUnwrap(catalog.recordSuccessfulOpen(server, path: "/srv/one"))
+        let second = try XCTUnwrap(catalog.recordSuccessfulOpen(server, path: "/srv/two"))
+        let service = StubRemoteFileService()
+        service.pathResults[first.path] = .directory([])
+        service.pathResults[second.path] = .directory([])
+        service.waitsForUploadCancellation = true
+        let presenter = StubRemoteFilePresenter()
+        let localDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+        let localFile = localDirectory.appendingPathComponent("new.txt")
+        try Data("new".utf8).write(to: localFile)
+        presenter.uploadFile = localFile
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            presenter: presenter,
+            serverCatalog: catalog
+        )
+        model.activate(first)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.beginUpload()
+        try await waitUntil { model.upload?.phase == .active }
+
+        model.activate(second)
+        XCTAssertEqual(model.currentPath, first.path)
+        model.cancelUpload()
+        try await waitUntil { model.upload?.phase == .cancelled }
+        XCTAssertTrue(model.canActivateLocation)
+    }
+
+    func testWindowCloseCancellationWaitsForUploadCleanupBeforeShutdown() async throws {
+        let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
+        let service = StubRemoteFileService()
+        service.pathResults["/srv/app"] = .directory([])
+        service.waitsForUploadCancellation = true
+        let presenter = StubRemoteFilePresenter()
+        let localDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: localDirectory) }
+        let localFile = localDirectory.appendingPathComponent("new.txt")
+        try Data("new".utf8).write(to: localFile)
+        presenter.uploadFile = localFile
+        let model = RemoteFilesModel(
+            tunnels: [tunnel],
+            service: service,
+            presenter: presenter
+        )
+        model.remotePath = "/srv/app"
+        model.openRemotePath()
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.beginUpload()
+        try await waitUntil { service.uploadRequests.count == 1 }
+
+        var didFinishShutdown = false
+        let waitsForShutdown = model.cancelAll {
+            didFinishShutdown = true
+        }
+        XCTAssertTrue(waitsForShutdown)
+        XCTAssertFalse(didFinishShutdown)
+        try await waitUntil { service.shutdownCount == 1 }
+
+        XCTAssertNil(model.upload)
+        XCTAssertTrue(model.canActivateLocation)
+        XCTAssertTrue(didFinishShutdown)
     }
 
     func testDirectMarkdownPathOpensPreviewAndPreservesBackPath() async throws {
@@ -3660,6 +4536,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.entries, [entry])
         XCTAssertEqual(model.selectedEntryID, entry.id)
         XCTAssertEqual(model.previewEntry, entry)
+        XCTAssertEqual(model.recentLocations.first?.path, RemotePath.parent(of: entry.path))
 
         model.goBack()
         XCTAssertEqual(model.screen, .browser)
@@ -3683,7 +4560,7 @@ final class RemoteFilesModelTests: XCTestCase {
         )
 
         model.goBack()
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertEqual(model.remotePath, RemotePath.parent(of: entry.path))
     }
 
@@ -3717,13 +4594,13 @@ final class RemoteFilesModelTests: XCTestCase {
         // The root load must have cleared the direct-file state, so the
         // next Back leaves the browser for the launcher.
         model.goBack()
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
     }
 
     /// Task 038. When the containing-folder load fails, the direct-file
     /// context is consumed: the error strip owns retry, and the next Back
     /// leaves for the launcher instead of re-issuing the same failing load.
-    func testBackFromDirectFileAfterFailedParentLoadExitsToLauncher() async throws {
+    func testBackFromDirectFileAfterFailedParentLoadExitsToWelcome() async throws {
         let tunnel = makeTunnel(name: "Devbox", host: "devbox.local")
         let service = StubRemoteFileService()
         let entry = makeFileEntry(name: "notes.bin")
@@ -3744,7 +4621,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.entries, [entry])
 
         model.goBack()
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertEqual(
             model.remotePath,
             entry.path,
@@ -3772,6 +4649,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.selectedEntryID, entry.id)
         XCTAssertTrue(service.previewRequests.isEmpty)
         XCTAssertEqual(presenter.chooseCount, 0)
+        XCTAssertFalse(model.canUpload)
     }
 
     func testStandaloneHostOpensWithoutAForwardingProfileAndBecomesRecent() async throws {
@@ -3842,9 +4720,9 @@ final class RemoteFilesModelTests: XCTestCase {
         model.cancelAll()
     }
 
-    /// Task 045. A reopened Remote Files window offers the last path that
-    /// server opened successfully.
-    func testLauncherPrefillsLastOpenedPathForInitialServer() async throws {
+    /// Task 045. A reopened Remote Files window offers the most recent folder
+    /// the initial host opened successfully.
+    func testInitialServerPrefillsMostRecentFolderPath() async throws {
         let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -3870,8 +4748,8 @@ final class RemoteFilesModelTests: XCTestCase {
         model.cancelAll()
     }
 
-    /// Task 045. Switching the launcher server offers that server's last
-    /// path only while the field is untouched.
+    /// Task 045. Switching the Add Path host offers that host's most recent
+    /// folder only while the field is untouched.
     func testSwitchingServerPrefillsLastPathOnlyWhenFieldIsEmpty() throws {
         let suiteName = "RelayBar.RemoteFilesModel.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -3879,9 +4757,9 @@ final class RemoteFilesModelTests: XCTestCase {
         let catalog = RemoteServerCatalog(defaults: defaults)
         let first = makeTunnel(name: "First", host: "first.example.com")
         let second = makeTunnel(name: "Second", host: "second.example.com")
-        catalog.recordLastOpenedPath(
-            "/var/log",
-            for: RemoteServer(tunnel: second)
+        _ = catalog.recordSuccessfulOpen(
+            RemoteServer(tunnel: second),
+            path: "/var/log"
         )
         let model = RemoteFilesModel(
             tunnels: [first, second],
@@ -4012,7 +4890,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.selectedServer?.sshHost, "spark-422e.local")
     }
 
-    func testOpensNavigatesAndReturnsToLauncher() async throws {
+    func testOpensNavigatesAndReturnsToWelcome() async throws {
         let tunnel = Tunnel(
             name: "Devbox",
             localPort: 8080,
@@ -4047,7 +4925,7 @@ final class RemoteFilesModelTests: XCTestCase {
         XCTAssertEqual(model.selectedEntryID, "/srv/app/output")
 
         model.goBack()
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
         XCTAssertEqual(model.remotePath, "/srv/app")
         XCTAssertEqual(service.shutdownCount, 1)
     }
@@ -4244,7 +5122,7 @@ final class RemoteFilesModelTests: XCTestCase {
         try await waitUntil { model.errorMessage == nil && !model.isRefreshing }
         model.goBack()
 
-        XCTAssertEqual(model.screen, .launcher)
+        XCTAssertEqual(model.screen, .welcome)
     }
 
     func testOpenSessionKeepsItsServerSnapshotWhenSavedServersChange() async throws {
@@ -4304,6 +5182,44 @@ final class RemoteFilesModelTests: XCTestCase {
             presenter.revealedDestinations,
             [presenter.destination].compactMap { $0 }
         )
+    }
+
+    func testDownloadRetryCannotFollowNavigationToAnotherHost() async throws {
+        let catalog = RemoteServerCatalog()
+        let firstServer = try catalog.add(name: "First", sshHost: "first.example.com")
+        let secondServer = try catalog.add(name: "Second", sshHost: "second.example.com")
+        let firstLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(firstServer, path: "/srv/first")
+        )
+        let secondLocation = try XCTUnwrap(
+            catalog.recordSuccessfulOpen(secondServer, path: "/srv/second")
+        )
+        let file = makeFileEntry(name: "report.txt", parentPath: firstLocation.path)
+        let service = StubRemoteFileService()
+        service.pathResults[firstLocation.path] = .directory([file])
+        service.pathResults[secondLocation.path] = .directory([])
+        service.downloadError = RemoteFileError.commandFailed("Connection lost.")
+        let presenter = StubRemoteFilePresenter()
+        presenter.destination = URL(fileURLWithPath: "/tmp/relaybar-test-report.txt")
+        let model = RemoteFilesModel(
+            tunnels: [],
+            service: service,
+            presenter: presenter,
+            serverCatalog: catalog
+        )
+
+        model.activate(firstLocation)
+        try await waitUntil { model.screen == .browser && !model.isLoading }
+        model.download(file)
+        try await waitUntil { model.transfer?.phase == .failed }
+
+        model.activate(secondLocation)
+        try await waitUntil {
+            model.currentPath == secondLocation.path && !model.isLoading
+        }
+        XCTAssertNil(model.transfer)
+        model.retryTransfer()
+        XCTAssertEqual(service.downloadDestinations.count, 1)
     }
 
     func testTransferCancellationBlocksLeavingRootUntilCleanupFinishes() async throws {
@@ -4645,6 +5561,13 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         let path: String
     }
 
+    struct UploadRequest {
+        let server: RemoteServer
+        let localFile: URL
+        let remoteDirectory: String
+        let replaceExisting: Bool
+    }
+
     private struct State {
         var listings: [String: [RemoteFileEntry]] = [:]
         var pathResults: [String: RemotePathLoadResult] = [:]
@@ -4664,6 +5587,9 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         var previewURL: URL?
         var previewURLs: [String: URL] = [:]
         var previewRequests: [String] = []
+        var uploadRequests: [UploadRequest] = []
+        var uploadError: Error?
+        var waitsForUploadCancellation = false
     }
 
     private let lock = NSLock()
@@ -4742,6 +5668,20 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
 
     var previewRequests: [String] {
         withLock { state.previewRequests }
+    }
+
+    var uploadRequests: [UploadRequest] {
+        withLock { state.uploadRequests }
+    }
+
+    var uploadError: Error? {
+        get { withLock { state.uploadError } }
+        set { withLock { state.uploadError = newValue } }
+    }
+
+    var waitsForUploadCancellation: Bool {
+        get { withLock { state.waitsForUploadCancellation } }
+        set { withLock { state.waitsForUploadCancellation = newValue } }
     }
 
     func list(server: RemoteServer, path: String) async throws -> [RemoteFileEntry] {
@@ -4854,6 +5794,39 @@ private final class StubRemoteFileService: RemoteFileServing, @unchecked Sendabl
         return previewURL
     }
 
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws {
+        let result = withLock {
+            state.uploadRequests.append(
+                UploadRequest(
+                    server: server,
+                    localFile: localFile,
+                    remoteDirectory: remoteDirectory,
+                    replaceExisting: replaceExisting
+                )
+            )
+            return (
+                waitsForCancellation: state.waitsForUploadCancellation,
+                error: state.uploadError
+            )
+        }
+        phase(.staging)
+        if result.waitsForCancellation {
+            while true {
+                try await Task.sleep(for: .seconds(10))
+            }
+        }
+        if let error = result.error {
+            throw error
+        }
+        phase(.publishing)
+    }
+
     private func withLock<Result>(_ body: () throws -> Result) rethrows -> Result {
         lock.lock()
         defer { lock.unlock() }
@@ -4877,10 +5850,22 @@ private final class StubRemoteFilePresenter: RemoteFilePresenting {
     var destination: URL?
     var chooseCount = 0
     var revealedDestinations: [URL] = []
+    var uploadFile: URL?
+    var replacementConfirmation = false
+    var replacementNames: [String] = []
 
     func chooseDestination(for entry: RemoteFileEntry) -> URL? {
         chooseCount += 1
         return destination
+    }
+
+    func chooseUploadFile() -> URL? {
+        uploadFile
+    }
+
+    func confirmUploadReplacement(name: String) -> Bool {
+        replacementNames.append(name)
+        return replacementConfirmation
     }
 
     func revealInFinder(_ destination: URL) {
@@ -4974,6 +5959,23 @@ private final class LockedProgress: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values.max() ?? 0
+    }
+}
+
+private final class LockedUploadPhases: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [RemoteUploadPhase] = []
+
+    func record(_ phase: RemoteUploadPhase) {
+        lock.lock()
+        recorded.append(phase)
+        lock.unlock()
+    }
+
+    var values: [RemoteUploadPhase] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
     }
 }
 

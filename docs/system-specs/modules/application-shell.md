@@ -51,7 +51,11 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   retry deadline the store records when scheduling it, instead of freezing
   the delay that was current when the retry began.- The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
-- The Remote Files window uses a 360 × 300 point launcher with server selection and an Add Host action. It expands to 780 × 520 points for browsing, with a 620 × 400 browser minimum. Entering the split preview grows an undersized window to at least 980 × 640 points and applies a 760 × 440 preview minimum; it never shrinks a user-enlarged window, and returning to the browser preserves the current size.
+- The Remote Files row opens one 920 × 600 point resizable split workspace with
+  a 760 × 440 minimum. Its hideable leading sidebar uses a 210 point minimum,
+  250 point ideal, and 360 point maximum while the detail retains at least 430
+  points. Entering preview grows an undersized window to at least 980 × 640 and
+  never shrinks a user-enlarged window.
 - A gear button in the list header opens an in-popover settings screen with the editor's back-navigation idiom; Escape returns to the list.
 - The settings screen's Launch at Login toggle registers or unregisters the main app as the current user's login item through `SMAppService.mainApp` — no helper executable, launch daemon, elevated privilege, or separate settings window.
 - The General card's second row is **Automatically Check for Updates**. It controls
