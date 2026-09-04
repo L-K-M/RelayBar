@@ -772,6 +772,9 @@ private struct TunnelGroupHeader: View {
             }
             .buttonStyle(.plain)
             .disabled(!availability.canStartAll)
+            // `.plain` with an image label draws identically when disabled,
+            // so state has to be shown rather than implied.
+            .opacity(availability.canStartAll ? 1 : 0.35)
             .help("Start all tunnels in \(name)")
             .accessibilityLabel("Start all tunnels in \(name)")
 
@@ -785,6 +788,9 @@ private struct TunnelGroupHeader: View {
             }
             .buttonStyle(.plain)
             .disabled(!availability.canStopAll)
+            // `.plain` with an image label draws identically when disabled,
+            // so state has to be shown rather than implied.
+            .opacity(availability.canStopAll ? 1 : 0.35)
             .help("Stop all tunnels in \(name)")
             .accessibilityLabel("Stop all tunnels in \(name)")
         }

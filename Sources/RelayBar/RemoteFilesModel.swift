@@ -518,6 +518,9 @@ final class RemoteFilesModel: ObservableObject {
 
     func removeRecentLocation(id: UUID) {
         serverCatalog.removeRecentLocation(id: id)
+        // A removed location must not be resurrected as the active root by an
+        // open that was already in flight when it was removed.
+        if pendingRootLocationID == id { pendingRootLocationID = nil }
         if activeLocationID == id { activeLocationID = nil }
         if failedLocationID == id { failedLocationID = nil }
         recentLocations = serverCatalog.recentLocations(from: tunnels)
@@ -525,6 +528,7 @@ final class RemoteFilesModel: ObservableObject {
 
     func clearRecentLocations() {
         serverCatalog.clearRecentLocations()
+        pendingRootLocationID = nil
         activeLocationID = nil
         failedLocationID = nil
         recentLocations = []
