@@ -43,8 +43,12 @@ final class NetworkPathMonitor: NetworkPathObserving {
         self.onChange = onChange
         guard let monitor else { return }
         monitor.pathUpdateHandler = { [weak self] _ in
+            // Bind before dispatching: the main-queue block is a Sendable
+            // closure and may capture only immutable values, not the weak
+            // variable the outer closure owns.
+            guard let self else { return }
             DispatchQueue.main.async {
-                self?.pathDidUpdate()
+                self.pathDidUpdate()
             }
         }
         monitor.start(queue: queue)
