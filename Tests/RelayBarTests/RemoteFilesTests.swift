@@ -4768,7 +4768,16 @@ final class RemoteFilesModelTests: XCTestCase {
             service: StubRemoteFileService(),
             serverCatalog: catalog
         )
-        XCTAssertEqual(model.remotePath, "")
+        // The successful open also made `second` a recent host, so it leads
+        // the picker and its folder is offered on a fresh window.
+        XCTAssertEqual(model.selectedServer?.sshHost, "second.example.com")
+        XCTAssertEqual(model.remotePath, "/var/log")
+
+        model.remotePath = ""
+        model.selectedServerID = model.servers.first {
+            $0.sshHost == "first.example.com"
+        }?.id
+        XCTAssertEqual(model.remotePath, "", "A host without history offers nothing.")
 
         model.selectedServerID = model.servers.first {
             $0.sshHost == "second.example.com"
