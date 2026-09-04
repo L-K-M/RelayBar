@@ -76,6 +76,11 @@ final class TunnelStore: ObservableObject {
     /// attempts and notifies even on a network that never stops changing.
     private let maxNetworkChangeLadderResets = 3
     private var networkChangeLadderResets: [UUID: Int] = [:]
+    /// Profiles already notified about running out of retries and not yet
+    /// seen Running since. A profile no network change can fix — a revoked
+    /// key, a wrong port — keeps being started by later changes, which is
+    /// deliberate, but it says so once rather than at every change.
+    private var notifiedExhaustionWithoutRunning: Set<UUID> = []
     private var pendingBrowserURLs: [UUID: URL] = [:]
     private var startupFailureMessages: [UUID: String] = [:]
     private var controlDirectories: [UUID: URL] = [:]
@@ -204,6 +209,7 @@ final class TunnelStore: ObservableObject {
         // An edited profile that had run out of retries is no longer the one
         // the user asked for; it waits for them, not for the network.
         profilesAwaitingNetworkChange.remove(tunnel.id)
+        notifiedExhaustionWithoutRunning.remove(tunnel.id)
         tunnels[index] = tunnel
         phases[tunnel.id] = .stopped
         save()
@@ -359,6 +365,13 @@ final class TunnelStore: ObservableObject {
     }
 
     func start(_ tunnel: Tunnel) {
+        // The user asking for this profile again also asks to hear about it
+        // again, so it resumes with a full notification budget.
+        notifiedExhaustionWithoutRunning.remove(tunnel.id)
+        start(tunnel, resumingAfterNetworkChange: false)
+    }
+
+    private func start(_ tunnel: Tunnel, resumingAfterNetworkChange: Bool) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
         profilesAwaitingNetworkChange.remove(tunnel.id)
         networkChangeLadderResets[tunnel.id] = nil
@@ -700,6 +713,7 @@ final class TunnelStore: ObservableObject {
         runtimePorts[id] = allocations.isEmpty ? nil : allocations
         retryAttempts[id] = 0
         networkChangeLadderResets[id] = nil
+        notifiedExhaustionWithoutRunning.remove(id)
         phases[id] = .running
         openPendingBrowserURL(for: id)
     }
@@ -929,6 +943,7 @@ final class TunnelStore: ObservableObject {
         desiredTunnels[id] = nil
         profilesAwaitingNetworkChange.remove(id)
         networkChangeLadderResets[id] = nil
+        notifiedExhaustionWithoutRunning.remove(id)
         retryAttempts[id] = nil
         pendingBrowserURLs[id] = nil
         runtimePorts[id] = nil
@@ -1054,7 +1069,12 @@ final class TunnelStore: ObservableObject {
             // a changed network path starts the profile again from scratch.
             profilesAwaitingNetworkChange.insert(id)
             phases[id] = .failed(failureMessage)
-            failureNotifier(profileName, failureMessage)
+            // Once per dead streak. The profile is still started by every
+            // later network change; a profile that never reaches Running in
+            // between would otherwise notify on each one.
+            if notifiedExhaustionWithoutRunning.insert(id).inserted {
+                failureNotifier(profileName, failureMessage)
+            }
             return
         }
 
@@ -1143,7 +1163,7 @@ final class TunnelStore: ObservableObject {
         let awaiting = profilesAwaitingNetworkChange
         profilesAwaitingNetworkChange.removeAll()
         for tunnel in tunnels where awaiting.contains(tunnel.id) {
-            start(tunnel)
+            start(tunnel, resumingAfterNetworkChange: true)
         }
     }
 

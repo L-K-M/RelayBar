@@ -27,8 +27,10 @@ outlasts; when the VPN then dropped, nothing was left to retry.
 - An explicit stop, group Stop All, edit, or delete withdraws a failed profile
   from the pending network-change retry. A profile that failed for a
   configuration reason is never started automatically.
-- Keep the retry ladder, the exhaustion notification, and every phase
-  unchanged; add no new phase and no persisted state.
+- Keep the retry ladder and every phase unchanged; add no new phase and no
+  persisted state. The exhaustion notification fires once per dead streak: a
+  profile restarted by a change and exhausted again with no Running in
+  between stays silent until it runs or the user starts it.
 - Coalesce a burst of path updates into one reconnect pass that runs once
   updates have been quiet for a short settle window.
 
@@ -75,10 +77,11 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   and runs one pass when it expires.
 - Store tests drive the fake `ssh` through an outage file for the reset,
   end-to-end VPN, stop, Stop All, delete, group-stop, Restart All,
-  running-master, burst-coalescing, and rationed-reset cases; a monitor test
-  covers the baseline rule. The running-master and group-stop tests carry a
-  witness profile the pass must relaunch, so their negative assertions
-  cannot pass by arriving before it. Every
+  running-master, burst-coalescing, rationed-reset, and
+  notify-once-per-streak cases; a monitor test covers the baseline rule. The
+  running-master, stop-withdrawal, and group-stop tests carry a witness
+  profile the pass must act on, so their negative assertions cannot pass by
+  arriving before it. Every
   test store injects a fake observer, so no unit test watches the real
   network.
 - `git diff --check` passed on 2026-09-04.

@@ -1474,12 +1474,20 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             networkChangeSettleDelay: 0.01
         )
         let tunnel = makeLocalProfile()
+        // Exhausted alongside the profile under test but never stopped, so
+        // its return proves the reconnect pass ran.
+        let witness = makeGroupedProfile(name: "Witness", port: 43_284, group: nil)
         store.add(tunnel)
+        store.add(witness)
         store.start(tunnel)
+        store.start(witness)
+        defer { store.stopAll() }
 
         let retriesRanOut = await waitUntil {
-            if case .failed = store.phase(for: tunnel) { return true }
-            return false
+            var count = 0
+            if case .failed = store.phase(for: tunnel) { count += 1 }
+            if case .failed = store.phase(for: witness) { count += 1 }
+            return count == 2
         }
         XCTAssertTrue(retriesRanOut)
 
@@ -1488,16 +1496,11 @@ final class TunnelStoreIntegrationTests: XCTestCase {
 
         try FileManager.default.removeItem(at: outage)
         network.simulateChange()
-        // Wide margin: a reconnect pass delayed by CI load must land inside
-        // the observation window, not after the assertions.
-        try await Task.sleep(for: .milliseconds(500))
 
+        let witnessReturned = await waitUntil { store.phase(for: witness) == .running }
+        XCTAssertTrue(witnessReturned, "Phase: \(store.phase(for: witness))")
         XCTAssertEqual(store.phase(for: tunnel), .stopped)
-        XCTAssertEqual(store.runningCount, 0)
-        XCTAssertEqual(
-            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
-            1
-        )
+        XCTAssertEqual(store.runningCount, 1)
     }
 
     /// Task 063. Stopping a group also withdraws an exhausted member from the
@@ -1585,7 +1588,8 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     /// must relaunch exactly it, so the launch count proves the pass ran
     /// rather than merely that the assertions arrived before it did.
     func testNetworkChangeLeavesARunningProfileAlone() async throws {
-        let witnessSpec = "43296:127.0.0.1:80"
+        let witnessPort = 43_296
+        let witnessSpec = "\(witnessPort):127.0.0.1:80"
         let fixture = try makeFakeSSHFixture(
             overrides: ["RELAYBAR_FAKE_SSH_FAIL_SPEC": witnessSpec]
         )
@@ -1601,7 +1605,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             networkPathObserver: network
         )
         let tunnel = makeLocalProfile()
-        let witness = makeGroupedProfile(name: "Witness", port: 43_296, group: nil)
+        let witness = makeGroupedProfile(name: "Witness", port: witnessPort, group: nil)
         store.add(tunnel)
         store.add(witness)
         defer { store.stopAll() }
@@ -1877,6 +1881,65 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         network.simulateChange()
         let reconnected = await waitUntil { store.phase(for: exhausted) == .running }
         XCTAssertTrue(reconnected, "Phase after the change: \(store.phase(for: exhausted))")
+    }
+
+    /// Task 063. A profile no network change can fix keeps being started by
+    /// later changes — that is the point — but says so once. Only reaching
+    /// Running, or the user starting it again, earns another notification.
+    func testExhaustionNotifiesOncePerDeadStreak() async throws {
+        let outage = try makeOutageMarker()
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_OUTAGE_FILE": outage.path]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let network = FakeNetworkPathObserver()
+        let notifications = NotificationLog()
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 0,
+            failureNotifier: { name, message in
+                notifications.entries.append((name, message))
+            },
+            networkPathObserver: network
+        )
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+        defer { store.stopAll() }
+
+        func launches() throws -> Int {
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8))
+        }
+        func waitForExhaustion(after expectedLaunches: Int) async -> Bool {
+            await waitUntil {
+                guard case .failed = store.phase(for: tunnel) else { return false }
+                return (try? launches()) == expectedLaunches
+            }
+        }
+
+        store.start(tunnel)
+        XCTAssertTrue(await waitForExhaustion(after: 1))
+        XCTAssertEqual(notifications.entries.count, 1)
+
+        // Started again by the change, fails again, stays quiet.
+        network.simulateChange()
+        XCTAssertTrue(
+            await waitForExhaustion(after: 2),
+            "Phase: \(store.phase(for: tunnel))"
+        )
+        XCTAssertEqual(notifications.entries.count, 1)
+
+        network.simulateChange()
+        XCTAssertTrue(await waitForExhaustion(after: 3))
+        XCTAssertEqual(notifications.entries.count, 1)
+
+        // The user asking again earns another notification.
+        store.stop(tunnel)
+        store.start(tunnel)
+        XCTAssertTrue(await waitForExhaustion(after: 4))
+        XCTAssertEqual(notifications.entries.count, 2)
     }
 
     /// Task 063. The system monitor's first report describes the network the
@@ -2216,6 +2279,14 @@ final class FakeNetworkPathObserver: NetworkPathObserving {
 @MainActor
 private final class ChangeCounter {
     var count = 0
+}
+
+/// A reference-type log for the same reason as `ChangeCounter`: the store
+/// calls its notifier on the main actor, and a captured local would be
+/// mutated from a closure the compiler cannot pin there.
+@MainActor
+private final class NotificationLog {
+    var entries: [(name: String, message: String)] = []
 }
 
 private struct LegacyTunnel: Codable {

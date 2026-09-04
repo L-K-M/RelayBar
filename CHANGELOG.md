@@ -42,7 +42,8 @@ Notable RelayBar Scion changes are recorded here.
   whose retries ran out during the VPN session — the ladder gives up after
   about five minutes, which every VPN session outlasts — is started again as
   soon as the network changes. The exhaustion message and notification say
-  so. Running connections are never restarted on a path change, so a
+  so, once per dead streak rather than at every change. Running connections
+  are never restarted on a path change, so a
   split-tunnel VPN that leaves the host reachable keeps its sessions;
   stopping, editing, or deleting a failed profile withdraws it from the
   automatic retry.
