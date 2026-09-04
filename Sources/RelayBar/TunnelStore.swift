@@ -1164,9 +1164,10 @@ final class TunnelStore: ObservableObject {
             launchTunnel(id: id)
         }
 
-        let awaiting = profilesAwaitingNetworkChange
-        profilesAwaitingNetworkChange.removeAll()
-        for tunnel in tunnels where awaiting.contains(tunnel.id) {
+        // `startTunnel` withdraws each profile it starts, so a profile whose
+        // start is refused — a process still being reaped, say — stays armed
+        // for the next change instead of being dropped by a bulk clear.
+        for tunnel in tunnels where profilesAwaitingNetworkChange.contains(tunnel.id) {
             startTunnel(tunnel)
         }
     }

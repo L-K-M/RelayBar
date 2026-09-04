@@ -1448,6 +1448,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             store.phase(for: tunnel) == .running
         }
         XCTAssertTrue(reconnected)
+        XCTAssertEqual(store.runningCount, 1)
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
             launchesDuringOutage + 1
@@ -1724,8 +1725,10 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         )
         let deleted = makeGroupedProfile(name: "Deleted", port: 43_290, group: nil)
         let stopped = makeGroupedProfile(name: "Stopped", port: 43_291, group: nil)
+        let witness = makeGroupedProfile(name: "Witness", port: 43_292, group: nil)
         store.add(deleted)
         store.add(stopped)
+        store.add(witness)
         store.start(deleted)
         store.start(stopped)
         let bothRanOut = await waitUntil {
@@ -1741,18 +1744,34 @@ final class TunnelStoreIntegrationTests: XCTestCase {
 
         store.delete(deleted)
         store.stopAll()
-        XCTAssertEqual(store.tunnels.map(\.id), [stopped.id])
+        XCTAssertEqual(store.tunnels.map(\.id), [stopped.id, witness.id])
+        // Stop All reached a profile owning no process, retry or startup
+        // task: without that, its phase would still be failed.
         XCTAssertEqual(store.phase(for: stopped), .stopped)
+
+        // Armed after Stop All, so it survives it and its return is what
+        // proves the reconnect pass ran at all.
+        store.start(witness)
+        let witnessRanOut = await waitUntil {
+            if case .failed = store.phase(for: witness) { return true }
+            return false
+        }
+        XCTAssertTrue(witnessRanOut, "Phase: \(store.phase(for: witness))")
+        let launchesBeforeChange = masterInvocationCount(
+            try String(contentsOf: fixture.logURL, encoding: .utf8)
+        )
+        XCTAssertEqual(launchesBeforeChange, launchesDuringOutage + 1)
 
         try FileManager.default.removeItem(at: outage)
         network.simulateChange()
-        try await Task.sleep(for: .milliseconds(500))
 
+        let witnessReturned = await waitUntil { store.phase(for: witness) == .running }
+        XCTAssertTrue(witnessReturned, "Phase: \(store.phase(for: witness))")
         XCTAssertEqual(store.phase(for: stopped), .stopped)
-        XCTAssertEqual(store.runningCount, 0)
+        XCTAssertEqual(store.runningCount, 1)
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
-            launchesDuringOutage
+            launchesBeforeChange + 1
         )
     }
 

@@ -72,7 +72,9 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   and relaunches pending retries, and starts every saved profile in
   `profilesAwaitingNetworkChange`; `scheduleRetry`'s exhaustion branch
   records the profile there, and `start`, `stop(id:)`, `stopGroup`,
-  `stopAll`, and the non-tag branch of `update` remove it.
+  `stopAll`, `delete` (through `stop`), and the non-tag branch of `update`
+  remove it. `startTunnel` withdraws each profile a pass starts, so one whose
+  start is refused stays armed for the next change.
 - `NetworkPathMonitor.pathDidUpdate` swallows the first report; the store
   restarts a 2-second settle window on every change (`networkChangeTask`)
   and runs one pass when it expires.
