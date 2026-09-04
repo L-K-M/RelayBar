@@ -18,9 +18,10 @@ outlasts; when the VPN then dropped, nothing was left to retry.
 
 - Observe network path changes through one `NWPathMonitor`; treat the first
   report as the baseline and every later report as a change.
-- On a change, relaunch retrying profiles immediately with a fresh attempt
-  count, and start again any profile whose retries ran out while it was still
-  wanted. Never touch a running or starting master: a connection the change
+- On a change, relaunch retrying profiles immediately — with a fresh attempt
+  count at most three times per launch, so a profile no network can cure
+  still exhausts and notifies — and start again any profile whose retries ran
+  out while it was still wanted. Never touch a running or starting master: a connection the change
   severed exits on its own through server keepalives, and a connection it did
   not affect — a split-tunnel VPN — keeps its sessions.
 - An explicit stop, group Stop All, edit, or delete withdraws a failed profile
@@ -73,8 +74,9 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   restarts a 2-second settle window on every change (`networkChangeTask`)
   and runs one pass when it expires.
 - Store tests drive the fake `ssh` through an outage file for the reset,
-  end-to-end VPN, stop-withdrawal, Stop All, running-master, and
-  burst-coalescing cases; a monitor test covers the baseline rule. Every
+  end-to-end VPN, stop, Stop All, delete, group-stop, running-master,
+  burst-coalescing, and rationed-reset cases; a monitor test covers the
+  baseline rule. Every
   test store injects a fake observer, so no unit test watches the real
   network.
 - `git diff --check` passed on 2026-09-04.

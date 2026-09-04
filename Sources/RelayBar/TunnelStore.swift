@@ -67,6 +67,13 @@ final class TunnelStore: ObservableObject {
     /// withdraws them.
     private var profilesAwaitingNetworkChange: Set<UUID> = []
     private var networkChangeTask: Task<Void, Never>?
+    /// How many times per launch a network change may grant a fresh attempt
+    /// count. Rationing the reset — never the immediate relaunch, which is
+    /// what brings a tunnel back the moment a VPN drops — means a profile
+    /// that fails for a reason no network can cure still runs out of
+    /// attempts and notifies even on a network that never stops changing.
+    private let maxNetworkChangeLadderResets = 3
+    private var networkChangeLadderResets: [UUID: Int] = [:]
     private var pendingBrowserURLs: [UUID: URL] = [:]
     private var startupFailureMessages: [UUID: String] = [:]
     private var controlDirectories: [UUID: URL] = [:]
@@ -352,6 +359,7 @@ final class TunnelStore: ObservableObject {
     func start(_ tunnel: Tunnel) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
         profilesAwaitingNetworkChange.remove(tunnel.id)
+        networkChangeLadderResets[tunnel.id] = nil
         guard tunnel.isSafeToRun else {
             phases[tunnel.id] = .failed(
                 "This profile contains an invalid endpoint, conflicting listener, or blocked SSH option."
@@ -689,6 +697,7 @@ final class TunnelStore: ObservableObject {
         startupTasks[id] = nil
         runtimePorts[id] = allocations.isEmpty ? nil : allocations
         retryAttempts[id] = 0
+        networkChangeLadderResets[id] = nil
         phases[id] = .running
         openPendingBrowserURL(for: id)
     }
@@ -917,6 +926,7 @@ final class TunnelStore: ObservableObject {
     private func stop(id: UUID) {
         desiredTunnels[id] = nil
         profilesAwaitingNetworkChange.remove(id)
+        networkChangeLadderResets[id] = nil
         retryAttempts[id] = nil
         pendingBrowserURLs[id] = nil
         runtimePorts[id] = nil
@@ -1035,6 +1045,7 @@ final class TunnelStore: ObservableObject {
             retryAttempts[id] = nil
             retryDeadlines[id] = nil
             pendingBrowserURLs[id] = nil
+            networkChangeLadderResets[id] = nil
             // The user never asked for this stop, so their intent survives it:
             // a changed network path starts the profile again from scratch.
             profilesAwaitingNetworkChange.insert(id)
@@ -1103,8 +1114,9 @@ final class TunnelStore: ObservableObject {
     /// A changed network path invalidates the evidence behind every pending
     /// backoff and every spent retry budget: those failures happened on a
     /// network that no longer exists. Profiles waiting out a backoff relaunch
-    /// now with a fresh attempt count, and profiles whose retries ran out
-    /// while still wanted are started again through the normal start path.
+    /// now — with a fresh attempt count, a few times per launch — and
+    /// profiles whose retries ran out while still wanted are started again
+    /// through the normal start path.
     ///
     /// Running and starting profiles are left alone. A master whose
     /// connection the change severed exits on its own once server keepalives
@@ -1112,7 +1124,13 @@ final class TunnelStore: ObservableObject {
     /// change did not affect — a split-tunnel VPN, say — keeps its sessions.
     private func reconnectAfterNetworkChange() {
         for id in Array(desiredTunnels.keys) {
-            retryAttempts[id] = 0
+            if
+                (retryAttempts[id] ?? 0) > 0,
+                (networkChangeLadderResets[id] ?? 0) < maxNetworkChangeLadderResets
+            {
+                networkChangeLadderResets[id, default: 0] += 1
+                retryAttempts[id] = 0
+            }
             guard retryTasks[id] != nil else { continue }
             cancelRetry(for: id)
             launchTunnel(id: id)

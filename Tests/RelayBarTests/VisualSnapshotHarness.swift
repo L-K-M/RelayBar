@@ -22,7 +22,7 @@ final class VisualSnapshotHarness: XCTestCase {
         let suiteName = "RelayBarSnapshot.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = TunnelStore(defaults: defaults, networkPathObserver: FakeNetworkPathObserver())
+        let store = TunnelStore.makeForTesting(defaults: defaults)
 
         let fixtures: [(name: String, group: String?)] = [
             ("Hermes Dashboard", "Work"),
