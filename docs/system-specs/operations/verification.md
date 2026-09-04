@@ -5,7 +5,8 @@
 - Run `swift test` for the complete forwarding parser matrix, migration,
   typed-profile and group-tag validation, grouping and metadata-only mutation
   behavior, group lifecycle batching, control sequencing, rollback and
-  timeout, runtime port mapping, socket refusal, retry, cancellation, browser
+  timeout, runtime port mapping, socket refusal, retry, network-change
+  reconnect, cancellation, browser
   URL behavior, login-item state mapping, bundle-about behavior, update-state
   mapping through the injected no-network boundary, Remote Files connection
   reuse and cleanup, navigation, path/argument handling, listing parsing,
@@ -50,6 +51,14 @@ Start a DEBUG build with `--preview-window --flexible-forwarding-preview` to rev
 Start a DEBUG build with `--preview-window --grouping-preview <scenario>` to review saved-profile grouping without reading or changing the user's saved profiles. Supported scenarios are `empty`, `zero-tag`, `all-untagged`, `one-bucket`, `mixed`, `all-tagged`, `long-tag`, and `many-sections`. Review the flat-list threshold, section order, Ungrouped placement, long-label truncation, scrolling, picker and row-menu parity, inline Return/Escape behavior, rename, ungroup-all, the Start All/Stop All/Restart All commands with state-aware enablement, keyboard focus, and accessibility labels in light and dark appearance.
 
 Launch at Login changes require a signed packaged build verified manually for enable, login relaunch as the menu-bar-only app with unmarked profiles stopped and Start at Launch profiles starting automatically, disable without quitting the running app, and state synchronization after changes made directly in System Settings. Use the offscreen snapshot harness for the settings screen and its approval-required caption in light and dark appearance.
+
+Network-change reconnect changes additionally require a live check with a
+running profile whose SSH host is unreachable through a VPN: connect the VPN,
+confirm the profile retries and then fails with the message promising another
+try and one notification, keep the VPN up past the retry ladder, disconnect
+the VPN, and confirm the profile reaches Running within a few seconds without
+a second notification. Repeat with a VPN that leaves the host reachable and
+confirm the running profile is not restarted when the VPN connects.
 
 Start at Launch changes additionally require a launch with one marked safe profile, one unmarked profile, and one marked unsafe profile. The marked safe profile starts, the unmarked profile stays stopped, the unsafe profile fails on its own row, and toggling the preference from the row menu while a profile is running leaves it running and persists the new value. Review the editor switch and row-menu checkmark in light and dark appearance and with VoiceOver.
 

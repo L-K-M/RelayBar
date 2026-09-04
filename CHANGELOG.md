@@ -36,6 +36,15 @@ Notable RelayBar Scion changes are recorded here.
   point.
 ### Added
 
+- Tunnels come back on their own after a VPN connects or disconnects. RelayBar
+  now watches the network path: a change ends any pending retry backoff at
+  once with a fresh attempt count, and a profile whose retries ran out during
+  the VPN session — the ladder gives up after about five minutes, which every
+  VPN session outlasts — is started again as soon as the network changes. The
+  exhaustion message and notification say so. Running connections are never
+  restarted on a path change, so a split-tunnel VPN that leaves the host
+  reachable keeps its sessions; stopping, editing, or deleting a failed
+  profile withdraws it from the automatic retry.
 - The family release tooling: `scripts/release.sh` and `scripts/build.sh` are
   thin stubs over the shared engines from
   [release-tool](https://github.com/L-K-M/release-tool). One command bumps the

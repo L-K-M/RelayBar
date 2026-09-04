@@ -24,6 +24,11 @@ final class TunnelStore: ObservableObject {
     private let controlOperationTimeout: TimeInterval
     private let processTerminationGracePeriod: TimeInterval
     private let temporaryDirectory: URL
+    private let networkPathObserver: any NetworkPathObserving
+    /// Path updates arrive in bursts while a VPN brings its interface, routes,
+    /// and DNS up or down. One pass per window lets the routes finish
+    /// changing before the relaunch and bounds what a flapping link can cause.
+    private let networkChangeSettleDelay: TimeInterval
     private let storageKey = "savedTunnels.v2"
     private let legacyStorageKey = "savedTunnels.v1"
     /// An undecodable v2 blob is preserved here before the store starts from an
@@ -53,6 +58,13 @@ final class TunnelStore: ObservableObject {
     /// phase is current, and the countdown ticks in the view.
     private var retryDeadlines: [UUID: Date] = [:]
     private var startupTasks: [UUID: Task<Void, Never>] = [:]
+    /// Profiles whose automatic retries ran out while the user still wanted
+    /// them running. A VPN session outlasts the retry budget, so without this
+    /// every tunnel would stay failed after the VPN drops. The next network
+    /// path change starts them again; an explicit stop, edit, or delete
+    /// withdraws them.
+    private var profilesAwaitingNetworkChange: Set<UUID> = []
+    private var networkChangeTask: Task<Void, Never>?
     private var pendingBrowserURLs: [UUID: URL] = [:]
     private var startupFailureMessages: [UUID: String] = [:]
     private var controlDirectories: [UUID: URL] = [:]
@@ -75,7 +87,9 @@ final class TunnelStore: ObservableObject {
         processEnvironment: [String: String]? = nil,
         controlOperationTimeout: TimeInterval = 10,
         processTerminationGracePeriod: TimeInterval = 5,
-        temporaryDirectory: URL? = nil
+        temporaryDirectory: URL? = nil,
+        networkPathObserver: (any NetworkPathObserving)? = nil,
+        networkChangeSettleDelay: TimeInterval = 2
     ) {
         self.defaults = defaults
         self.sshExecutableURL = sshExecutableURL
@@ -92,6 +106,12 @@ final class TunnelStore: ObservableObject {
         self.processTerminationGracePeriod = max(0.1, processTerminationGracePeriod)
         self.temporaryDirectory = temporaryDirectory
             ?? FileManager.default.temporaryDirectory
+        if let networkPathObserver {
+            self.networkPathObserver = networkPathObserver
+        } else {
+            self.networkPathObserver = NetworkPathMonitor()
+        }
+        self.networkChangeSettleDelay = max(0, networkChangeSettleDelay)
 
         if
             let data = defaults.data(forKey: storageKey),
@@ -112,6 +132,10 @@ final class TunnelStore: ObservableObject {
             } else {
                 tunnels = []
             }
+        }
+
+        self.networkPathObserver.startObserving { [weak self] in
+            self?.networkPathDidChange()
         }
     }
 
@@ -166,6 +190,9 @@ final class TunnelStore: ObservableObject {
 
         let wasActive = desiredTunnels[tunnel.id] != nil
         if wasActive { stop(tunnel) }
+        // An edited profile that had run out of retries is no longer the one
+        // the user asked for; it waits for them, not for the network.
+        profilesAwaitingNetworkChange.remove(tunnel.id)
         tunnels[index] = tunnel
         phases[tunnel.id] = .stopped
         save()
@@ -322,6 +349,7 @@ final class TunnelStore: ObservableObject {
 
     func start(_ tunnel: Tunnel) {
         guard desiredTunnels[tunnel.id] == nil, processes[tunnel.id] == nil else { return }
+        profilesAwaitingNetworkChange.remove(tunnel.id)
         guard tunnel.isSafeToRun else {
             phases[tunnel.id] = .failed(
                 "This profile contains an invalid endpoint, conflicting listener, or blocked SSH option."
@@ -379,6 +407,7 @@ final class TunnelStore: ObservableObject {
             .union(retryTasks.keys)
             .union(startupTasks.keys)
             .union(controlOperations.values.map(\.tunnelID))
+            .union(profilesAwaitingNetworkChange)
         for id in activeIDs {
             stop(id: id)
         }
@@ -397,10 +426,13 @@ final class TunnelStore: ObservableObject {
     }
 
     func stopGroup(_ groupName: String) {
-        // Restricted to lifecycle-active members so a stopped or failed
-        // peer keeps its phase and failure message untouched.
+        // Restricted to lifecycle-active members — plus members still due a
+        // network-change retry, which the user is withdrawing here — so a
+        // stopped peer, or one that failed for a configuration reason, keeps
+        // its phase and failure message untouched.
         for tunnel in savedMembers(ofGroup: groupName)
-        where desiredTunnels[tunnel.id] != nil {
+        where desiredTunnels[tunnel.id] != nil
+            || profilesAwaitingNetworkChange.contains(tunnel.id) {
             stop(id: tunnel.id)
         }
     }
@@ -882,6 +914,7 @@ final class TunnelStore: ObservableObject {
 
     private func stop(id: UUID) {
         desiredTunnels[id] = nil
+        profilesAwaitingNetworkChange.remove(id)
         retryAttempts[id] = nil
         pendingBrowserURLs[id] = nil
         runtimePorts[id] = nil
@@ -994,11 +1027,15 @@ final class TunnelStore: ObservableObject {
         guard attempt <= maxRetryAttempts else {
             let profileName = desiredTunnels[id]?.displayName ?? "A profile"
             let failureMessage =
-                "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts."
+                "\(message) Automatic retry stopped after \(maxRetryAttempts) attempts. "
+                + "RelayBar tries again when the network changes."
             desiredTunnels[id] = nil
             retryAttempts[id] = nil
             retryDeadlines[id] = nil
             pendingBrowserURLs[id] = nil
+            // The user never asked for this stop, so their intent survives it:
+            // a changed network path starts the profile again from scratch.
+            profilesAwaitingNetworkChange.insert(id)
             phases[id] = .failed(failureMessage)
             failureNotifier(profileName, failureMessage)
             return
@@ -1040,6 +1077,45 @@ final class TunnelStore: ObservableObject {
         retryTasks[id]?.cancel()
         retryTasks[id] = nil
         retryDeadlines[id] = nil
+    }
+
+    private func networkPathDidChange() {
+        guard networkChangeTask == nil else { return }
+        networkChangeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: .seconds(networkChangeSettleDelay))
+            } catch {
+                return
+            }
+            self.networkChangeTask = nil
+            self.reconnectAfterNetworkChange()
+        }
+    }
+
+    /// A changed network path invalidates the evidence behind every pending
+    /// backoff and every spent retry budget: those failures happened on a
+    /// network that no longer exists. Profiles waiting out a backoff relaunch
+    /// now with a fresh attempt count, and profiles whose retries ran out
+    /// while still wanted are started again through the normal start path.
+    ///
+    /// Running and starting profiles are left alone. A master whose
+    /// connection the change severed exits on its own once server keepalives
+    /// fail, and its next retry then starts from attempt one; a master the
+    /// change did not affect — a split-tunnel VPN, say — keeps its sessions.
+    private func reconnectAfterNetworkChange() {
+        for id in Array(desiredTunnels.keys) {
+            retryAttempts[id] = 0
+            guard retryTasks[id] != nil else { continue }
+            cancelRetry(for: id)
+            launchTunnel(id: id)
+        }
+
+        let awaiting = profilesAwaitingNetworkChange
+        profilesAwaitingNetworkChange.removeAll()
+        for tunnel in tunnels where awaiting.contains(tunnel.id) {
+            start(tunnel)
+        }
     }
 
     private func openPendingBrowserURL(for id: UUID) {
