@@ -19,11 +19,15 @@
 `TunnelStore` is main-actor isolated and publishes saved tunnels plus phase by UUID. It separately tracks:
 
 - desired active profiles;
+- profiles whose retries ran out while still wanted, awaiting a network path change;
 - master and control processes plus bounded output buffers;
 - retry attempts and scheduled tasks;
+- the coalescing task for a pending network-change reconnect pass;
 - pending browser URLs.
 - allocated remote ports by profile UUID and rule UUID;
 - private control locations and app-owned local socket identities.
+
+The store observes network path changes through an injected `NetworkPathObserving` boundary; the app supplies an `NWPathMonitor`-backed observer and tests supply a fake that fires on demand.
 
 The desired-active state lets a retrying profile remain stoppable while no process exists. A metadata-only group mutation updates both the saved and desired-active profile copies without replacing any runtime state. Remote Files derives saved SSH connections from profile-level host and argument data and continues deduplicating equivalent connections regardless of rule count or group tag.
 
