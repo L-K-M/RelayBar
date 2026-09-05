@@ -10,7 +10,12 @@
   exceeded its watchdog; cancelled publication returned `CancellationError`;
   swapping the source uploaded the replacement contents instead of the chosen
   payload. Test watchdogs stopped the hung fixtures. Existing tests passed.
-- Post-fix macOS CI: pending.
+- Fix head `84ddaf8`: [macOS CI](https://github.com/L-K-M/RelayBar/actions/runs/33961047896)
+  passed 375 tests with 17 opt-in skips and zero failures, including every new
+  regression. The unsigned Xcode Release build passed. Local task-registry,
+  fixture-syntax, and whitespace checks passed.
+- Two independent read-only reviews found no remaining blocking issue in the
+  upload fixes. Live and visual acceptance remain pending below.
 
 ## Review scope
 
