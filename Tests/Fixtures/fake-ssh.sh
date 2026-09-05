@@ -14,6 +14,10 @@ ignore_term_spec="${RELAYBAR_FAKE_SSH_IGNORE_TERM_SPEC:-}"
 # Lets process-shutdown tests prove RelayBar escalates a wedged master to
 # SIGKILL instead of waiting forever for a termination callback.
 ignore_master_term="${RELAYBAR_FAKE_SSH_IGNORE_MASTER_TERM:-}"
+# Simulates a network outage such as a VPN session: while this file exists, a
+# master fails to connect the way ssh does when its host is unreachable. A test
+# brings the network back by deleting the file.
+outage_file="${RELAYBAR_FAKE_SSH_OUTAGE_FILE:-}"
 
 if [ -n "$log_file" ]; then
     {
@@ -54,6 +58,10 @@ if [ "$is_master" -eq 1 ]; then
     if [ -z "$control_socket" ]; then
         printf 'missing fake control socket\n' >&2
         exit 2
+    fi
+    if [ -n "$outage_file" ] && [ -f "$outage_file" ]; then
+        printf 'ssh: connect to host example.com port 22: No route to host\n' >&2
+        exit 255
     fi
     if [ -n "$pid_file" ]; then
         printf '%s\n' "$$" > "$pid_file"

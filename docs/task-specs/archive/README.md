@@ -63,3 +63,4 @@ Tasks 005 through 019 came from one review pass over the app sources for reliabi
 - [Task 057 — Stable Form Accessibility Labels](057-stable-form-accessibility-labels.md)
 - [Task 058 — The Editor Explains Why Save Is Disabled](058-editor-validation-reasons.md)
 - [Task 059 — Notify When a Profile Stops Retrying](059-retry-exhaustion-notification.md)
+- [Task 063 — Reconnect After a Network Change](063-reconnect-after-network-change.md)

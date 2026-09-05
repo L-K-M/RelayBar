@@ -35,7 +35,8 @@ final class LiveLoopbackTests: XCTestCase {
         let store = TunnelStore(
             defaults: defaults,
             maxRetryAttempts: 2,
-            retryDelayProvider: { _ in 0.2 }
+            retryDelayProvider: { _ in 0.2 },
+            networkPathObserver: FakeNetworkPathObserver()
         )
         let forward = ForwardingRule(
             kind: .local,
