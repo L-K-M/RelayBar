@@ -13,9 +13,9 @@ without adding search, indexing, mounting, or editing.
   activation, or Return on a focused location, is the explicit connection
   action; focus and arrow-key traversal never connect.
 - **Recent Folders** shows at most six of the 16 locally persisted successful
-  host-and-normalized-path pairs before **Show All**. **Recent Hosts** retains
-  at most eight connections and can disclose up to three additional,
-  nonduplicated paths before its own overflow action.
+  connection-and-normalized-path pairs before **Show All**. **Recent Hosts**
+  retains at most eight connections and can disclose up to three further paths
+  that Recent Folders is not already showing, before its own overflow action.
 - **Add Path…** opens a focused sheet containing the complete host picker, one
   validated absolute path, and **Add Host…**. A failed open leaves the entered
   host and path available for retry. A forwarding profile is not required.
@@ -28,11 +28,13 @@ without adding search, indexing, mounting, or editing.
   hosts; typed text is never replaced.
 - While an initial folder or file open is pending, the welcome detail and the
   sheet offer **Cancel** with the standard cancel keyboard action. Cancelling
-  retires the pending load and owned SSH session immediately, stays on the
-  welcome workspace, preserves the entered path and host selection, and
-  neither reports an error nor records a recent location. A delayed success or
-  failure from the cancelled generation is discarded, and a later explicit Open
-  starts a clean request.
+  retires the pending load and shuts the owned SSH session down immediately,
+  including a master that is still starting — unlike cancelling one startup
+  waiter inside an established session, which leaves the master running. It
+  stays on the welcome workspace, preserves the entered path and host
+  selection, and neither reports an error nor records a recent location. A
+  delayed success or failure from the cancelled generation is discarded, and a
+  later explicit Open starts a clean request.
 - The server picker combines successfully opened recent connections, standalone hosts saved in RelayBar, forwarding-profile connections, and concrete aliases from `~/.ssh/config`, in that priority order.
 - Equivalent entries with the exact same SSH host and SSH arguments collapse into one SSH-host entry. Group tags and forwarding-rule differences do not split equivalent connections. Different host aliases or SSH arguments remain separate because they may select different credentials, ports, or routes.
 - A single Quick Add tunnel whose generated name matches its forwarded destination is labelled by its SSH host in the server picker. An intentional custom name remains visible with the SSH host for context when that SSH connection is not duplicated.
@@ -151,7 +153,7 @@ Empty folders show a single focused empty state with an explicit accessibility d
 - RelayBar starts one foreground `/usr/bin/ssh` multiplexing master for the active Remote Files connection, then invokes `/usr/bin/sftp` directly for each listing, preview, download, upload, publication, and cleanup operation. It never invokes a shell.
 - The master uses `-N`, `-T`, `-M`, `ControlPersist=no`, `ClearAllForwardings=yes`, `BatchMode=yes`, a 10-second connect timeout, forward-failure exit, and server keepalives. It shares the forwarding master's forced `ForkAfterAuthentication=no`, `PermitLocalCommand=no`, `Tunnel=no`, `GatewayPorts=no`, `ForwardAgent=no`, `ForwardX11=no`, and `ForwardX11Trusted=no` policy. Its input and output are discarded and its last 16 KiB of standard error is retained for a normalized failure.
 - A one-character control socket lives below a short app-owned directory that `mkdtemp(3)` creates atomically with `0700` permissions under the user's private macOS temporary directory. Its UTF-8 path budget reserves the terminating NUL and OpenSSH's 17-byte temporary mux-listener suffix instead of checking only the final socket name. SFTP children receive that exact `ControlPath` with `ControlMaster=no`; RelayBar neither discovers nor attaches to a user-managed socket or a forwarding profile's master.
-- Concurrent first operations serialize behind one master startup. Readiness is detected at 50-millisecond intervals with a bounded 120-second ceiling for high-latency and jump-host handshakes. Cancelling a startup waiter resumes it immediately without stopping the master, and cancelling an SFTP child leaves the healthy master running. An unexpected master exit cleans its socket and does not reconnect in the background; the next explicit operation creates a new master.
+- Concurrent first operations serialize behind one master startup. Readiness is detected at 50-millisecond intervals with a bounded 120-second ceiling for high-latency and jump-host handshakes. Cancelling a startup waiter resumes it immediately without stopping the master, and cancelling an SFTP child leaves the healthy master running; cancelling the initial open itself is the exception, because it retires the whole session. An unexpected master exit cleans its socket and does not reconnect in the background; the next explicit operation creates a new master.
 - The session and directory cache end on connection change, welcome return,
   window close, or app quit. Delayed callbacks cannot revive the retired
   session. A failed cross-host root open clears the former host's listing before
