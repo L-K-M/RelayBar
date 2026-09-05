@@ -20,6 +20,13 @@ protocol RemoteFileServing: AnyObject, Sendable {
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws
     func preparePreview(server: RemoteServer, entry: RemoteFileEntry) async throws -> URL
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws
     func shutdown()
 }
 
@@ -41,11 +48,123 @@ extension RemoteFileServing {
     }
 
     func shutdown() {}
+
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws {
+        throw RemoteFileError.uploadCapabilityUnavailable("remote publication")
+    }
+
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool
+    ) async throws {
+        try await upload(
+            server: server,
+            localFile: localFile,
+            remoteDirectory: remoteDirectory,
+            replaceExisting: replaceExisting
+        ) { _ in }
+    }
+}
+
+/// Pin the chosen inode before SSH work; sftp must never reopen a mutable path.
+private struct LocalUploadSnapshot {
+    private static let copyBufferSize = 64 * 1_024
+    private static let permissionMask = mode_t(S_IRWXU | S_IRWXG | S_IRWXO)
+    private static let privateFileMode = mode_t(S_IRUSR | S_IWUSR)
+
+    let url: URL
+    private let directory: URL
+    private let fileManager: FileManager
+
+    init(source: URL, fileManager: FileManager) throws {
+        let descriptor = Darwin.open(
+            source.path,
+            O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC
+        )
+        guard descriptor >= 0 else { throw RemoteFileError.invalidUploadSource }
+        let input = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? input.close() }
+
+        var attributes = stat()
+        guard
+            fstat(descriptor, &attributes) == 0,
+            attributes.st_mode & S_IFMT == S_IFREG,
+            attributes.st_size >= 0
+        else {
+            throw RemoteFileError.invalidUploadSource
+        }
+        try Task.checkCancellation()
+
+        var template = Array(fileManager.temporaryDirectory
+            .appendingPathComponent("RelayBarUpload-XXXXXX").path.utf8CString)
+        let directory = try template.withUnsafeMutableBufferPointer { buffer -> URL in
+            guard let base = buffer.baseAddress, let path = mkdtemp(base) else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            return URL(fileURLWithPath: String(cString: path), isDirectory: true)
+        }
+        let payload = directory.appendingPathComponent("payload")
+
+        do {
+            let outputDescriptor = Darwin.open(
+                payload.path,
+                O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                Self.privateFileMode
+            )
+            guard outputDescriptor >= 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            let output = FileHandle(fileDescriptor: outputDescriptor, closeOnDealloc: true)
+            defer { try? output.close() }
+
+            // Bound memory and stop at the opened file's size, even if it grows.
+            var remaining = attributes.st_size
+            while remaining > 0 {
+                try Task.checkCancellation()
+                let count = Int(min(Int64(Self.copyBufferSize), remaining))
+                guard let data = try input.read(upToCount: count), !data.isEmpty else {
+                    throw RemoteFileError.invalidUploadSource
+                }
+                try output.write(contentsOf: data)
+                remaining -= Int64(data.count)
+            }
+            try Task.checkCancellation()
+
+            // Preserve upload modes; the enclosing 0700 directory keeps bytes private.
+            guard fchmod(outputDescriptor, attributes.st_mode & Self.permissionMask) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
+        }
+        self.url = payload
+        self.directory = directory
+        self.fileManager = fileManager
+    }
+
+    func remove() {
+        try? fileManager.removeItem(at: directory)
+    }
 }
 
 /// Configuration is immutable after initialization. Each command owns separate
 /// process state, and the small boxes shared with callbacks synchronize access.
 final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
+    private enum UploadPublication: Equatable {
+        case notAttempted
+        case unconfirmed
+        case confirmed
+    }
+
     private enum CapturedStandardOutput {
         case text(String)
         case invalidUTF8
@@ -58,6 +177,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let error: String
         /// True when either the output or diagnostics capture exceeds its byte cap.
         let exceededCaptureLimit: Bool
+        let sessionToken: String?
     }
 
     private final class ProcessBox: @unchecked Sendable {
@@ -236,6 +356,45 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
+    private final class CapabilityBox: @unchecked Sendable {
+        private struct Entry {
+            let capabilities: RemoteUploadCapabilities
+            let sessionToken: String?
+        }
+
+        private let lock = NSLock()
+        private var values: [RemoteServer.ConnectionIdentity: Entry] = [:]
+
+        func value(
+            for identity: RemoteServer.ConnectionIdentity,
+            sessionToken: String?
+        ) -> RemoteUploadCapabilities? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard values[identity]?.sessionToken == sessionToken else { return nil }
+            return values[identity]?.capabilities
+        }
+
+        func store(
+            _ value: RemoteUploadCapabilities,
+            for identity: RemoteServer.ConnectionIdentity,
+            sessionToken: String?
+        ) {
+            lock.lock()
+            values[identity] = Entry(
+                capabilities: value,
+                sessionToken: sessionToken
+            )
+            lock.unlock()
+        }
+
+        func removeAll() {
+            lock.lock()
+            values.removeAll()
+            lock.unlock()
+        }
+    }
+
     private let executableURL: URL
     private let fileManager: FileManager
     private let previewSizeLimit: Int64
@@ -245,6 +404,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     private let forceStopDelay: TimeInterval
     private let signalProcess: @Sendable (pid_t, Int32) -> Int32
     private let connectionSession: RemoteFileSSHSession?
+    private let uploadCleanupTimeout: Duration
+    private let capabilityBox = CapabilityBox()
 
     init(
         executableURL: URL = URL(fileURLWithPath: "/usr/bin/sftp"),
@@ -254,6 +415,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         standardOutputLimit: Int64 = 32 * 1_024 * 1_024,
         standardErrorLimit: Int64 = 1 * 1_024 * 1_024,
         forceStopDelay: TimeInterval = 2,
+        uploadCleanupTimeout: Duration = .seconds(10),
         connectionSharing: Bool = true,
         sshExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/ssh"),
         sessionTemporaryDirectory: URL? = nil,
@@ -269,6 +431,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         self.standardOutputLimit = standardOutputLimit
         self.standardErrorLimit = standardErrorLimit
         self.forceStopDelay = forceStopDelay
+        self.uploadCleanupTimeout = uploadCleanupTimeout
         self.signalProcess = signalProcess
         connectionSession = connectionSharing
             ? RemoteFileSSHSession(
@@ -283,6 +446,7 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
     }
 
     func shutdown() {
+        capabilityBox.removeAll()
         connectionSession?.shutdown()
     }
 
@@ -325,7 +489,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
 
     private func listingOutput(
         server: RemoteServer,
-        path: String
+        path: String,
+        requiredSessionToken: String? = nil
     ) async throws -> (output: String, normalizedPath: String) {
         guard RemotePath.validationMessage(for: path) == nil else {
             throw RemoteFileError.invalidPath
@@ -333,10 +498,23 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let normalizedPath = RemotePath.normalized(path)
         let result = try await run(
             server: server,
-            batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath)
+            batchInput: SFTPCommandBuilder.listCommand(path: normalizedPath),
+            requiredSessionToken: requiredSessionToken
         )
         try validate(result)
         return (try Self.decodedListing(result), normalizedPath)
+    }
+
+    private func decodedListingOutput(
+        server: RemoteServer,
+        path: String,
+        requiredSessionToken: String?
+    ) async throws -> String {
+        try await listingOutput(
+            server: server,
+            path: path,
+            requiredSessionToken: requiredSessionToken
+        ).output
     }
 
     /// One decoding path for every listing, so a caller cannot bypass the
@@ -480,6 +658,234 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
+    func upload(
+        server: RemoteServer,
+        localFile: URL,
+        remoteDirectory: String,
+        replaceExisting: Bool,
+        phase: @escaping @Sendable (RemoteUploadPhase) -> Void
+    ) async throws {
+        let values = try localFile.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .isAliasFileKey, .fileSizeKey]
+        )
+        guard
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            values.isAliasFile != true,
+            let fileSize = values.fileSize,
+            fileSize >= 0
+        else {
+            throw RemoteFileError.invalidUploadSource
+        }
+        guard RemotePath.validationMessage(for: remoteDirectory) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        let directory = RemotePath.normalized(remoteDirectory)
+        let name = localFile.lastPathComponent
+        guard !name.isEmpty else { throw RemoteFileError.invalidUploadSource }
+        let target = RemotePath.joining(directory, name)
+        guard RemotePath.validationMessage(for: target) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        let snapshot = try LocalUploadSnapshot(source: localFile, fileManager: fileManager)
+        defer { snapshot.remove() }
+
+        let initialEntries = try await list(server: server, path: directory)
+        if let existing = initialEntries.first(where: { $0.name == name }) {
+            guard existing.kind == .file else {
+                throw RemoteFileError.unsupportedUploadTarget
+            }
+            guard replaceExisting else {
+                throw RemoteFileError.uploadConflict
+            }
+        }
+
+        let capabilityContext = try await uploadCapabilities(for: server)
+        let capabilities = capabilityContext.capabilities
+        if replaceExisting {
+            guard capabilities.supportsPOSIXRename else {
+                throw RemoteFileError.uploadCapabilityUnavailable("atomic replace")
+            }
+        } else {
+            guard capabilities.supportsHardLink else {
+                throw RemoteFileError.uploadCapabilityUnavailable("no-overwrite publish")
+            }
+        }
+
+        let stagingName = ".relaybar-upload-\(UUID().uuidString).partial"
+        let staging = RemotePath.joining(directory, stagingName)
+        guard RemotePath.validationMessage(for: staging) == nil else {
+            throw RemoteFileError.invalidPath
+        }
+
+        var ownsStaging = false
+        var publication = UploadPublication.notAttempted
+        do {
+            // `put` may create the staging entry before its child is cancelled
+            // or reports failure. Claim the exact name before launching it so
+            // every post-launch exit attempts bounded cleanup.
+            ownsStaging = true
+            phase(.staging)
+            let uploadResult = try await run(
+                server: server,
+                batchInput: SFTPCommandBuilder.uploadCommand(
+                    localPath: snapshot.url.path,
+                    remotePath: staging
+                ),
+                requiredSessionToken: capabilityContext.sessionToken
+            )
+            try validate(uploadResult)
+            try Task.checkCancellation()
+
+            phase(.publishing)
+            let finalEntries = try SFTPListingParser.parse(
+                try await decodedListingOutput(
+                    server: server,
+                    path: directory,
+                    requiredSessionToken: capabilityContext.sessionToken
+                ),
+                parentPath: directory
+            )
+            if let existing = finalEntries.first(where: { $0.name == name }) {
+                guard existing.kind == .file else {
+                    throw RemoteFileError.unsupportedUploadTarget
+                }
+                guard replaceExisting else {
+                    throw RemoteFileError.uploadConflict
+                }
+            }
+
+            let publishCommand = replaceExisting
+                ? try SFTPCommandBuilder.renameCommand(
+                    existingPath: staging,
+                    newPath: target
+                )
+                : try SFTPCommandBuilder.hardLinkCommand(
+                    existingPath: staging,
+                    newPath: target
+                )
+            try Task.checkCancellation()
+            // Once sent, cancellation cannot prove whether the server committed it.
+            publication = .unconfirmed
+            let publishResult = try await run(
+                server: server,
+                batchInput: publishCommand,
+                requiredSessionToken: capabilityContext.sessionToken
+            )
+            do {
+                try validate(publishResult)
+                publication = .confirmed
+            } catch {
+                let diagnosticEntries = try? SFTPListingParser.parse(
+                    try await decodedListingOutput(
+                        server: server,
+                        path: directory,
+                        requiredSessionToken: capabilityContext.sessionToken
+                    ),
+                    parentPath: directory
+                )
+                if !replaceExisting,
+                   diagnosticEntries?.contains(where: { $0.name == name }) == true
+                {
+                    throw RemoteFileError.uploadConflict
+                }
+                throw error
+            }
+
+            if replaceExisting {
+                ownsStaging = false
+            } else {
+                phase(.cleaningUp)
+                try await removeUploadStaging(server: server, path: staging)
+                ownsStaging = false
+            }
+        } catch {
+            let uploadError: Error = publication == .unconfirmed && error is CancellationError
+                ? RemoteFileError.uploadPublicationUnconfirmed
+                : error
+            if ownsStaging {
+                phase(.cleaningUp)
+                let cleaned = await cleanupUploadStaging(server: server, path: staging)
+                if !cleaned {
+                    let context = publication == .confirmed
+                        ? "The upload was published."
+                        : uploadError.localizedDescription
+                    throw RemoteFileError.uploadCleanupUnconfirmed(context)
+                }
+                if publication == .confirmed { return }
+            }
+            throw uploadError
+        }
+    }
+
+    private func uploadCapabilities(
+        for server: RemoteServer
+    ) async throws -> (
+        capabilities: RemoteUploadCapabilities,
+        sessionToken: String?
+    ) {
+        let sessionToken: String?
+        if let connectionSession {
+            sessionToken = try await connectionSession.controlSocket(for: server).path
+        } else {
+            sessionToken = nil
+        }
+        if let cached = capabilityBox.value(
+            for: server.connectionIdentity,
+            sessionToken: sessionToken
+        ) {
+            return (cached, sessionToken)
+        }
+        let result = try await run(
+            server: server,
+            batchInput: SFTPCommandBuilder.quitCommand,
+            diagnosticLevel: 2,
+            requiredSessionToken: sessionToken
+        )
+        try validate(result)
+        let capabilities = RemoteUploadCapabilities.parse(result.error)
+        capabilityBox.store(
+            capabilities,
+            for: server.connectionIdentity,
+            sessionToken: result.sessionToken
+        )
+        return (capabilities, result.sessionToken)
+    }
+
+    private func removeUploadStaging(server: RemoteServer, path: String) async throws {
+        // Deadline cancellation reaches the child; the group waits for its reaping.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { [self] in
+                let result = try await run(
+                    server: server,
+                    batchInput: SFTPCommandBuilder.removeCommand(path: path)
+                )
+                try validate(result)
+            }
+            group.addTask { [uploadCleanupTimeout] in
+                try await Task.sleep(for: uploadCleanupTimeout)
+                throw RemoteFileError.commandFailed("Remote staging cleanup timed out.")
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
+
+    private func cleanupUploadStaging(server: RemoteServer, path: String) async -> Bool {
+        // Recovery survives user cancellation, but retains its own cleanup deadline.
+        let task = Task.detached { [self] in
+            do {
+                try await removeUploadStaging(server: server, path: path)
+                return true
+            } catch {
+                return false
+            }
+        }
+        return await task.value
+    }
+
     private func runTransfer(
         server: RemoteServer,
         batchInput: String,
@@ -528,7 +934,12 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
     }
 
-    private func run(server: RemoteServer, batchInput: String) async throws -> CommandResult {
+    private func run(
+        server: RemoteServer,
+        batchInput: String,
+        diagnosticLevel: Int = 0,
+        requiredSessionToken: String? = nil
+    ) async throws -> CommandResult {
         let controlSocket: URL?
         if let connectionSession {
             controlSocket = try await connectionSession.controlSocket(for: server)
@@ -536,6 +947,9 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
             controlSocket = nil
         }
         try Task.checkCancellation()
+        if let requiredSessionToken, controlSocket?.path != requiredSessionToken {
+            throw RemoteFileError.connectionSessionUnavailable
+        }
         if
             let controlSocket,
             !fileManager.fileExists(atPath: controlSocket.path)
@@ -544,7 +958,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         }
         let arguments = try SFTPCommandBuilder.processArguments(
             for: server,
-            controlSocket: controlSocket
+            controlSocket: controlSocket,
+            diagnosticLevel: diagnosticLevel
         )
         let processBox = ProcessBox(
             forceStopDelay: forceStopDelay,
@@ -627,7 +1042,8 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                                 status: status,
                                 output: capturedOutput.output,
                                 error: capturedError.text,
-                                exceededCaptureLimit: exceededCaptureLimit
+                                exceededCaptureLimit: exceededCaptureLimit,
+                                sessionToken: controlSocket?.path
                             )
                         )
                     }
@@ -680,7 +1096,9 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
                     continuation.resume(throwing: error)
                 }
             }
-            try Task.checkCancellation()
+            if Task.isCancelled, result.status != 0 {
+                throw CancellationError()
+            }
             return result
         } onCancel: {
             processBox.cancel()
@@ -861,7 +1279,13 @@ final class SFTPRemoteFileService: RemoteFileServing, @unchecked Sendable {
         let lines = errorOutput
             .split(whereSeparator: \.isNewline)
             .map(String.init)
-            .filter { !$0.hasPrefix("sftp>") }
+            .filter {
+                let lowercase = $0.lowercased()
+                return !$0.hasPrefix("sftp>")
+                    && !lowercase.hasPrefix("debug1:")
+                    && !lowercase.hasPrefix("debug2:")
+                    && !lowercase.hasPrefix("debug3:")
+            }
         let rawDetail = lines.suffix(2).joined(separator: " ")
         let safeScalars = rawDetail.unicodeScalars.filter {
             !CharacterSet.controlCharacters.contains($0)

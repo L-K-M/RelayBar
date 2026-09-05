@@ -118,6 +118,7 @@ final class RelayBarAppDelegate:
         // Before TunnelStore.shared reads its first key: the new bundle
         // identifier means a new, empty preferences domain.
         LegacyDefaultsMigration.run()
+        LegacyDefaultsMigration.removeRetiredKeys()
         installMainMenu()
         setUpStatusItem()
         observeTunnelActivity()
@@ -167,7 +168,9 @@ final class RelayBarAppDelegate:
             RelayBarAppDelegate.userInitiatedQuitRequested,
             store.runningCount > 0
         else {
-            return .terminateNow
+            return Self.retiresRemoteFilesBeforeReplying()
+                ? .terminateLater
+                : .terminateNow
         }
         // `runningCount` is the store's one definition of active — starting,
         // retrying, or running (isLifecycleActive) — so connect and backoff
@@ -188,6 +191,20 @@ final class RelayBarAppDelegate:
 
     @objc private func quitFromMenu(_ sender: Any?) {
         RelayBarAppDelegate.requestUserQuit()
+    }
+
+    /// Asks Remote Files to retire before the process exits and returns
+    /// whether the reply is now owed later. True means the window controller
+    /// took ownership of the single `reply(toApplicationShouldTerminate:)`
+    /// and will send it after upload cleanup and SSH-master retirement;
+    /// false means the caller still owes the reply. Cleanup has its own
+    /// deadline and reaps its cancelled SFTP child before returning.
+    private static func retiresRemoteFilesBeforeReplying() -> Bool {
+        RemoteFilesWindowController.shared.prepareForApplicationTermination(
+            completion: {
+                NSApplication.shared.reply(toApplicationShouldTerminate: true)
+            }
+        )
     }
 
     /// Presenting a modal alert synchronously inside the terminate dispatch
@@ -226,9 +243,11 @@ final class RelayBarAppDelegate:
             // it was queued; confirm only against work still alive now.
             let activeCount = store.runningCount
             guard activeCount > 0 else {
-                NSApplication.shared.reply(
-                    toApplicationShouldTerminate: true
-                )
+                if !Self.retiresRemoteFilesBeforeReplying() {
+                    NSApplication.shared.reply(
+                        toApplicationShouldTerminate: true
+                    )
+                }
                 return
             }
             NSApplication.shared.activate(ignoringOtherApps: true)
@@ -248,9 +267,21 @@ final class RelayBarAppDelegate:
             alert.addButton(withTitle: QuitConfirmation.cancelButtonTitle)
             let confirmed = alert.runModal() == .alertFirstButtonReturn
             RelayBarAppDelegate.userInitiatedQuitRequested = false
-            NSApplication.shared.reply(
-                toApplicationShouldTerminate: confirmed
-            )
+            guard confirmed else {
+                NSApplication.shared.reply(
+                    toApplicationShouldTerminate: false
+                )
+                return
+            }
+            // Stopping tunnels is not the only cleanup this quit owes: a
+            // confirmed quit reaches the same Remote Files retirement the
+            // unprompted path takes, or an upload's hidden staging name
+            // would be abandoned on exactly the quits the user confirmed.
+            if !Self.retiresRemoteFilesBeforeReplying() {
+                NSApplication.shared.reply(
+                    toApplicationShouldTerminate: true
+                )
+            }
         }
         // The alert is answered on a later turn, so AppKit must be told to
         // wait for that reply rather than terminate now.
@@ -960,10 +991,23 @@ enum LegacyDefaultsMigration {
         "savedTunnels.v1",
         "remoteFiles.savedServers.v1",
         "remoteFiles.recentServers.v1",
-        "remoteFiles.lastPaths.v1"
+        "remoteFiles.recentLocations.v1"
     ]
 
     static let completionKey = "migratedLegacyRelayBarDefaults"
+
+    /// Scion's own retired key. Earlier builds kept one last opened path per
+    /// connection here; recent locations replaced it, and a successful open
+    /// repopulates that history, so the stale blob is removed rather than
+    /// converted. Removal is idempotent and runs outside the once-only
+    /// migration so upgrades from any earlier build are covered.
+    static let retiredKeys = ["remoteFiles.lastPaths.v1"]
+
+    static func removeRetiredKeys(from defaults: UserDefaults = .standard) {
+        for key in retiredKeys {
+            defaults.removeObject(forKey: key)
+        }
+    }
 
     /// Returns the keys actually copied, which is empty on every launch after
     /// the first — including the first launch of a fresh install, where there

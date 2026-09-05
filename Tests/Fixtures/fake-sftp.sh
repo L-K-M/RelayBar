@@ -1,12 +1,138 @@
 #!/bin/sh
 
 host=""
+control_socket=""
 for argument in "$@"; do
     host="$argument"
+    case "$argument" in
+        ControlPath=*) control_socket=${argument#ControlPath=} ;;
+    esac
 done
 
 IFS= read -r command
 local_path=$(printf '%s\n' "$command" | sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/')
+
+case "$host" in
+    RelayBarUploadNew-*|RelayBarUploadReplace-*|RelayBarUploadNoHardLink-*|RelayBarUploadNoRename-*|RelayBarUploadRace-*|RelayBarUploadLinkCollision-*|RelayBarUploadCancel-*|RelayBarUploadPublishCancel-*|RelayBarUploadCleanupFail-*|RelayBarUploadCleanupRetry-*|RelayBarUploadPublishCleanupFail-*|RelayBarUploadDirectory-*|RelayBarUploadSymlink-*|RelayBarUploadCache-*|RelayBarUploadSessionChange-*|RelayBarUploadCleanupHang-*|RelayBarUploadLinkReplyLost-*|RelayBarUploadRenameReplyLost-*|RelayBarUploadSourceSwap-*)
+        upload_log="/tmp/$host.log"
+        upload_state="/tmp/$host.state"
+        printf '%s\n' "$command" >> "$upload_log"
+
+        case "$command" in
+            quit*)
+                case "$host" in
+                    RelayBarUploadNoHardLink-*)
+                        printf '%s\n' 'debug2: Server supports extension "posix-rename@openssh.com" revision 1' >&2
+                        ;;
+                    RelayBarUploadNoRename-*)
+                        printf '%s\n' 'debug2: Server supports extension "hardlink@openssh.com" revision 1' >&2
+                        ;;
+                    *)
+                        printf '%s\n' 'debug2: Server supports extension "posix-rename@openssh.com" revision 1' >&2
+                        printf '%s\n' 'debug2: Server supports extension "hardlink@openssh.com" revision 1' >&2
+                        ;;
+                esac
+                ;;
+            ls*)
+                printf '%s\n' '-rw-r--r-- 1 alice staff 4 Aug 24 12:00 baseline.txt'
+                case "$host" in
+                    RelayBarUploadReplace-*|RelayBarUploadNoRename-*)
+                        printf '%s\n' '-rw-r--r-- 1 alice staff 8 Aug 24 12:01 release.zip'
+                        ;;
+                    RelayBarUploadDirectory-*)
+                        printf '%s\n' 'drwxr-xr-x 2 alice staff 64 Aug 24 12:01 release.zip'
+                        ;;
+                    RelayBarUploadSymlink-*)
+                        printf '%s\n' 'lrwxr-xr-x 1 alice staff 10 Aug 24 12:01 release.zip -> elsewhere.zip'
+                        ;;
+                    RelayBarUploadRace-*)
+                        if [ -e "$upload_state" ]; then
+                            printf '%s\n' '-rw-r--r-- 1 alice staff 8 Aug 24 12:01 release.zip'
+                        fi
+                        ;;
+                    RelayBarUploadLinkCollision-*)
+                        if [ -e "$upload_state.collision" ]; then
+                            printf '%s\n' '-rw-r--r-- 1 alice staff 8 Aug 24 12:01 release.zip'
+                        fi
+                        ;;
+                esac
+                ;;
+            put*)
+                : > "$upload_state"
+                case "$host" in
+                    RelayBarUploadCancel-*)
+                        exec /bin/sleep 60
+                        ;;
+                    RelayBarUploadCleanupFail-*|RelayBarUploadCleanupHang-*)
+                        printf 'Upload failed\n' >&2
+                        exit 1
+                        ;;
+                    RelayBarUploadSessionChange-*)
+                        rm -f "$control_socket"
+                        ;;
+                    RelayBarUploadSourceSwap-*)
+                        source_path=$(printf '%s\n' "$command" | sed -E 's/^put "([^"]*)".*/\1/')
+                        /bin/cat "$source_path" > "$upload_state.uploaded" || exit 1
+                        printf '%s\n' "$source_path" > "$upload_state.source"
+                        stat -f '%Lp' "$source_path" > "$upload_state.mode"
+                        stat -f '%Lp' "$(dirname "$source_path")" > "$upload_state.directory-mode"
+                        ;;
+                esac
+                ;;
+            ln*|rename*)
+                case "$host" in
+                    RelayBarUploadLinkReplyLost-*|RelayBarUploadRenameReplyLost-*)
+                        # Publication precedes the reply; cancellation cannot undo it.
+                        printf '%s\n' "$$" > "$upload_state.published"
+                        exec /bin/sleep 60
+                        ;;
+                    RelayBarUploadLinkCollision-*)
+                        : > "$upload_state.collision"
+                        printf 'Target appeared before hard-link publication\n' >&2
+                        exit 1
+                        ;;
+                esac
+                ;;
+            rm*)
+                case "$host" in
+                    RelayBarUploadCleanupHang-*)
+                        # Ignore TERM so the deadline must force-stop and reap us.
+                        trap '' TERM
+                        printf '%s\n' "$$" > "$upload_state.cleanup"
+                        exec /bin/sleep 60
+                        ;;
+                    RelayBarUploadCleanupFail-*|RelayBarUploadPublishCleanupFail-*)
+                        printf 'Cleanup failed\n' >&2
+                        exit 1
+                        ;;
+                    RelayBarUploadCleanupRetry-*)
+                        if [ ! -s "$upload_state" ]; then
+                            printf 'retry\n' > "$upload_state"
+                            printf 'Transient cleanup failure\n' >&2
+                            exit 1
+                        fi
+                        rm -f "$upload_state"
+                        ;;
+                    RelayBarUploadPublishCancel-*)
+                        if [ ! -e "$upload_state.cleanup" ]; then
+                            printf '%s\n' "$$" > "$upload_state.cleanup"
+                            exec /bin/sleep 60
+                        fi
+                        rm -f "$upload_state" "$upload_state.cleanup"
+                        ;;
+                    *)
+                        rm -f "$upload_state"
+                        ;;
+                esac
+                ;;
+            *)
+                printf 'Unknown fake upload command\n' >&2
+                exit 1
+                ;;
+        esac
+        exit 0
+        ;;
+esac
 
 case "$host" in
     listing|shared)

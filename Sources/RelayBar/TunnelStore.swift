@@ -181,6 +181,15 @@ final class TunnelStore: ObservableObject {
         retryDeadlines[tunnel.id]
     }
 
+#if DEBUG
+    /// Gives deterministic previews and snapshot tests lifecycle state without
+    /// creating an SSH process. Production builds cannot call this seam.
+    func setPreviewPhase(_ phase: TunnelPhase, for tunnel: Tunnel) {
+        guard tunnels.contains(where: { $0.id == tunnel.id }) else { return }
+        phases[tunnel.id] = phase
+    }
+#endif
+
     func runtimePorts(for tunnel: Tunnel) -> [UUID: Int] {
         runtimePorts[tunnel.id] ?? [:]
     }

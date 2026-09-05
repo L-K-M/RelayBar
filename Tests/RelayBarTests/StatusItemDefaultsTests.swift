@@ -269,6 +269,38 @@ final class LegacyDefaultsMigrationTests: XCTestCase {
         }
     }
 
+    /// The recent-locations history replaced Scion's own last-path store, so
+    /// the retired blob is purged rather than left behind in preferences.
+    func testRemovesRetiredKeysAndLeavesLiveDataAlone() throws {
+        let defaults = try makeDefaults()
+        for key in LegacyDefaultsMigration.retiredKeys {
+            defaults.set(Data("stale".utf8), forKey: key)
+        }
+        defaults.set(Data("locations".utf8), forKey: "remoteFiles.recentLocations.v1")
+
+        LegacyDefaultsMigration.removeRetiredKeys(from: defaults)
+
+        XCTAssertFalse(LegacyDefaultsMigration.retiredKeys.isEmpty)
+        for key in LegacyDefaultsMigration.retiredKeys {
+            XCTAssertNil(defaults.data(forKey: key), key)
+            XCTAssertFalse(
+                LegacyDefaultsMigration.migratedKeys.contains(key),
+                "A retired key must not also be migrated: \(key)"
+            )
+        }
+        XCTAssertEqual(
+            defaults.data(forKey: "remoteFiles.recentLocations.v1"),
+            Data("locations".utf8)
+        )
+
+        // Idempotent: a later launch finds nothing to remove.
+        LegacyDefaultsMigration.removeRetiredKeys(from: defaults)
+        XCTAssertEqual(
+            defaults.data(forKey: "remoteFiles.recentLocations.v1"),
+            Data("locations".utf8)
+        )
+    }
+
     /// The old app may still be installed, so the migration reads it and
     /// leaves it intact.
     func testLeavesTheLegacyDomainUntouched() throws {

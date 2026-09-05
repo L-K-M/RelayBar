@@ -1,6 +1,6 @@
 # RelayBar security review
 
-Review date: August 14, 2026
+Review date: August 25, 2026
 
 ## Scope and threat model
 
@@ -91,6 +91,25 @@ Adding a Markdown stack changes the earlier dependency-free application boundary
 
 Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xcode resolution files. The selected versions preserve RelayBar's macOS 13 target. Required license notices are copied into the app bundle. MarkdownUI's default network image providers are replaced. The Xcode build retains Highlighter's formatter and the two selected themes plus SwiftMath's selected Latin Modern resources and licenses, while removing unused renderer resources from the generated app. Release builds are non-globally stripped after dSYM generation, and the executable/dSYM UUID match is verified. Dependency versions and the active-content boundary are recorded in Task 002 verification and must be reviewed before any release.
 
+### SR-11 — Upload conflicts could replace the wrong remote entry (high)
+
+A target can change after RelayBar asks for replacement consent, and ordinary
+SFTP upload does not provide a race-safe no-overwrite publication operation.
+
+Remediation: RelayBar uploads to a unique hidden name in the selected remote
+directory. A new target is published only with the server-advertised
+`hardlink@openssh.com` extension, which fails if another entry appeared. An
+explicitly approved regular-file replacement requires advertised
+`posix-rename@openssh.com` support. Observed directories and symbolic links,
+missing capabilities, SSH-master replacement, and raced-in hard-link targets
+fail closed. Cancellation and failure remove only the exact app-generated
+staging path, and uncertain cleanup is reported rather than hidden. Removal
+attempts have deadlines that cancel and reap their SFTP children, including
+detached recovery. Cancellation after a publication request with no confirmed
+reply reports an unknown outcome. Local sources are opened without following
+symlinks, descriptor-validated, and privately snapshotted before SSH work so a
+pathname swap cannot redirect the upload.
+
 ## Positive controls verified
 
 - Executable paths are fixed to `/usr/bin/ssh` and `/usr/bin/sftp`.
@@ -100,7 +119,10 @@ Remediation: direct and transitive packages are pinned exactly in SwiftPM and Xc
 - Standard input and output are closed where unused; master and control diagnostics are bounded.
 - Detached SSH (`-f`) is discarded on import, configured `ForkAfterAuthentication` is forced off, and tracked children are terminated on stop and app quit.
 - Tunnel definitions contain no passwords and remain in local application preferences.
-- Remote paths are not persisted. RelayBar does not read or copy private-key contents.
+- RelayBar locally persists at most 16 normalized recent folder paths with
+  their bounded SSH connection identities. Directory listings, remote file
+  names, file content, transfer state, and capability diagnostics are not
+  persisted. RelayBar does not read or copy private-key contents.
 - Remote Files revalidates saved connection arguments and translates SSH port/login flags to SFTP semantics without accepting new user-controlled option classes.
 - There are no analytics, advertising, telemetry, tracking, or account SDKs. Sparkle 2.9.4 is exact-pinned for updates; its production feed is HTTPS and EdDSA-signed, update archives require signature verification before extraction, and its delegate sends no system-profile fields.
 - Markdown rendering dependencies are exact-pinned and their notices are bundled. None replaces the system SSH/SFTP transport.

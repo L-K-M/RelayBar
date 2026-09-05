@@ -6,6 +6,27 @@ Notable RelayBar Scion changes are recorded here.
 
 ### Changed
 
+- Remote Files is now the persistent split workspace from upstream RelayBar
+  1.5.0: a resizable window whose sidebar keeps recent folders and recent
+  hosts one click away, **Add Path…** for opening any validated absolute path,
+  and single-file **Upload…** that stages under a hidden name and publishes
+  only with the server's advertised hard-link or POSIX-rename guarantee.
+  Cleanup has a deadline, interrupted publication reports uncertainty, and a
+  private local snapshot prevents source-path swaps during SSH work.
+  Opening the window no longer connects until a location is chosen. The
+  browsing behavior this fork added on top of the old launcher carries over:
+  symbolic links are navigated or resolved to files, a pending initial open
+  can be cancelled from the welcome detail or the sheet without losing the
+  entered host and path, Back from a directly opened file lists its
+  containing folder first, `~/.ssh/config` `Include` lines are followed,
+  SFTP captures reject invalid UTF-8 and unreadable listings, downloaded
+  payloads are locked to owner-only permissions, and the sheet's fields keep
+  stable accessibility labels. The untouched path field is prefilled from the
+  selected host's most recent folder, replacing the separate last-path store,
+  and first-launch migration copies upstream's recent-location history.
+- Named groups keep Start All and Stop All visible at the trailing side of
+  each header, enabled by member state, with Restart All remaining in the
+  group menu (ported from upstream RelayBar 1.5.1).
 - Tag-triggered releases now publish an **unsigned, ad-hoc-signed**
   `RelayBarScion.zip` — the same release model as the sibling family apps
   (maintainer decision, task 062) — instead of failing closed on absent
