@@ -1672,7 +1672,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             fixture: fixture,
             maxRetryAttempts: 0,
             networkPathObserver: network,
-            networkChangeSettleDelay: 5
+            networkChangeSettleDelay: 6
         )
         let tunnel = makeLocalProfile()
         store.add(tunnel)
@@ -1692,10 +1692,11 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         network.simulateChange()
         try await Task.sleep(for: .seconds(4))
         network.simulateChange()
-        // 3 s after the second update with a 5 s window: a window measured
-        // from the first update expired 2 s ago, one measured from the second
-        // has 2 s left. Sleeps only ever overshoot, and either side has 2 s
-        // of that to give.
+        // With a 6 s window: the second update lands 2 s before a window
+        // measured from the first could fire, and this check lands 1 s after
+        // that window would have fired and 3 s before the second one does.
+        // Sleeps only ever overshoot; the first has 2 s of room, the second
+        // 3 s.
         try await Task.sleep(for: .seconds(3))
 
         guard case .failed = store.phase(for: tunnel) else {
@@ -1705,8 +1706,12 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             )
         }
 
-        let reconnected = await waitUntil { store.phase(for: tunnel) == .running }
-        XCTAssertTrue(reconnected)
+        // The pass is still 3 s away at this point, so this wait needs more
+        // than the default four-second budget to see it through.
+        let reconnected = await waitUntil(timeoutIterations: 1_200) {
+            store.phase(for: tunnel) == .running
+        }
+        XCTAssertTrue(reconnected, "Phase: \(store.phase(for: tunnel))")
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
             launchesDuringOutage + 1
@@ -1831,7 +1836,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         // The per-ladder reset budget from process-lifecycle.md. Each of
         // these changes relaunches at once with a fresh count, so attempt 1
         // fails into another attempt-1 backoff instead of exhausting.
-        let ladderResetBudget = 3
+        let ladderResetBudget = TunnelStore.maxNetworkChangeLadderResets
         for change in 1...ladderResetBudget {
             network.simulateChange()
             let relaunched = await waitForBackoff(after: change + 1)
@@ -2306,10 +2311,9 @@ final class FakeNetworkPathObserver: NetworkPathObserving {
 
     func startObserving(onChange: @escaping @MainActor () -> Void) {
         // The contract above holds only while the store subscribes once.
-        precondition(
-            self.onChange == nil,
-            "The store subscribed to one observer twice."
-        )
+        if self.onChange != nil {
+            XCTFail("The store subscribed to one observer twice.")
+        }
         self.onChange = onChange
     }
 

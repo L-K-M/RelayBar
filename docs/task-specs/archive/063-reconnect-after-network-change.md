@@ -55,6 +55,9 @@ outlasts; when the VPN then dropped, nothing was left to retry.
 
 - A retrying profile relaunches within the settle window of a path change and
   its next failure is attempt 1.
+- The reset is rationed: after three resets within one ladder a further change
+  still relaunches the profile but keeps its accumulated count, so a profile
+  no network change can cure still exhausts and notifies.
 - A profile that exhausts retries during an outage fails with a message ending
   in "RelayBar tries again when the network changes.", posts one notification,
   and reaches Running after the outage ends and the path changes, without
@@ -76,8 +79,10 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   `profilesAwaitingNetworkChange`; `scheduleRetry`'s exhaustion branch
   records the profile there, and `start`, `stop(id:)`, `stopGroup`,
   `stopAll`, `delete` (through `stop`), and the non-tag branch of `update`
-  remove it. `startTunnel` withdraws each profile a pass starts, so one whose
-  start is refused stays armed for the next change.
+  remove it. `startTunnel` withdraws each profile a pass actually launches, so
+  a profile it refuses — an unsafe definition, a socket preflight failure — is
+  never launched automatically, yet stays armed and is offered to each later
+  change.
 - `NetworkPathMonitor.pathDidUpdate` swallows the first report; the store
   restarts a 2-second settle window on every change (`networkChangeTask`)
   and runs one pass when it expires.

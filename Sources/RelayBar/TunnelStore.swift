@@ -74,7 +74,7 @@ final class TunnelStore: ObservableObject {
     /// what brings a tunnel back the moment a VPN drops — means a profile
     /// that fails for a reason no network can cure still runs out of
     /// attempts and notifies even on a network that never stops changing.
-    private let maxNetworkChangeLadderResets = 3
+    static let maxNetworkChangeLadderResets = 3
     private var networkChangeLadderResets: [UUID: Int] = [:]
     /// Profiles already notified about running out of retries and not yet
     /// seen Running since. A profile no network change can fix — a revoked
@@ -1155,7 +1155,7 @@ final class TunnelStore: ObservableObject {
             guard retryTasks[id] != nil else { continue }
             if
                 (retryAttempts[id] ?? 0) > 0,
-                (networkChangeLadderResets[id] ?? 0) < maxNetworkChangeLadderResets
+                (networkChangeLadderResets[id] ?? 0) < Self.maxNetworkChangeLadderResets
             {
                 networkChangeLadderResets[id, default: 0] += 1
                 retryAttempts[id] = 0
