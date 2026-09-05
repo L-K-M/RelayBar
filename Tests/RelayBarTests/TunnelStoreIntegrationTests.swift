@@ -1580,6 +1580,12 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(store.phase(for: exhausted), .stopped)
         XCTAssertEqual(store.phase(for: running), .stopped)
         XCTAssertEqual(store.phase(for: misconfigured), misconfiguredPhase)
+        // Its phase alone cannot tell "never tried" from "tried and rejected
+        // again": its host is unique, so the log settles that.
+        XCTAssertFalse(
+            try String(contentsOf: fixture.logURL, encoding: .utf8).contains("-blocked"),
+            "A pass must not launch a profile that start rejects."
+        )
     }
 
     /// Task 063. A reconnect pass leaves a Running master alone: a connection
@@ -1621,7 +1627,9 @@ final class TunnelStoreIntegrationTests: XCTestCase {
             return false
         }
         XCTAssertTrue(waiting, "Phase: \(store.phase(for: witness))")
-        let runningSpec = try XCTUnwrap(store.tunnels.first?.rules.first?.specification)
+        let runningSpec = try XCTUnwrap(
+            store.tunnels.first { $0.id == tunnel.id }?.rules.first?.specification
+        )
         let logBefore = try String(contentsOf: fixture.logURL, encoding: .utf8)
         let launches = masterInvocationCount(logBefore)
         let runningInstalls = forwardInstallCount(logBefore, spec: runningSpec)
@@ -2170,7 +2178,7 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     /// the network back.
     private func makeOutageMarker() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RelayBarOutage-\(UUID().uuidString.prefix(8))")
+            .appendingPathComponent("RelayBarOutage-\(UUID().uuidString)")
         try Data().write(to: url)
         // Tests delete the marker to end the outage; a test that fails first
         // must not leave it behind.
@@ -2297,6 +2305,11 @@ final class FakeNetworkPathObserver: NetworkPathObserving {
     private var onChange: (@MainActor () -> Void)?
 
     func startObserving(onChange: @escaping @MainActor () -> Void) {
+        // The contract above holds only while the store subscribes once.
+        precondition(
+            self.onChange == nil,
+            "The store subscribed to one observer twice."
+        )
         self.onChange = onChange
     }
 

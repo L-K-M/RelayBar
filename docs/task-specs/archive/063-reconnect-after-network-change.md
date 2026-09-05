@@ -25,8 +25,9 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   master: a connection the change severed exits on its own through server
   keepalives, and a connection it did not affect — a split-tunnel VPN — keeps
   its sessions.
-- An explicit stop, group Stop All, edit, or delete withdraws a failed profile
-  from the pending network-change retry. A profile that failed for a
+- An explicit stop, group Stop All, a configuration edit, or delete withdraws
+  a failed profile from the pending network-change retry; a group-tag-only
+  edit preserves it, as it preserves every other runtime state. A profile that failed for a
   configuration reason is never started automatically.
 - Keep the retry ladder and every phase unchanged; add no new phase and no
   persisted state, so the pending retry lives for the app's run only. The
@@ -42,7 +43,8 @@ outlasts; when the VPN then dropped, nothing was left to retry.
   `NetworkPathMonitor`; inject the observer and the settle delay into
   `TunnelStore`.
 - Track profiles awaiting a network change, record them in the exhaustion
-  branch, and withdraw them on start, stop, Stop All, edit, and delete.
+  branch, and withdraw them on start, stop, Stop All, a configuration edit,
+  and delete.
 - Append the promise to the exhaustion message and notification.
 - Add an outage switch to the fake `ssh` fixture and focused store tests for
   the reset, the VPN scenario, withdrawal, Stop All, and the baseline rule.
