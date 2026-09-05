@@ -48,6 +48,9 @@ Phases are `stopped`, `starting`, `retrying`, `running`, and `failed`.
   cannot accept another channel; process termination, reaping, and directory
   cleanup finish asynchronously without blocking the main actor.
   Window close cancels active work; when an upload owns a remote staging name,
-  the model remains retained until its bounded cleanup attempt finishes and the
-  master is shut down. App termination uses AppKit's deferred reply to wait for
+  the model remains retained until cleanup finishes and the master is retired.
+  Each cleanup attempt has a ten-second deadline; expiry cancels the actual
+  SFTP child and awaits reaping, including its two-second force-stop grace.
+  Detached recovery retains that deadline instead of waiting indefinitely.
+  App termination uses AppKit's deferred reply to wait for
   that retirement instead of orphaning the master or abandoning known staging.

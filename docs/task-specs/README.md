@@ -42,6 +42,7 @@ active and accepted directories. Run it before claiming a number.
 - [Task 060 — Family Release Tooling](060-family-release-tooling.md)
 - [Task 061 — Certless Local Builds](061-certless-local-builds.md)
 - [Task 062 — Unsigned GitHub Releases](062-unsigned-github-releases.md)
+- [Task 064 — Upstream Workspace Integration](064-upstream-workspace-integration.md)
 
 ## Backlog
 

@@ -196,10 +196,9 @@ final class RelayBarAppDelegate:
     /// Asks Remote Files to retire before the process exits and returns
     /// whether the reply is now owed later. True means the window controller
     /// took ownership of the single `reply(toApplicationShouldTerminate:)`
-    /// and will send it once an upload's bounded staging cleanup and the
-    /// owned SSH master have finished; false means nothing was in flight and
-    /// the caller still owes the reply. The wait is bounded because every
-    /// cancelled SFTP child is force-stopped rather than awaited forever.
+    /// and will send it after upload cleanup and SSH-master retirement;
+    /// false means the caller still owes the reply. Cleanup has its own
+    /// deadline and reaps its cancelled SFTP child before returning.
     private static func retiresRemoteFilesBeforeReplying() -> Bool {
         RemoteFilesWindowController.shared.prepareForApplicationTermination(
             completion: {

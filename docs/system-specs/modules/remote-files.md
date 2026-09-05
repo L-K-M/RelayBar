@@ -77,6 +77,11 @@ without adding search, indexing, mounting, or editing.
 - **Upload…** accepts one local regular non-symbolic-link file only while a
   folder is open and no upload or download is active. Progress is deliberately
   indeterminate and names the staging, publishing, or cleanup phase.
+- Before SSH work, the source is opened without following symbolic links and
+  descriptor-checked as a regular file. A cancellable copy uses 64 KiB buffers
+  and stops at the opened size. SFTP reads only that snapshot, inside an
+  atomically created `0700` local directory; original permission bits are
+  preserved, and the snapshot is removed on every upload exit.
 - RelayBar revalidates the target name. An observed directory or symbolic link
   is refused. An observed regular file requires a confirmation that identifies
   the bounded race with another remote client.
@@ -89,12 +94,17 @@ without adding search, indexing, mounting, or editing.
   name. An approved replacement requires POSIX rename for atomic replacement.
   Missing extensions, target-type changes, connection-master replacement, and
   hard-link collisions fail closed.
-- Cancellation before publication removes the exact staging name. Cancellation
-  after confirmed publication reports completion. Cleanup uses no shell,
-  wildcard, recursive delete, or guessed path; an unconfirmed removal is
-  reported explicitly. Closing the window retains the cleanup owner until the
-  attempt and SSH-master shutdown finish, and application termination waits for
-  that retirement.
+- Cancellation before a publication attempt removes the exact staging name.
+  Cancellation after an attempted but unconfirmed publication reports that the
+  remote outcome is unknown and asks the user to check the folder before retry.
+  Confirmed publication wins over late cancellation.
+- Each staging-removal attempt has a ten-second deadline, including detached
+  recovery after cancellation. Deadline expiry cancels and reaps the actual
+  SFTP child, using the existing two-second force-stop grace. Cleanup uses no
+  shell, wildcard, recursive delete, or guessed path; an unconfirmed removal
+  preserves any publication uncertainty. Closing the window retains the cleanup
+  owner until the attempt and SSH-master retirement finish, and application
+  termination waits for that retirement.
 - A successful upload refreshes the current rows without first blanking them.
 
 ## Downloads

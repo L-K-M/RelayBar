@@ -12,8 +12,9 @@ path, the exact SSH host connection identity, and local display metadata; it
 does not contain directory listings, remote file contents, credentials, or
 connection state. A user can remove one recent location or clear all recent
 locations. Downloaded files are written only to a destination the user chooses.
-Uploads read only the one local file the user chooses and send it to the open
-SSH folder through a hidden remote staging name. Image and Markdown previews
+Uploads snapshot the chosen local file in private temporary storage, send that
+snapshot to the open SSH folder through a hidden remote staging name, and remove
+the local snapshot when the upload ends. Image and Markdown previews
 use private temporary storage that RelayBar removes when the preview or window
 closes. Remote file contents are transferred only between the user's configured
 SSH server and Mac; RelayBar sends them to no third party.

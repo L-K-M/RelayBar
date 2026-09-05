@@ -253,6 +253,7 @@ enum RemoteFileError: LocalizedError, Equatable {
     case uploadConflict
     case unsupportedUploadTarget
     case uploadCapabilityUnavailable(String)
+    case uploadPublicationUnconfirmed
     case uploadCleanupUnconfirmed(String)
 
     var errorDescription: String? {
@@ -295,6 +296,8 @@ enum RemoteFileError: LocalizedError, Equatable {
             return "RelayBar will not replace a remote folder or symbolic link."
         case .uploadCapabilityUnavailable(let capability):
             return "This server does not advertise the safe \(capability) capability required for upload."
+        case .uploadPublicationUnconfirmed:
+            return "RelayBar could not confirm whether the upload was published. Check the remote folder before retrying."
         case .uploadCleanupUnconfirmed(let message):
             return "\(message) RelayBar could not confirm removal of its remote staging file."
         }

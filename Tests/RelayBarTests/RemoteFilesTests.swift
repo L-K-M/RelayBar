@@ -2572,6 +2572,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         let service = SFTPRemoteFileService(
             executableURL: fixtureExecutableURL,
             forceStopDelay: 0.1,
+            uploadCleanupTimeout: .seconds(1),
             connectionSharing: false,
             signalProcess: { signals.send(processIdentifier: $0, signal: $1) }
         )
@@ -2619,6 +2620,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         let service = SFTPRemoteFileService(
             executableURL: fixtureExecutableURL,
             forceStopDelay: 0.1,
+            uploadCleanupTimeout: .seconds(1),
             connectionSharing: false,
             signalProcess: { signals.send(processIdentifier: $0, signal: $1) }
         )
@@ -2675,11 +2677,7 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
                 try await task.value
                 XCTFail("A lost reply cannot confirm publication.")
             } catch {
-                XCTAssertFalse(error is CancellationError)
-                XCTAssertTrue(
-                    error.localizedDescription.contains("could not confirm whether"),
-                    error.localizedDescription
-                )
+                XCTAssertEqual(error as? RemoteFileError, .uploadPublicationUnconfirmed, kind)
             }
 
             XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.stateURL.path + ".published"))

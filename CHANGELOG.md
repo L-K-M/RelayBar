@@ -11,6 +11,8 @@ Notable RelayBar Scion changes are recorded here.
   hosts one click away, **Add Path…** for opening any validated absolute path,
   and single-file **Upload…** that stages under a hidden name and publishes
   only with the server's advertised hard-link or POSIX-rename guarantee.
+  Cleanup has a deadline, interrupted publication reports uncertainty, and a
+  private local snapshot prevents source-path swaps during SSH work.
   Opening the window no longer connects until a location is chosen. The
   browsing behavior this fork added on top of the old launcher carries over:
   symbolic links are navigated or resolved to files, a pending initial open

@@ -44,6 +44,13 @@ previewable Markdown file.
 
 Remote Files changes should additionally exercise that server and absolute path manually for nested navigation, cached Back and revisit, uncached-open cancellation, refresh, file download, recursive folder download, cancellation, image preview, Markdown preview, connection loss, window close, and representative failures. For transport-reuse changes, record cold initial-open and at least five warm uncached nested-folder timings against a genuinely high-latency server, and confirm the warm operations reuse one master without another key exchange or authentication.
 
+Upload changes additionally require real-server new-name and approved-replace
+publication, unsupported extensions, cancellation during staging/publication,
+cleanup failure, and window-close/Quit checks. Automated fixtures cover hung
+cleanup with TERM/KILL and reaping, lost publication replies, and local source
+swaps. Live SSH and integrated visual acceptance remain tracked in
+[Task 064](../../task-specs/064-upstream-workspace-integration.md).
+
 Before a live server is available, use the DEBUG-only Remote Files fixture to review light and dark appearance, minimum-window truncation, empty folders, long names, immediate target-path and **Opening folder…** feedback, cached revalidation, rapid navigation and Back cancellation, split image and Markdown previews, sibling selection, Left/Right switching, sidebar dragging and Control-Command-S visibility, focused reading, refresh recovery, initial connection errors, and active, completed, failed, and canceled transfers. Fixture downloads must remain inside their private temporary directory and must not open Finder.
 
 Start a DEBUG build with `--preview-window --flexible-forwarding-preview` to review rule-aware profile rows and the editor without reading or changing the user's saved profiles. Review add, type switching, duplicate, reorder, remove, automatic ports, Unix fields, exposure warnings, reverse-SOCKS policy, scrolling, keyboard focus, and accessibility labels in light and dark appearance.

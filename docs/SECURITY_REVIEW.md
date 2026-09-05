@@ -103,7 +103,12 @@ explicitly approved regular-file replacement requires advertised
 `posix-rename@openssh.com` support. Observed directories and symbolic links,
 missing capabilities, SSH-master replacement, and raced-in hard-link targets
 fail closed. Cancellation and failure remove only the exact app-generated
-staging path, and uncertain cleanup is reported rather than hidden.
+staging path, and uncertain cleanup is reported rather than hidden. Removal
+attempts have deadlines that cancel and reap their SFTP children, including
+detached recovery. Cancellation after a publication request with no confirmed
+reply reports an unknown outcome. Local sources are opened without following
+symlinks, descriptor-validated, and privately snapshotted before SSH work so a
+pathname swap cannot redirect the upload.
 
 ## Positive controls verified
 
