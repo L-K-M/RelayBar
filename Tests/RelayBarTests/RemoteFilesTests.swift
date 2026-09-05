@@ -2562,6 +2562,206 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
         )
     }
 
+    func testCancelledUploadBoundsAndReapsHungCleanup() async throws {
+        let fixture = makeUploadFixture(kind: "CleanupHang")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let signals = LockedSignalRecorder()
+        let finished = LockedCancellationProbe()
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            connectionSharing: false,
+            signalProcess: { signals.send(processIdentifier: $0, signal: $1) }
+        )
+        let task = Task {
+            defer { finished.markStarted() }
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+        }
+        let cleanupPID = try await uploadFixturePID(fixture, suffix: ".cleanup")
+        task.cancel()
+
+        // The watchdog fails pre-fix without leaving the detached child alive.
+        try await waitUntil(timeout: 15) { finished.hasStarted }
+        let finishedBeforeWatchdog = finished.hasStarted
+        if !finishedBeforeWatchdog {
+            _ = Darwin.kill(cleanupPID, SIGKILL)
+        }
+        do {
+            try await task.value
+            XCTFail("Expected cleanup uncertainty.")
+        } catch let error as RemoteFileError {
+            guard case .uploadCleanupUnconfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        XCTAssertTrue(finishedBeforeWatchdog)
+        XCTAssertEqual(signals.values, [SIGTERM, SIGKILL])
+        XCTAssertEqual(Darwin.kill(cleanupPID, 0), -1)
+        XCTAssertEqual(errno, ESRCH)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testPublishedUploadBoundsCleanupWithoutUserCancellation() async throws {
+        let fixture = makeUploadFixture(kind: "PublishCancel")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+        let signals = LockedSignalRecorder()
+        let finished = LockedCancellationProbe()
+        let service = SFTPRemoteFileService(
+            executableURL: fixtureExecutableURL,
+            forceStopDelay: 0.1,
+            connectionSharing: false,
+            signalProcess: { signals.send(processIdentifier: $0, signal: $1) }
+        )
+        let task = Task {
+            defer { finished.markStarted() }
+            try await service.upload(
+                server: fixture.server,
+                localFile: localFile,
+                remoteDirectory: "/srv/releases",
+                replaceExisting: false
+            )
+        }
+        let cleanupPID = try await uploadFixturePID(fixture, suffix: ".cleanup")
+
+        try await waitUntil(timeout: 15) { finished.hasStarted }
+        let finishedBeforeWatchdog = finished.hasStarted
+        if !finishedBeforeWatchdog {
+            _ = Darwin.kill(cleanupPID, SIGKILL)
+        }
+        try await task.value
+
+        XCTAssertTrue(finishedBeforeWatchdog)
+        XCTAssertTrue(signals.values.contains(SIGTERM))
+        XCTAssertEqual(
+            try uploadCommands(for: fixture).map(commandName),
+            ["ls", "quit", "put", "ls", "ln", "rm", "rm"]
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+    }
+
+    func testCancellationAfterUnconfirmedPublicationReportsUncertainty() async throws {
+        for kind in ["LinkReplyLost", "RenameReplyLost"] {
+            let fixture = makeUploadFixture(kind: kind)
+            defer { removeUploadFixture(fixture) }
+            let localFile = try makeUploadFile(named: "release.zip")
+            defer { try? FileManager.default.removeItem(at: localFile.deletingLastPathComponent()) }
+            let service = SFTPRemoteFileService(
+                executableURL: fixtureExecutableURL,
+                forceStopDelay: 0.1,
+                connectionSharing: false
+            )
+            let task = Task {
+                try await service.upload(
+                    server: fixture.server,
+                    localFile: localFile,
+                    remoteDirectory: "/srv/releases",
+                    replaceExisting: kind == "RenameReplyLost"
+                )
+            }
+            _ = try await uploadFixturePID(fixture, suffix: ".published")
+            task.cancel()
+
+            do {
+                try await task.value
+                XCTFail("A lost reply cannot confirm publication.")
+            } catch {
+                XCTAssertFalse(error is CancellationError)
+                XCTAssertTrue(
+                    error.localizedDescription.contains("could not confirm whether"),
+                    error.localizedDescription
+                )
+            }
+
+            XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.stateURL.path + ".published"))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.stateURL.path))
+        }
+    }
+
+    func testUploadDoesNotFollowAReplacedLocalSource() async throws {
+        let fixture = makeUploadFixture(kind: "SourceSwap")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        let directory = localFile.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let privateFile = directory.appendingPathComponent("private.txt")
+        try Data("not selected".utf8).write(to: privateFile)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: localFile.path
+        )
+        let service = makeFixtureService()
+
+        try await service.upload(
+            server: fixture.server,
+            localFile: localFile,
+            remoteDirectory: "/srv/releases",
+            replaceExisting: false
+        ) { phase in
+            guard phase == .staging else { return }
+            // Swap after validation, before sftp opens its source path.
+            try? FileManager.default.removeItem(at: localFile)
+            try? FileManager.default.createSymbolicLink(at: localFile, withDestinationURL: privateFile)
+        }
+
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.stateURL.path + ".uploaded", encoding: .utf8),
+            "payload"
+        )
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.stateURL.path + ".mode", encoding: .utf8),
+            "755\n"
+        )
+        XCTAssertEqual(
+            try String(contentsOfFile: fixture.stateURL.path + ".directory-mode", encoding: .utf8),
+            "700\n"
+        )
+        let sourcePath = try String(contentsOfFile: fixture.stateURL.path + ".source", encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertNotEqual(sourcePath, localFile.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourcePath))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: (sourcePath as NSString).deletingLastPathComponent
+        ))
+    }
+
+    func testUploadRejectsLocalSymlinksAndFIFOsBeforeConnecting() async throws {
+        let fixture = makeUploadFixture(kind: "New")
+        defer { removeUploadFixture(fixture) }
+        let localFile = try makeUploadFile(named: "release.zip")
+        let directory = localFile.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let symlink = directory.appendingPathComponent("link.zip")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: localFile)
+        let fifo = directory.appendingPathComponent("pipe")
+        XCTAssertEqual(mkfifo(fifo.path, mode_t(0o600)), 0)
+        let service = makeFixtureService()
+
+        for source in [symlink, fifo] {
+            do {
+                try await service.upload(
+                    server: fixture.server,
+                    localFile: source,
+                    remoteDirectory: "/srv/releases",
+                    replaceExisting: false
+                )
+                XCTFail("Expected a regular-file source.")
+            } catch let error as RemoteFileError {
+                XCTAssertEqual(error, .invalidUploadSource)
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.logURL.path))
+    }
+
     func testUploadPublishesANewNameWithHardLinkThenRemovesStaging() async throws {
         let fixture = makeUploadFixture(kind: "New")
         defer { removeUploadFixture(fixture) }
@@ -3954,12 +4154,19 @@ final class SFTPRemoteFileServiceTests: XCTestCase {
     private func removeUploadFixture(_ fixture: UploadFixture) {
         try? FileManager.default.removeItem(at: fixture.logURL)
         try? FileManager.default.removeItem(at: fixture.stateURL)
-        try? FileManager.default.removeItem(
-            atPath: fixture.stateURL.path + ".cleanup"
-        )
-        try? FileManager.default.removeItem(
-            atPath: fixture.stateURL.path + ".collision"
-        )
+        for suffix in [".cleanup", ".collision", ".published", ".uploaded", ".source", ".mode", ".directory-mode"] {
+            try? FileManager.default.removeItem(atPath: fixture.stateURL.path + suffix)
+        }
+    }
+
+    private func uploadFixturePID(_ fixture: UploadFixture, suffix: String) async throws -> pid_t {
+        let path = fixture.stateURL.path + suffix
+        try await waitUntil(timeout: 2) {
+            (try? String(contentsOfFile: path, encoding: .utf8).isEmpty) == false
+        }
+        let text = try String(contentsOfFile: path, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return try XCTUnwrap(pid_t(text))
     }
 
     private func makeUploadFile(named name: String) throws -> URL {

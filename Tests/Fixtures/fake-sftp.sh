@@ -13,7 +13,7 @@ IFS= read -r command
 local_path=$(printf '%s\n' "$command" | sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/')
 
 case "$host" in
-    RelayBarUploadNew-*|RelayBarUploadReplace-*|RelayBarUploadNoHardLink-*|RelayBarUploadNoRename-*|RelayBarUploadRace-*|RelayBarUploadLinkCollision-*|RelayBarUploadCancel-*|RelayBarUploadPublishCancel-*|RelayBarUploadCleanupFail-*|RelayBarUploadCleanupRetry-*|RelayBarUploadPublishCleanupFail-*|RelayBarUploadDirectory-*|RelayBarUploadSymlink-*|RelayBarUploadCache-*|RelayBarUploadSessionChange-*)
+    RelayBarUploadNew-*|RelayBarUploadReplace-*|RelayBarUploadNoHardLink-*|RelayBarUploadNoRename-*|RelayBarUploadRace-*|RelayBarUploadLinkCollision-*|RelayBarUploadCancel-*|RelayBarUploadPublishCancel-*|RelayBarUploadCleanupFail-*|RelayBarUploadCleanupRetry-*|RelayBarUploadPublishCleanupFail-*|RelayBarUploadDirectory-*|RelayBarUploadSymlink-*|RelayBarUploadCache-*|RelayBarUploadSessionChange-*|RelayBarUploadCleanupHang-*|RelayBarUploadLinkReplyLost-*|RelayBarUploadRenameReplyLost-*|RelayBarUploadSourceSwap-*)
         upload_log="/tmp/$host.log"
         upload_state="/tmp/$host.state"
         printf '%s\n' "$command" >> "$upload_log"
@@ -63,17 +63,29 @@ case "$host" in
                     RelayBarUploadCancel-*)
                         exec /bin/sleep 60
                         ;;
-                    RelayBarUploadCleanupFail-*)
+                    RelayBarUploadCleanupFail-*|RelayBarUploadCleanupHang-*)
                         printf 'Upload failed\n' >&2
                         exit 1
                         ;;
                     RelayBarUploadSessionChange-*)
                         rm -f "$control_socket"
                         ;;
+                    RelayBarUploadSourceSwap-*)
+                        source_path=$(printf '%s\n' "$command" | sed -E 's/^put "([^"]*)".*/\1/')
+                        /bin/cat "$source_path" > "$upload_state.uploaded" || exit 1
+                        printf '%s\n' "$source_path" > "$upload_state.source"
+                        stat -f '%Lp' "$source_path" > "$upload_state.mode"
+                        stat -f '%Lp' "$(dirname "$source_path")" > "$upload_state.directory-mode"
+                        ;;
                 esac
                 ;;
-            ln*)
+            ln*|rename*)
                 case "$host" in
+                    RelayBarUploadLinkReplyLost-*|RelayBarUploadRenameReplyLost-*)
+                        # Publication precedes the reply; cancellation cannot undo it.
+                        printf '%s\n' "$$" > "$upload_state.published"
+                        exec /bin/sleep 60
+                        ;;
                     RelayBarUploadLinkCollision-*)
                         : > "$upload_state.collision"
                         printf 'Target appeared before hard-link publication\n' >&2
@@ -81,10 +93,14 @@ case "$host" in
                         ;;
                 esac
                 ;;
-            rename*)
-                ;;
             rm*)
                 case "$host" in
+                    RelayBarUploadCleanupHang-*)
+                        # Ignore TERM so the deadline must force-stop and reap us.
+                        trap '' TERM
+                        printf '%s\n' "$$" > "$upload_state.cleanup"
+                        exec /bin/sleep 60
+                        ;;
                     RelayBarUploadCleanupFail-*|RelayBarUploadPublishCleanupFail-*)
                         printf 'Cleanup failed\n' >&2
                         exit 1
@@ -99,7 +115,7 @@ case "$host" in
                         ;;
                     RelayBarUploadPublishCancel-*)
                         if [ ! -e "$upload_state.cleanup" ]; then
-                            : > "$upload_state.cleanup"
+                            printf '%s\n' "$$" > "$upload_state.cleanup"
                             exec /bin/sleep 60
                         fi
                         rm -f "$upload_state" "$upload_state.cleanup"
