@@ -128,7 +128,8 @@ final class ForwardingRuleDraftValidationTests: XCTestCase {
         reversePolicyChoice: ReversePolicyChoice = .unspecified,
         hasReverseSOCKS: Bool = false,
         reverseAllowedDestinations: String = "",
-        sshHost: String = "dev@example.com"
+        sshHost: String = "dev@example.com",
+        openOnConnectURL: String = ""
     ) -> String? {
         TunnelEditorValidation.firstIssue(
             hasPendingGroupName: hasPendingGroupName,
@@ -137,7 +138,28 @@ final class ForwardingRuleDraftValidationTests: XCTestCase {
             reversePolicyChoice: reversePolicyChoice,
             hasReverseSOCKS: hasReverseSOCKS,
             reverseAllowedDestinations: reverseAllowedDestinations,
-            sshHost: sshHost
+            sshHost: sshHost,
+            openOnConnectURL: openOnConnectURL
+        )
+    }
+
+    func testOpenOnConnectURLIsOptionalButMustBeHTTP() {
+        XCTAssertNil(issue(rules: [validRule()], openOnConnectURL: ""))
+        XCTAssertNil(issue(rules: [validRule()], openOnConnectURL: "   "))
+        XCTAssertNil(
+            issue(rules: [validRule()], openOnConnectURL: "https://localhost:8080/admin")
+        )
+        XCTAssertEqual(
+            issue(rules: [validRule()], openOnConnectURL: "file:///etc/hosts"),
+            "The open-on-connect URL must start with http:// or https://."
+        )
+        XCTAssertEqual(
+            issue(rules: [validRule()], openOnConnectURL: "http://local host/"),
+            "The open-on-connect URL cannot contain spaces."
+        )
+        XCTAssertEqual(
+            issue(rules: [validRule()], openOnConnectURL: "http:///path"),
+            "Enter a complete open-on-connect URL such as http://localhost:8080/."
         )
     }
 

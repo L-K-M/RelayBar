@@ -6,6 +6,9 @@ Notable RelayBar Scion changes are recorded here.
 
 ### Changed
 
+- Long profile names and forwarding summaries in the menu now truncate in
+  the middle, so profiles that differ only at the end stay distinguishable.
+
 - Remote Files is now the persistent split workspace from upstream RelayBar
   1.5.0: a resizable window whose sidebar keeps recent folders and recent
   hosts one click away, **Add Path…** for opening any validated absolute path,
@@ -56,6 +59,10 @@ Notable RelayBar Scion changes are recorded here.
   the profile owns lifecycle work, so the restart is disclosed at the decision
   point.
 ### Added
+
+- An optional **Open on Connect** URL per profile opens in your default
+  browser once a profile you start from its row or with Start All is
+  running. Only `http` and `https` URLs are accepted.
 
 - Tunnels come back on their own after a VPN connects or disconnects. RelayBar
   now watches the network path: a change ends any pending retry backoff at

@@ -475,6 +475,76 @@ enum TunnelGroupTag {
     }
 }
 
+/// The optional page a profile opens once a user-initiated start reaches
+/// Running. Only absolute `http` and `https` URLs are accepted, so a saved
+/// value can never make RelayBar launch a local file or another app's
+/// custom URL scheme through the default handler.
+enum OpenOnConnectURL {
+    enum Validation: Equatable {
+        case unset
+        case valid(URL)
+        case invalid(String)
+
+        var url: URL? {
+            guard case .valid(let url) = self else { return nil }
+            return url
+        }
+
+        var errorMessage: String? {
+            guard case .invalid(let message) = self else { return nil }
+            return message
+        }
+    }
+
+    private static let allowedSchemes: Set<String> = ["http", "https"]
+
+    static func validate(_ rawValue: String) -> Validation {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .unset }
+
+        // Checked before parsing because `URL(string:)` percent-encodes
+        // spaces on recent macOS instead of rejecting them.
+        if trimmed.unicodeScalars.contains(where: {
+            CharacterSet.whitespacesAndNewlines.contains($0)
+                || CharacterSet.controlCharacters.contains($0)
+        }) {
+            return .invalid("The open-on-connect URL cannot contain spaces.")
+        }
+
+        guard
+            let components = URLComponents(string: trimmed),
+            let scheme = components.scheme?.lowercased()
+        else {
+            return .invalid(
+                "Enter a complete open-on-connect URL such as http://localhost:8080/."
+            )
+        }
+        guard allowedSchemes.contains(scheme) else {
+            return .invalid("The open-on-connect URL must start with http:// or https://.")
+        }
+        guard
+            let host = components.host,
+            !host.isEmpty,
+            let url = components.url
+        else {
+            return .invalid(
+                "Enter a complete open-on-connect URL such as http://localhost:8080/."
+            )
+        }
+        return .valid(url)
+    }
+
+    /// Stored values are saved trimmed, so anything else was edited outside
+    /// the app and is treated as unsafe rather than silently repaired.
+    static func isValidStoredValue(_ value: String?) -> Bool {
+        guard let value else { return true }
+        guard value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return validate(value).url != nil
+    }
+}
+
 struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var name: String
@@ -485,6 +555,9 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
     var streamLocalSettings: StreamLocalSettings
     var groupTag: String?
     var startsAtLaunch: Bool
+    /// Opened in the default browser after a manual start reaches Running.
+    /// Stored as the trimmed text the user entered; `nil` when unset.
+    var openOnConnectURL: String?
 
     init(
         id: UUID = UUID(),
@@ -495,7 +568,8 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         reverseSOCKSPolicy: ReverseSOCKSPolicy? = nil,
         streamLocalSettings: StreamLocalSettings = StreamLocalSettings(),
         groupTag: String? = nil,
-        startsAtLaunch: Bool = false
+        startsAtLaunch: Bool = false,
+        openOnConnectURL: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -506,6 +580,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         self.streamLocalSettings = streamLocalSettings
         self.groupTag = groupTag
         self.startsAtLaunch = startsAtLaunch
+        self.openOnConnectURL = openOnConnectURL
     }
 
     init(
@@ -548,6 +623,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         case streamLocalSettings
         case groupTag
         case startsAtLaunch
+        case openOnConnectURL
         case localPort
         case destinationHost
         case destinationPort
@@ -587,6 +663,12 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             Bool.self,
             forKey: .startsAtLaunch
         ) ?? false
+        // Decoded as-is: a hand-edited unsafe value must not discard the
+        // whole saved list, so `isSafeToRun` rejects it on its own row.
+        openOnConnectURL = try container.decodeIfPresent(
+            String.self,
+            forKey: .openOnConnectURL
+        )
 
         if let decodedRules = try container.decodeIfPresent(
             [ForwardingRule].self,
@@ -630,6 +712,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
         try container.encode(streamLocalSettings, forKey: .streamLocalSettings)
         try container.encodeIfPresent(groupTag, forKey: .groupTag)
         try container.encode(startsAtLaunch, forKey: .startsAtLaunch)
+        try container.encodeIfPresent(openOnConnectURL, forKey: .openOnConnectURL)
     }
 
     var displayName: String {
@@ -688,6 +771,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             rules.allSatisfy(\.isValid),
             streamLocalSettings.isValid,
             TunnelGroupTag.isValidStoredValue(groupTag),
+            OpenOnConnectURL.isValidStoredValue(openOnConnectURL),
             SSHArgumentPolicy.isValidHostTarget(sshHost),
             SSHArgumentPolicy.areAdditionalArgumentsSafe(additionalArguments),
             !hasConflictingListeners
@@ -710,6 +794,7 @@ struct Tunnel: Identifiable, Codable, Equatable, Sendable {
             && reverseSOCKSPolicy == other.reverseSOCKSPolicy
             && streamLocalSettings == other.streamLocalSettings
             && startsAtLaunch == other.startsAtLaunch
+            && openOnConnectURL == other.openOnConnectURL
     }
 
     var hasConflictingListeners: Bool {

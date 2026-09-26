@@ -2027,6 +2027,117 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         store.stop(tunnel)
     }
 
+    func testManualStartOpensTheOpenOnConnectURLOnceRunning() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            browserOpener: { openedURLs.append($0) }
+        )
+        var tunnel = makeLocalProfile()
+        tunnel.openOnConnectURL = "http://localhost:43210/admin"
+        store.add(tunnel)
+
+        store.toggle(tunnel)
+
+        XCTAssertTrue(openedURLs.isEmpty, "The URL waits until the profile runs.")
+        let opened = await waitUntil { !openedURLs.isEmpty }
+        XCTAssertTrue(opened)
+        XCTAssertEqual(openedURLs, [URL(string: "http://localhost:43210/admin")!])
+        XCTAssertEqual(store.phase(for: tunnel), .running)
+        store.stopAll()
+    }
+
+    func testStartGroupOpensEachMembersOpenOnConnectURL() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            browserOpener: { openedURLs.append($0) }
+        )
+        var withURL = makeGroupedProfile(name: "Dashboard", port: 43_210, group: "Lab")
+        withURL.openOnConnectURL = "https://example.com/dashboard"
+        store.add(withURL)
+        let withoutURL = makeGroupedProfile(name: "Plain", port: 43_211, group: "Lab")
+        store.add(withoutURL)
+
+        store.startGroup("Lab")
+
+        let running = await waitUntil {
+            store.phase(for: withURL) == .running
+                && store.phase(for: withoutURL) == .running
+        }
+        XCTAssertTrue(running)
+        XCTAssertEqual(openedURLs, [URL(string: "https://example.com/dashboard")!])
+        store.stopAll()
+    }
+
+    func testAutomaticStartsNeverOpenTheOpenOnConnectURL() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            browserOpener: { openedURLs.append($0) }
+        )
+        var tunnel = makeLocalProfile()
+        tunnel.startsAtLaunch = true
+        tunnel.openOnConnectURL = "http://localhost:43210/"
+        store.add(tunnel)
+
+        store.startProfilesMarkedForAutoStart()
+
+        let running = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(running)
+
+        // Saving an edit relaunches the active profile; that is not a
+        // manual start either.
+        var edited = tunnel
+        edited.name = "Web renamed"
+        store.update(edited)
+        let relaunched = await waitUntil { store.phase(for: edited) == .running }
+        XCTAssertTrue(relaunched)
+
+        XCTAssertTrue(openedURLs.isEmpty)
+        store.stopAll()
+    }
+
+    func testStopBeforeRunningCancelsTheOpenOnConnectURL() async throws {
+        let fixture = try makeFakeSSHFixture()
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            browserOpener: { openedURLs.append($0) }
+        )
+        var tunnel = makeLocalProfile()
+        tunnel.openOnConnectURL = "http://localhost:43210/"
+        store.add(tunnel)
+
+        store.toggle(tunnel)
+        store.toggle(tunnel)
+        store.start(tunnel)
+
+        let running = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(running)
+        XCTAssertTrue(openedURLs.isEmpty)
+        store.stopAll()
+    }
+
     func testStartProfilesMarkedForAutoStartStartsMarkedProfilesAndSkipsOthers() async throws {
         let fixture = try makeFakeSSHFixture()
         defer { fixture.cleanup() }

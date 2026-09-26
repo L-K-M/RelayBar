@@ -345,8 +345,23 @@ final class TunnelStore: ObservableObject {
         if desiredTunnels[tunnel.id] != nil {
             stop(tunnel)
         } else {
-            start(tunnel)
+            startManually(tunnel)
         }
+    }
+
+    /// A start the user asked for from a row or group control. Beyond
+    /// `start`, it queues the profile's Open on Connect URL through the same
+    /// pending-open slot the browser button uses, so it opens once every rule
+    /// reaches Running and is dropped by stop, edit, delete, or retry
+    /// exhaustion. Start at Launch, edit relaunches, retries, and network
+    /// reconnects deliberately never open it.
+    private func startManually(_ tunnel: Tunnel) {
+        let url = tunnel.openOnConnectURL.flatMap {
+            OpenOnConnectURL.validate($0).url
+        }
+        start(tunnel)
+        guard let url, desiredTunnels[tunnel.id] != nil else { return }
+        pendingBrowserURLs[tunnel.id] = url
     }
 
     /// Starts every saved profile whose **Start at Launch** preference is on.
@@ -456,7 +471,7 @@ final class TunnelStore: ObservableObject {
     func startGroup(_ groupName: String) {
         for tunnel in savedMembers(ofGroup: groupName)
         where desiredTunnels[tunnel.id] == nil {
-            start(tunnel)
+            startManually(tunnel)
         }
     }
 

@@ -21,6 +21,7 @@ struct TunnelEditorView: View {
     @State private var streamBindMask: String
     @State private var unlinkStaleSocket: Bool
     @State private var startsAtLaunch: Bool
+    @State private var openOnConnectURL: String
     @State private var importError: String?
     @State private var clipboardReadError: String?
     @State private var hasPendingGroupName = false
@@ -30,6 +31,7 @@ struct TunnelEditorView: View {
         case command
         case name
         case sshHost
+        case openOnConnectURL
     }
 
     init(
@@ -79,6 +81,7 @@ struct TunnelEditorView: View {
         _startsAtLaunch = State(
             initialValue: tunnel?.startsAtLaunch ?? false
         )
+        _openOnConnectURL = State(initialValue: tunnel?.openOnConnectURL ?? "")
     }
 
     var body: some View {
@@ -241,6 +244,15 @@ struct TunnelEditorView: View {
                     .accessibilityLabel("SSH host")
                     .accessibilityHint("OpenSSH target, such as user at server")
                     .focused($focusedField, equals: .sshHost)
+            }
+
+            EditorField(label: "Open on Connect", hint: "Optional URL") {
+                TextField("http://localhost:8080/", text: $openOnConnectURL)
+                    .accessibilityLabel("Open on Connect URL")
+                    .accessibilityHint(
+                        "Optional http or https address opened when you start this profile"
+                    )
+                    .focused($focusedField, equals: .openOnConnectURL)
             }
 
             if !additionalArguments.isEmpty {
@@ -447,7 +459,8 @@ struct TunnelEditorView: View {
             reversePolicyChoice: reversePolicyChoice,
             hasReverseSOCKS: hasReverseSOCKS,
             reverseAllowedDestinations: reverseAllowedDestinations,
-            sshHost: sshHost
+            sshHost: sshHost,
+            openOnConnectURL: openOnConnectURL
         )
             ?? "Check the fields above; one value is not valid."
     }
@@ -491,6 +504,16 @@ struct TunnelEditorView: View {
             reversePolicy = nil
         }
 
+        let launchURL: String?
+        switch OpenOnConnectURL.validate(openOnConnectURL) {
+        case .unset:
+            launchURL = nil
+        case .valid:
+            launchURL = openOnConnectURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .invalid:
+            return nil
+        }
+
         let profile = Tunnel(
             id: tunnel?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -503,7 +526,8 @@ struct TunnelEditorView: View {
                 unlinkStaleSocket: unlinkStaleSocket
             ),
             groupTag: groupTag,
-            startsAtLaunch: startsAtLaunch
+            startsAtLaunch: startsAtLaunch,
+            openOnConnectURL: launchURL
         )
         return profile.isSafeToRun ? profile : nil
     }
@@ -1084,7 +1108,8 @@ enum TunnelEditorValidation {
         reversePolicyChoice: ReversePolicyChoice,
         hasReverseSOCKS: Bool,
         reverseAllowedDestinations: String,
-        sshHost: String
+        sshHost: String,
+        openOnConnectURL: String
     ) -> String? {
         if hasPendingGroupName {
             return "Finish naming the new group."
@@ -1129,6 +1154,9 @@ enum TunnelEditorValidation {
         }
         if !SSHArgumentPolicy.isValidHostTarget(host) {
             return "The SSH host cannot contain spaces or start with a dash."
+        }
+        if let issue = OpenOnConnectURL.validate(openOnConnectURL).errorMessage {
+            return issue
         }
         let builtRules = rules.compactMap(\.forwardingRule)
         if builtRules.count != rules.count {
