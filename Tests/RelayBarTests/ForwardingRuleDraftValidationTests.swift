@@ -155,7 +155,7 @@ final class ForwardingRuleDraftValidationTests: XCTestCase {
         )
         XCTAssertEqual(
             issue(rules: [validRule()], openOnConnectURL: "http://local host/"),
-            "The open-on-connect URL cannot contain spaces."
+            "The open-on-connect URL cannot contain spaces or control characters."
         )
         XCTAssertEqual(
             issue(rules: [validRule()], openOnConnectURL: "http:///path"),

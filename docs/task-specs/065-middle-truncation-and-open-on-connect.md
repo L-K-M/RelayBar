@@ -34,10 +34,13 @@ popover, and a profile can open a chosen web page when the user starts it.
 ## Acceptance
 
 - Two long names that differ only in their last characters show different
-  visible text in the popover.
+  visible text in the popover; two forwarding summaries that differ only in
+  their final destination or port do too.
 - Starting a profile with a URL from its row opens the URL once, only after
   it is Running; stopping before Running opens nothing.
-- Start at Launch and saving an edit of a running profile do not open it.
+- Start at Launch, saving an edit of a running profile, and Restart All do
+  not queue it; a group's Start All opens each started member's URL once it
+  is Running.
 - The editor blocks non-HTTP schemes, missing hosts, and embedded spaces
   with a named reason; profiles saved without the field load unchanged.
 - `swift test -Xswiftc -warnings-as-errors`, the Release build, and

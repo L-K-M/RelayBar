@@ -354,7 +354,8 @@ final class TunnelStore: ObservableObject {
     /// pending-open slot the browser button uses, so it opens once every rule
     /// reaches Running and is dropped by stop, edit, delete, or retry
     /// exhaustion. Start at Launch, edit relaunches, retries, and network
-    /// reconnects deliberately never open it.
+    /// reconnects deliberately never queue it, though a URL queued here
+    /// still opens if a retry is what finally reaches Running.
     private func startManually(_ tunnel: Tunnel) {
         let url = tunnel.openOnConnectURL.flatMap {
             OpenOnConnectURL.validate($0).url

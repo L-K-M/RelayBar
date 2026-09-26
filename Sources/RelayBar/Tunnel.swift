@@ -508,7 +508,9 @@ enum OpenOnConnectURL {
             CharacterSet.whitespacesAndNewlines.contains($0)
                 || CharacterSet.controlCharacters.contains($0)
         }) {
-            return .invalid("The open-on-connect URL cannot contain spaces.")
+            return .invalid(
+                "The open-on-connect URL cannot contain spaces or control characters."
+            )
         }
 
         guard
