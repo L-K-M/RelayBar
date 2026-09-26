@@ -338,9 +338,12 @@ private struct TunnelRow: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
+                        // Middle truncation keeps the distinguishing tail
+                        // of similar names ("Proxy Manager 81" vs "8181").
                         Text(tunnel.displayName)
                             .font(.system(size: 13.5, weight: .semibold))
                             .lineLimit(1)
+                            .truncationMode(.middle)
                         if case .failed = phase {
                             Text("Issue")
                                 .font(.system(size: 9.5, weight: .medium))
@@ -362,6 +365,7 @@ private struct TunnelRow: View {
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
 
                     statusLine
                         .font(.system(size: 10.5))
