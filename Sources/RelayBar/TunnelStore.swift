@@ -341,6 +341,67 @@ final class TunnelStore: ObservableObject {
         return candidate
     }
 
+    /// Applies the profiles from a backup and returns how many profiles the
+    /// import added (Add Missing) or now makes up the saved list (Replace
+    /// All). Add Missing appends only profiles whose identity is not saved
+    /// yet, leaving every saved profile and its lifecycle untouched. Replace
+    /// All stops every active profile first, then makes the saved list
+    /// exactly the backup's. Either way nothing starts: Start at Launch is
+    /// restored as a preference for the next launch. Group tags resolve the
+    /// way `add` resolves them, so a backup's "work" joins a saved "Work".
+    @discardableResult
+    func importProfiles(_ imported: [Tunnel], mode: BackupImportMode) -> Int {
+        let base: [Tunnel]
+        switch mode {
+        case .addMissing:
+            base = tunnels
+        case .replaceAll:
+            stopAll()
+            base = []
+        }
+
+        var seenIDs = Set(base.map(\.id))
+        var knownGroupNames = TunnelGrouping(tunnels: base).groupNames
+        var accepted: [Tunnel] = []
+        for tunnel in imported where seenIDs.insert(tunnel.id).inserted {
+            var resolved = tunnel
+            if let groupTag = tunnel.groupTag {
+                switch TunnelGroupTag.resolve(groupTag, existingNames: knownGroupNames) {
+                case .valid(let name):
+                    resolved.groupTag = name
+                    if !knownGroupNames.contains(name) {
+                        knownGroupNames.append(name)
+                    }
+                case .ungrouped:
+                    resolved.groupTag = nil
+                case .invalid:
+                    // Decoding already rejects invalid tags; a profile that
+                    // still carries one is skipped rather than saved broken.
+                    continue
+                }
+            }
+            accepted.append(resolved)
+        }
+
+        switch mode {
+        case .addMissing:
+            guard !accepted.isEmpty else { return 0 }
+            tunnels.append(contentsOf: accepted)
+            save()
+            return accepted.count
+        case .replaceAll:
+            // Every definition is replaced, so no earlier failure message
+            // or allocated port describes what is now saved under its ID.
+            for id in tunnels.map(\.id) {
+                phases[id] = nil
+                runtimePorts[id] = nil
+            }
+            tunnels = accepted
+            save()
+            return accepted.count
+        }
+    }
+
     func toggle(_ tunnel: Tunnel) {
         if desiredTunnels[tunnel.id] != nil {
             stop(tunnel)

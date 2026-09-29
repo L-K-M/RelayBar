@@ -24,7 +24,20 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   than doing nothing, so a hidden item is always recoverable.
 - A main menu supplies the standard editing key equivalents, which an
   `LSUIElement` app otherwise never routes to the first responder.
-- The popover is a 380 × 440 point window containing the tunnel list, the profile editor, or the settings screen.
+- The popover contains the tunnel list, the profile editor, or the settings
+  screen. It opens at 420 × 580 points until the user resizes it, and a grip
+  in its bottom-trailing corner resizes it on every screen. The size stays at
+  least 380 × 440 points, at most 720 points wide, and within the visible
+  frame of the screen the menu opens on, less a 40-point margin. A drag
+  resizes live without animation and follows the pointer while the popover
+  is centered on its icon; the chosen size persists when the drag ends and is
+  re-clamped at every opening without overwriting the stored preference on a
+  smaller screen. The grip is an adjustable **Resize menu** accessibility
+  element that grows or shrinks the menu by 40 × 60 points per step. Its
+  13-point target stays clear of the trailing **Quit** and **Save** buttons.
+- The popover's content size is the single size authority: the root view fills
+  its host, and the hosting controller derives no minimum, intrinsic,
+  maximum, or preferred size from SwiftUI.
 - Round icon buttons share one hover-tinted circle treatment, the per-row action menu matches its siblings at 28 points, and truncated row error text expands in a hover tooltip.
 - The profile editor and Settings use one viewport-constrained vertical-scroll
   container. Its document width is the viewport minus balanced 16-point
@@ -73,6 +86,9 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   Updates…** stays disabled. Every other Settings surface behaves unchanged, so
   restoring `SUFeedURL` and `SUPublicEDKey` is all that a fork-owned feed
   requires.
+- Settings has a **Backup** section below General: an **Automatic Backups**
+  switch, the backup folder with its last-backup status and **Choose…**, and
+  **Export…** and **Import…**. See [Backup and restore](backup.md).
 - The system login-item status is authoritative; no second enabled flag is persisted. Approval-required and not-found states keep the toggle off, while an operation error remains visible without overriding the system-reported toggle state, so failed changes stay truthful and retryable. Approval-required links to the macOS Login Items settings, and the displayed state refreshes when the app becomes active.
 - A login launch opens the same menu-bar-only app. Saved profiles whose **Start at Launch** preference is on are started automatically at launch; every other profile stays stopped until the user starts it. Debug preview launches (`--preview-window`, `--remote-files-preview`, or a valid `--remote-files-live-preview`) do not auto-start saved profiles.
 - A quiet Settings footer reads version and build from the running bundle,
@@ -110,6 +126,10 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - `RelayBarRootView` owns navigation and presentation.
 - `TunnelStore.shared` owns tunnel and process state.
 - `LaunchAtLoginModel` owns login-item state behind the injected `LoginItemServicing` boundary.
+- `PopoverSizeModel` owns the popover's stored and effective size; the
+  delegate applies it to the popover.
+- `BackupModel` owns backup settings and actions; see
+  [Backup and restore](backup.md).
 - `UpdateModel` owns the Settings-facing state behind one app-lifetime
   `UpdateServicing` boundary. The Xcode app supplies Sparkle; SwiftPM tests
   supply an inert or injected service and cannot contact the update feed.

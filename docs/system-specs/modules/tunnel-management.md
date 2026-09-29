@@ -32,6 +32,6 @@ Each saved item is a forwarding profile: one SSH connection plus an ordered, non
   its active connection. Confirming cancels its connection, control operation,
   retry, pending browser launch, runtime ports, and owned temporary artifacts;
   cancelling leaves both the profile and its lifecycle untouched.
-- Definitions persist immediately after add, edit, delete, move, rename, or ungroup operations.
+- Definitions persist immediately after add, edit, delete, move, rename, ungroup, or backup import operations. Importing a backup never starts a profile; Replace All stops active profiles first ([Backup and restore](backup.md)).
 
 See [Data and state](../shared/data-and-state.md) for the stored schema.

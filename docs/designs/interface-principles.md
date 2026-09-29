@@ -38,8 +38,8 @@ from an earlier session.
 ## 4. Calm at default, graceful under pressure
 
 At the default system text size, development locale, and normal state, each
-popover screen fits the 380 × 440 point content budget without unnecessary
-scrolling. Larger text, longer localization, focus chrome, and error captions
+popover screen fits the 420 × 580 point default size without unnecessary
+scrolling, and remains usable without clipping at the 380 × 440 point minimum. Larger text, longer localization, focus chrome, and error captions
 may require scrolling but must never cause clipping, overlap, or horizontal
 movement.
 

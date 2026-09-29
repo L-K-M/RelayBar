@@ -6,17 +6,20 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var launchAtLogin: LaunchAtLoginModel
     @ObservedObject var updates: UpdateModel
+    @ObservedObject var backups: BackupModel
     @StateObject private var about: ApplicationAboutModel
     let onBack: () -> Void
 
     init(
         launchAtLogin: LaunchAtLoginModel,
         updates: UpdateModel,
+        backups: BackupModel,
         about: ApplicationAboutModel = ApplicationAboutModel(),
         onBack: @escaping () -> Void
     ) {
         self.launchAtLogin = launchAtLogin
         self.updates = updates
+        self.backups = backups
         _about = StateObject(wrappedValue: about)
         self.onBack = onBack
     }
@@ -29,6 +32,7 @@ struct SettingsView: View {
             PopoverScrollContainer(fillsViewport: true) {
                 VStack(alignment: .leading, spacing: 18) {
                     generalSection
+                    backupSection
                     Spacer(minLength: 24)
                     aboutFooter
                 }
@@ -50,6 +54,7 @@ struct SettingsView: View {
         .onDisappear {
             about.cancelTransientState()
             updates.cancelTransientState()
+            backups.cancelTransientState()
         }
     }
 
@@ -103,6 +108,150 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
         }
+    }
+
+    private var backupSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("BACKUP")
+
+            VStack(spacing: 0) {
+                automaticBackupsRow
+                Divider()
+                    .padding(.horizontal, 12)
+                backupFolderRow
+                Divider()
+                    .padding(.horizontal, 12)
+                exportImportRow
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+
+            Text("Backups hold your forwarding profiles and saved Remote Files hosts. RelayBar never stores passwords or keys.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    private var automaticBackupsRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Automatic Backups")
+                    .font(.system(size: 12.5, weight: .medium))
+                Text("Saves a copy after each change and keeps the newest \(BackupFileNaming.retainedAutomaticBackupCount).")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Toggle(
+                "Automatic Backups",
+                isOn: Binding(
+                    get: { backups.isAutomaticBackupEnabled },
+                    set: { backups.setAutomaticBackupEnabled($0) }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+    }
+
+    private var backupFolderRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "folder")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(backups.folderDisplayPath ?? "No backup folder")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(backups.folder?.path ?? "")
+                backupStatus
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Choose\u{2026}", action: backups.chooseFolder)
+                .controlSize(.small)
+                .accessibilityLabel("Choose backup folder")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+    }
+
+    @ViewBuilder private var backupStatus: some View {
+        if let error = backups.automaticBackupError {
+            Text("Last backup failed. \(error)")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.red)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(error)
+        } else if let date = backups.lastAutomaticBackupDate {
+            Text("Last backup \(date.formatted(date: .abbreviated, time: .shortened))")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+        } else {
+            Text(backups.folder == nil ? "Choose where automatic backups go" : "No backup yet")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var exportImportRow: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Button("Export\u{2026}", action: backups.exportBackup)
+                    .controlSize(.small)
+                    .help("Save your profiles and Remote Files hosts to a file")
+                    .accessibilityLabel("Export backup")
+                Button("Import\u{2026}", action: backups.importBackup)
+                    .controlSize(.small)
+                    .help("Restore profiles and Remote Files hosts from a backup file")
+                    .accessibilityLabel("Import backup")
+                Spacer()
+            }
+
+            switch backups.activity {
+            case .idle:
+                EmptyView()
+            case .succeeded(let message):
+                Text(message)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .failed(let message):
+                Text(message)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.red)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(message)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var automaticUpdatesRow: some View {

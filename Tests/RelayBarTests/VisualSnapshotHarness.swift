@@ -67,7 +67,8 @@ final class VisualSnapshotHarness: XCTestCase {
             try capture(
                 view: RelayBarRootView(
                     loginItemService: LoginItemServiceSpy(status: .enabled),
-                    updateModel: previewUpdateModel()
+                    updateModel: previewUpdateModel(),
+                    backupModel: previewBackupModel()
                 )
                 .environmentObject(store),
                 appearance: appearanceName,
@@ -79,7 +80,8 @@ final class VisualSnapshotHarness: XCTestCase {
             try capture(
                 view: RelayBarRootView(
                     loginItemService: LoginItemServiceSpy(status: .enabled),
-                    updateModel: previewUpdateModel(result: .upToDate)
+                    updateModel: previewUpdateModel(result: .upToDate),
+                    backupModel: previewBackupModel()
                 )
                 .environmentObject(store),
                 appearance: appearanceName,
@@ -96,6 +98,7 @@ final class VisualSnapshotHarness: XCTestCase {
                         service: LoginItemServiceSpy(status: .enabled)
                     ),
                     updates: previewUpdateModel(),
+                    backups: previewBackupModel(),
                     about: previewAboutModel(),
                     onBack: {}
                 )
@@ -110,6 +113,7 @@ final class VisualSnapshotHarness: XCTestCase {
                         service: LoginItemServiceSpy(status: .enabled)
                     ),
                     updates: previewUpdateModel(result: .upToDate),
+                    backups: previewBackupModel(),
                     about: previewAboutModel(copied: true),
                     onBack: {}
                 )
@@ -128,6 +132,7 @@ final class VisualSnapshotHarness: XCTestCase {
                         service: LoginItemServiceSpy(status: .requiresApproval)
                     ),
                     updates: previewUpdateModel(),
+                    backups: previewBackupModel(),
                     about: previewAboutModel(),
                     onBack: {}
                 )
@@ -197,7 +202,8 @@ final class VisualSnapshotHarness: XCTestCase {
                 try capture(
                     view: RelayBarRootView(
                         loginItemService: LoginItemServiceSpy(status: .enabled),
-                        updateModel: previewUpdateModel()
+                        updateModel: previewUpdateModel(),
+                        backupModel: previewBackupModel()
                     )
                     .environmentObject(store),
                     appearance: appearanceName,
@@ -223,6 +229,18 @@ final class VisualSnapshotHarness: XCTestCase {
             service.complete(with: result)
         }
         return model
+    }
+
+    /// A backup model with no folder, no saved work, and scripted panels,
+    /// so snapshots show the default Backup card and never touch disk.
+    private func previewBackupModel() -> BackupModel {
+        BackupModel(
+            dataSource: StaticBackupDataSource(),
+            presenter: ScriptedBackupPanelPresenter(),
+            defaults: UserDefaults(
+                suiteName: "RelayBarTests.SnapshotBackup.\(UUID().uuidString)"
+            )!
+        )
     }
 
     private func previewAboutModel(copied: Bool = false) -> ApplicationAboutModel {

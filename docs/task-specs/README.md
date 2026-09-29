@@ -44,6 +44,8 @@ active and accepted directories. Run it before claiming a number.
 - [Task 062 — Unsigned GitHub Releases](062-unsigned-github-releases.md)
 - [Task 064 — Upstream Workspace Integration](064-upstream-workspace-integration.md)
 - [Task 065 — Middle Truncation and Open on Connect](065-middle-truncation-and-open-on-connect.md)
+- [Task 066 — Resizable Menu Popover](066-resizable-menu-popover.md)
+- [Task 067 — Backup, Export, and Import](067-backup-export-import.md)
 
 ## Backlog
 
