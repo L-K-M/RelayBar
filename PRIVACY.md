@@ -24,7 +24,9 @@ on, and exports are written only to a folder or file the user chooses. They
 contain saved tunnel definitions and saved Remote Files hosts, not
 credentials, private keys, recent locations, or remote file contents, and
 RelayBar restricts each file to its owner. Imports read only the file the user
-chooses. RelayBar sends backups nowhere.
+chooses. RelayBar sends backups nowhere. If the chosen folder belongs to a
+cloud-syncing service such as iCloud Drive, that service's own handling of the
+files applies.
 
 Markdown images, embeds, wiki links, tags, HTML, and Mermaid source do not make network requests. Syntax highlighting and math rendering happen locally. RelayBar sends an HTTP, HTTPS, or email link to macOS only after the user clicks that link; the selected system browser or mail app then applies its own privacy policy.
 

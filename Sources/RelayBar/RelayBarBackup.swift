@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 enum BackupImportMode: Equatable, Sendable {
@@ -47,6 +48,9 @@ struct BackupImportPreview: Equatable, Sendable {
     let remoteFilesHostCount: Int
     let missingProfileCount: Int
     let missingRemoteFilesHostCount: Int
+    /// What Replace All would delete: saved work the backup doesn't list.
+    let removedProfileCount: Int
+    let removedRemoteFilesHostCount: Int
 
     init(
         importing backup: RelayBarBackupContents,
@@ -56,6 +60,10 @@ struct BackupImportPreview: Equatable, Sendable {
         let savedConnections = Set(
             current.remoteFilesHosts.map(\.connectionIdentity)
         )
+        let backupProfileIDs = Set(backup.profiles.map(\.id))
+        let backupConnections = Set(
+            backup.remoteFilesHosts.map(\.connectionIdentity)
+        )
         profileCount = backup.profiles.count
         remoteFilesHostCount = backup.remoteFilesHosts.count
         missingProfileCount = backup.profiles.filter {
@@ -64,10 +72,20 @@ struct BackupImportPreview: Equatable, Sendable {
         missingRemoteFilesHostCount = backup.remoteFilesHosts.filter {
             !savedConnections.contains($0.connectionIdentity)
         }.count
+        removedProfileCount = current.profiles.filter {
+            !backupProfileIDs.contains($0.id)
+        }.count
+        removedRemoteFilesHostCount = current.remoteFilesHosts.filter {
+            !backupConnections.contains($0.connectionIdentity)
+        }.count
     }
 
     var hasMissingItems: Bool {
         missingProfileCount > 0 || missingRemoteFilesHostCount > 0
+    }
+
+    var hasRemovals: Bool {
+        removedProfileCount > 0 || removedRemoteFilesHostCount > 0
     }
 }
 
@@ -75,6 +93,7 @@ enum RelayBarBackupError: LocalizedError, Equatable {
     case tooLarge
     case notABackup
     case newerVersion
+    case empty
     case damaged(String)
     case unreadable(String)
     case folderMissing(String)
@@ -87,6 +106,8 @@ enum RelayBarBackupError: LocalizedError, Equatable {
             return "The file isn't a RelayBar backup."
         case .newerVersion:
             return "The backup was made by a newer version of RelayBar. Update RelayBar to import it."
+        case .empty:
+            return "The backup has no profiles or Remote Files hosts."
         case .damaged(let detail):
             return "The backup is damaged. \(detail)"
         case .unreadable(let detail):
@@ -149,6 +170,7 @@ enum RelayBarBackupCodec {
     /// Profiles decode through the same rules as saved profiles, so a backup
     /// cannot carry anything the saved list would not load. Hosts must pass
     /// the saved-host rules; repeated hosts collapse to their first entry.
+    /// A backup with nothing in it is refused: it could only ever erase.
     static func decode(_ data: Data) throws -> RelayBarBackupContents {
         guard data.count <= maximumFileSize else {
             throw RelayBarBackupError.tooLarge
@@ -196,12 +218,16 @@ enum RelayBarBackupCodec {
                     "The Remote Files host \u{201c}\(host.name)\u{201d} isn't valid."
                 )
             }
+            // Checked before recording either key, so a host skipped for a
+            // repeated identity cannot hide a later host's connection.
             guard
-                seenConnections.insert(host.connectionIdentity).inserted,
-                seenIDs.insert(host.id).inserted
+                !seenConnections.contains(host.connectionIdentity),
+                !seenIDs.contains(host.id)
             else {
                 continue
             }
+            seenConnections.insert(host.connectionIdentity)
+            seenIDs.insert(host.id)
             hosts.append(host)
         }
         guard hosts.count <= maximumRemoteFilesHostCount else {
@@ -210,10 +236,14 @@ enum RelayBarBackupCodec {
             )
         }
 
-        return RelayBarBackupContents(
+        let contents = RelayBarBackupContents(
             profiles: document.profiles,
             remoteFilesHosts: hosts
         )
+        guard !contents.isEmpty else {
+            throw RelayBarBackupError.empty
+        }
+        return contents
     }
 
     private static func document(
@@ -340,23 +370,34 @@ struct BackupFiles {
         }
     }
 
-    /// Writes atomically, then restricts the file to its owner: a backup
-    /// lists hosts, accounts, and forwarded services.
+    /// A backup lists hosts, accounts, and forwarded services, so it is
+    /// created owner-only (`0600`) under a hidden staging name beside the
+    /// destination and then renamed over it. It is never readable by others,
+    /// even briefly, and a reader never sees a partial file.
     func write(_ data: Data, to url: URL) throws {
-        try data.write(to: url, options: .atomic)
+        let staging = url.deletingLastPathComponent().appendingPathComponent(
+            ".\(url.lastPathComponent).\(UUID().uuidString).partial"
+        )
+        let descriptor = open(
+            staging.path,
+            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+            0o600
+        )
+        guard descriptor >= 0 else {
+            throw Self.writeError(errno, for: url)
+        }
+
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         do {
-            try fileManager.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: url.path
-            )
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+            try handle.close()
+            guard rename(staging.path, url.path) == 0 else {
+                throw Self.writeError(errno, for: url)
+            }
         } catch {
-            // The backup itself exists; a volume that cannot store POSIX
-            // permissions must not turn it into a reported failure.
-            NSLog(
-                "RelayBar Scion could not restrict permissions on %@: %@",
-                url.path,
-                error.localizedDescription
-            )
+            try? fileManager.removeItem(at: staging)
+            throw error
         }
     }
 
@@ -375,6 +416,29 @@ struct BackupFiles {
         } catch {
             throw RelayBarBackupError.unreadable(error.localizedDescription)
         }
+    }
+
+    /// Maps a POSIX failure to the Cocoa error Foundation's own writers
+    /// report, so the message names the file and the reason.
+    private static func writeError(_ code: Int32, for url: URL) -> CocoaError {
+        let cocoaCode: CocoaError.Code
+        switch code {
+        case EACCES, EPERM:
+            cocoaCode = .fileWriteNoPermission
+        case ENOSPC, EDQUOT:
+            cocoaCode = .fileWriteOutOfSpace
+        case EROFS:
+            cocoaCode = .fileWriteVolumeReadOnly
+        default:
+            cocoaCode = .fileWriteUnknown
+        }
+        return CocoaError(
+            cocoaCode,
+            userInfo: [
+                NSFilePathErrorKey: url.path,
+                NSUnderlyingErrorKey: POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            ]
+        )
     }
 
     /// Best effort: a copy that cannot be removed now is removed by a later
@@ -437,9 +501,18 @@ enum BackupCopy {
                 profileCount: preview.profileCount,
                 remoteFilesHostCount: preview.remoteFilesHostCount
             )
-        let replaceAll = "Replace All removes every saved profile and Remote Files host "
-            + "that isn't in the backup, restores the backup's version of the rest, "
-            + "and stops any active tunnels."
+        let replaceAll: String
+        if preview.hasRemovals {
+            let removed = summary(
+                profileCount: preview.removedProfileCount,
+                remoteFilesHostCount: preview.removedRemoteFilesHostCount
+            )
+            replaceAll = "Replace All removes \(removed) that aren't in the backup, "
+                + "restores the backup's version of the rest, and stops any active tunnels."
+        } else {
+            replaceAll = "Replace All removes nothing you have, restores the backup's "
+                + "version of everything it lists, and stops any active tunnels."
+        }
         guard preview.hasMissingItems else {
             return "\(contents), and you already have all of them.\n\n\(replaceAll)"
         }

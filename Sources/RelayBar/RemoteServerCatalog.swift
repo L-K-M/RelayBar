@@ -522,14 +522,18 @@ final class RemoteServerCatalog {
         var addedCount = 0
         for host in hosts {
             let record = Record(host: host)
+            // Checked before recording either key, so a host skipped for a
+            // repeated identity cannot hide a later host's connection.
             guard
                 records.count < Self.savedLimit,
                 record.isValid,
-                seenConnections.insert(record.connectionIdentity).inserted,
-                seenIDs.insert(record.id).inserted
+                !seenConnections.contains(record.connectionIdentity),
+                !seenIDs.contains(record.id)
             else {
                 continue
             }
+            seenConnections.insert(record.connectionIdentity)
+            seenIDs.insert(record.id)
             records.append(record)
             addedCount += 1
         }

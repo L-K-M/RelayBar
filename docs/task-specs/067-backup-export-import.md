@@ -52,8 +52,10 @@ again on this Mac or another one.
   profiles and hosts exactly.
 - Add Missing never changes or stops a saved profile. Replace All stops
   active tunnels before replacing.
-- A non-backup file, a newer format version, an invalid profile or host,
-  and a file over 4 MiB are refused with a named reason and change nothing.
+- A non-backup file, a newer format version, an invalid profile or host, an
+  empty backup, and a file over 4 MiB are refused with a named reason and
+  change nothing. The confirmation counts what Replace All would remove, and
+  a failed pre-import backup cancels Replace All.
 - `swift test -Xswiftc -warnings-as-errors`, the Release build, and
   `git diff --check` pass.
 - Manual: the folder, export, and import panels open from the menu, the

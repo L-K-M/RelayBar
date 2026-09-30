@@ -29,7 +29,7 @@ final class RelayBarBackupCodecTests: XCTestCase {
         XCTAssertEqual((object["remoteFilesHosts"] as? [Any])?.count, 1)
     }
 
-    func testDigestIgnoresCreationDateButNotContents() throws {
+    func testDigestIsDeterministicAndTracksContents() throws {
         let contents = BackupFixtures.contents()
         var changed = contents
         changed.profiles[0].name = "Renamed"
@@ -118,6 +118,44 @@ final class RelayBarBackupCodecTests: XCTestCase {
                 return XCTFail("Expected a damaged backup, got \(error)")
             }
         }
+    }
+
+    func testRejectsAnEmptyBackup() throws {
+        let data = try RelayBarBackupCodec.encode(
+            RelayBarBackupContents(profiles: [], remoteFilesHosts: []),
+            createdAt: BackupFixtures.date
+        )
+
+        XCTAssertThrowsError(try RelayBarBackupCodec.decode(data)) { error in
+            XCTAssertEqual(error as? RelayBarBackupError, .empty)
+        }
+    }
+
+    func testARepeatedHostIdentityDoesNotHideALaterConnection() throws {
+        var contents = BackupFixtures.contents()
+        let first = contents.remoteFilesHosts[0]
+        let later = BackupRemoteFilesHost(
+            id: UUID(),
+            name: "Media",
+            sshHost: "media.example.com",
+            additionalArguments: []
+        )
+        contents.remoteFilesHosts = [
+            first,
+            BackupRemoteFilesHost(
+                id: first.id,
+                name: "Same identity, new connection",
+                sshHost: later.sshHost,
+                additionalArguments: []
+            ),
+            later
+        ]
+
+        let decoded = try RelayBarBackupCodec.decode(
+            RelayBarBackupCodec.encode(contents, createdAt: BackupFixtures.date)
+        )
+
+        XCTAssertEqual(decoded.remoteFilesHosts, [first, later])
     }
 
     func testRepeatedHostsCollapseToTheFirst() throws {
@@ -215,7 +253,42 @@ final class BackupImportPreviewTests: XCTestCase {
         XCTAssertEqual(preview.remoteFilesHostCount, 1)
         XCTAssertEqual(preview.missingProfileCount, 1)
         XCTAssertEqual(preview.missingRemoteFilesHostCount, 0)
+        XCTAssertEqual(preview.removedProfileCount, 0)
+        XCTAssertEqual(preview.removedRemoteFilesHostCount, 0)
         XCTAssertTrue(preview.hasMissingItems)
+        XCTAssertFalse(preview.hasRemovals)
+    }
+
+    func testConfirmationCountsWhatReplaceAllRemoves() {
+        let full = BackupFixtures.contents()
+        let backup = RelayBarBackupContents(
+            profiles: [full.profiles[0]],
+            remoteFilesHosts: full.remoteFilesHosts
+        )
+        let current = RelayBarBackupContents(
+            profiles: full.profiles + [BackupFixtures.profile(name: "Extra")],
+            remoteFilesHosts: full.remoteFilesHosts + [
+                BackupRemoteFilesHost(
+                    id: UUID(),
+                    name: "Media",
+                    sshHost: "media.example.com",
+                    additionalArguments: []
+                )
+            ]
+        )
+
+        let preview = BackupImportPreview(importing: backup, into: current)
+
+        XCTAssertEqual(preview.removedProfileCount, 2)
+        XCTAssertEqual(preview.removedRemoteFilesHostCount, 1)
+        XCTAssertEqual(
+            BackupCopy.importInformativeText(for: preview),
+            "This backup has 1 profile and 1 Remote Files host, "
+                + "and you already have all of them.\n\n"
+                + "Replace All removes 2 profiles and 1 Remote Files host "
+                + "that aren't in the backup, restores the backup's version of the rest, "
+                + "and stops any active tunnels."
+        )
     }
 
     func testConfirmationExplainsBothChoicesAndPluralizes() {
@@ -230,9 +303,8 @@ final class BackupImportPreviewTests: XCTestCase {
             "This backup has 2 profiles and 1 Remote Files host. "
                 + "1 profile and 1 Remote Files host aren't in RelayBar yet.\n\n"
                 + "Add Missing adds only those and leaves everything you have unchanged. "
-                + "Replace All removes every saved profile and Remote Files host "
-                + "that isn't in the backup, restores the backup's version of the rest, "
-                + "and stops any active tunnels."
+                + "Replace All removes nothing you have, restores the backup's "
+                + "version of everything it lists, and stops any active tunnels."
         )
     }
 
@@ -382,6 +454,38 @@ final class BackupImportTargetTests: XCTestCase {
         )
     }
 
+    func testHostSkippedForARepeatedIdentityDoesNotHideALaterConnection() {
+        let (defaults, suiteName) = BackupFixtures.isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let catalog = RemoteServerCatalog(defaults: defaults)
+        let build = BackupRemoteFilesHost(
+            id: UUID(),
+            name: "Build",
+            sshHost: "build.example.com",
+            additionalArguments: []
+        )
+        let media = BackupRemoteFilesHost(
+            id: UUID(),
+            name: "Media",
+            sshHost: "media.example.com",
+            additionalArguments: []
+        )
+        let repeatedIdentity = BackupRemoteFilesHost(
+            id: build.id,
+            name: "Repeated identity",
+            sshHost: media.sshHost,
+            additionalArguments: []
+        )
+
+        let count = catalog.importSavedHosts(
+            [build, repeatedIdentity, media],
+            mode: .replaceAll
+        )
+
+        XCTAssertEqual(count, 2)
+        XCTAssertEqual(catalog.savedHostsForBackup, [build, media])
+    }
+
     func testHostImportRespectsTheSavedHostLimit() {
         let (defaults, suiteName) = BackupFixtures.isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -508,12 +612,10 @@ final class BackupModelTests: XCTestCase {
         defer { fixture.tearDown() }
         let manager = FileManager.default
         let calendar = Calendar(identifier: .gregorian)
-        for day in 1...35 {
-            let date = calendar.date(
-                byAdding: .day,
-                value: -day,
-                to: fixture.clock.date
-            )!
+        for day in 1...(BackupFileNaming.retainedAutomaticBackupCount + 5) {
+            let date = try XCTUnwrap(
+                calendar.date(byAdding: .day, value: -day, to: fixture.clock.date)
+            )
             let name = BackupFileNaming.automaticBackupName(for: date)
             try Data("old".utf8).write(to: fixture.folder.appendingPathComponent(name))
         }
@@ -562,6 +664,49 @@ final class BackupModelTests: XCTestCase {
 
         fixture.model.cancelTransientState()
         XCTAssertEqual(fixture.model.activity, .idle)
+    }
+
+    func testExportReplacesAnExistingFileAndLeavesNoStagingFile() throws {
+        let fixture = try BackupModelFixture()
+        defer { fixture.tearDown() }
+        let destination = fixture.folder.appendingPathComponent("Exported.json")
+        try Data("older export".utf8).write(to: destination)
+        fixture.presenter.exportDestination = destination
+
+        fixture.model.exportBackup()
+
+        XCTAssertEqual(
+            try RelayBarBackupCodec.decode(Data(contentsOf: destination)),
+            fixture.dataSource.contents
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: fixture.folder.path),
+            ["Exported.json"]
+        )
+        let permissions = try FileManager.default
+            .attributesOfItem(atPath: destination.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(permissions?.intValue, 0o600)
+    }
+
+    func testExportRefusesAnEmptyListBeforeAskingWhere() throws {
+        let fixture = try BackupModelFixture(
+            contents: RelayBarBackupContents(profiles: [], remoteFilesHosts: [])
+        )
+        defer { fixture.tearDown() }
+        fixture.presenter.exportDestination = fixture.folder
+            .appendingPathComponent("Empty.json")
+
+        fixture.model.exportBackup()
+
+        XCTAssertTrue(fixture.presenter.suggestedExportNames.isEmpty)
+        XCTAssertEqual(
+            fixture.model.activity,
+            .failed("There's nothing to export yet. Add a profile or a Remote Files host first.")
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: fixture.folder.path),
+            []
+        )
     }
 
     func testCancelledExportChangesNothing() throws {
@@ -662,6 +807,56 @@ final class BackupModelTests: XCTestCase {
             beforeImport
         )
         XCTAssertEqual(fixture.dataSource.imports.map { $0.mode }, [.replaceAll])
+    }
+
+    func testReplaceAllIsCancelledWhenTheSafetyBackupFails() throws {
+        let fixture = try BackupModelFixture()
+        defer { fixture.tearDown() }
+        let backupFolder = fixture.folder.appendingPathComponent(
+            "Backups",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: backupFolder,
+            withIntermediateDirectories: false
+        )
+        fixture.presenter.folderChoice = backupFolder
+        fixture.model.setAutomaticBackupEnabled(true)
+        // The folder goes away, as an unmounted volume would, and there is
+        // an unbacked change when the import starts.
+        try FileManager.default.removeItem(at: backupFolder)
+        fixture.dataSource.contents.profiles[0].name = "Unsaved edit"
+        let file = fixture.folder.appendingPathComponent("Other backup.json")
+        try RelayBarBackupCodec.encode(
+            RelayBarBackupContents(
+                profiles: [BackupFixtures.profile(name: "Imported")],
+                remoteFilesHosts: []
+            ),
+            createdAt: fixture.clock.date
+        ).write(to: file)
+        fixture.presenter.importFile = file
+        fixture.presenter.importDecision = .replaceAll
+
+        fixture.model.importBackup()
+
+        XCTAssertTrue(fixture.dataSource.imports.isEmpty)
+        let reason = try XCTUnwrap(
+            RelayBarBackupError.folderMissing("Backups").errorDescription
+        )
+        XCTAssertEqual(
+            fixture.model.activity,
+            .failed(
+                "Nothing was replaced, because RelayBar couldn't back up "
+                    + "your current profiles first. \(reason)"
+            )
+        )
+
+        // Add Missing changes nothing saved, so the same failure does not
+        // block it.
+        fixture.presenter.importDecision = .addMissing
+        fixture.model.importBackup()
+
+        XCTAssertEqual(fixture.dataSource.imports.map { $0.mode }, [.addMissing])
     }
 
     func testStoreBackupRoundTripsThroughAFileIntoAFreshInstall() throws {
@@ -837,8 +1032,8 @@ final class BackupModelFixture {
     }
 }
 
-/// Saved work held in memory; an import replaces or extends it the way the
-/// real stores would, and is recorded for assertions.
+/// Saved work held in memory; an import replaces it, or adds entries whose
+/// identity is new, and is recorded for assertions.
 @MainActor
 final class StaticBackupDataSource: BackupDataSource {
     var contents: RelayBarBackupContents
@@ -864,8 +1059,14 @@ final class StaticBackupDataSource: BackupDataSource {
         imports.append((imported, mode))
         switch mode {
         case .addMissing:
-            contents.profiles += imported.profiles
-            contents.remoteFilesHosts += imported.remoteFilesHosts
+            let savedProfileIDs = Set(contents.profiles.map(\.id))
+            let savedHostIDs = Set(contents.remoteFilesHosts.map(\.id))
+            contents.profiles += imported.profiles.filter {
+                !savedProfileIDs.contains($0.id)
+            }
+            contents.remoteFilesHosts += imported.remoteFilesHosts.filter {
+                !savedHostIDs.contains($0.id)
+            }
         case .replaceAll:
             contents = imported
         }

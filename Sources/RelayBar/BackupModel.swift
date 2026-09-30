@@ -151,6 +151,13 @@ final class BackupModel: ObservableObject {
         case failed(String)
     }
 
+    enum AutomaticBackupOutcome: Equatable {
+        /// Off, no folder, nothing saved, or nothing changed since the last one.
+        case notNeeded
+        case written
+        case failed(String)
+    }
+
     enum StorageKey {
         static let automaticBackupsEnabled = "backup.automatic.enabled.v1"
         static let folderPath = "backup.folderPath.v1"
@@ -252,20 +259,21 @@ final class BackupModel: ObservableObject {
     /// never backed up, so clearing everything cannot push the last useful
     /// copies out of the folder. Also called before an import and at quit,
     /// so neither can outrun the backup of what it replaces.
-    func performAutomaticBackupIfNeeded() {
+    @discardableResult
+    func performAutomaticBackupIfNeeded() -> AutomaticBackupOutcome {
         pendingBackupTask?.cancel()
         pendingBackupTask = nil
-        guard isAutomaticBackupEnabled, let folder else { return }
+        guard isAutomaticBackupEnabled, let folder else { return .notNeeded }
 
         let contents = dataSource.currentBackupContents()
-        guard !contents.isEmpty else { return }
+        guard !contents.isEmpty else { return .notNeeded }
 
         let date = now()
         let digest: String
         do {
             digest = try RelayBarBackupCodec.digest(of: contents)
             guard digest != defaults.string(forKey: StorageKey.lastAutomaticDigest) else {
-                return
+                return .notNeeded
             }
             try files.requireFolder(folder)
             let data = try RelayBarBackupCodec.encode(contents, createdAt: date)
@@ -278,8 +286,9 @@ final class BackupModel: ObservableObject {
         } catch {
             // The digest stays unrecorded, so the next change or launch
             // tries again.
-            automaticBackupError = Self.message(for: error)
-            return
+            let message = Self.message(for: error)
+            automaticBackupError = message
+            return .failed(message)
         }
 
         files.pruneAutomaticBackups(
@@ -290,9 +299,21 @@ final class BackupModel: ObservableObject {
         defaults.set(date, forKey: StorageKey.lastAutomaticDate)
         lastAutomaticBackupDate = date
         automaticBackupError = nil
+        return .written
     }
 
+    /// An empty export is refused before the save panel opens: it would
+    /// preserve nothing, and importing it with Replace All would erase
+    /// everything.
     func exportBackup() {
+        let contents = dataSource.currentBackupContents()
+        guard !contents.isEmpty else {
+            activity = .failed(
+                "There's nothing to export yet. Add a profile or a Remote Files host first."
+            )
+            return
+        }
+
         let date = now()
         guard
             let destination = presenter.chooseExportDestination(
@@ -302,7 +323,6 @@ final class BackupModel: ObservableObject {
             return
         }
 
-        let contents = dataSource.currentBackupContents()
         do {
             let data = try RelayBarBackupCodec.encode(contents, createdAt: date)
             try files.write(data, to: destination)
@@ -340,7 +360,19 @@ final class BackupModel: ObservableObject {
             return
         }
 
-        performAutomaticBackupIfNeeded()
+        // Replace All deletes saved work, so it never runs past a failed
+        // backup of that work. Add Missing changes nothing saved and may
+        // proceed.
+        if
+            case .failed(let reason) = performAutomaticBackupIfNeeded(),
+            mode == .replaceAll
+        {
+            activity = .failed(
+                "Nothing was replaced, because RelayBar couldn't back up "
+                    + "your current profiles first. \(reason)"
+            )
+            return
+        }
         let result = dataSource.importBackupContents(contents, mode: mode)
         activity = .succeeded(BackupCopy.importResultText(result, mode: mode))
     }
