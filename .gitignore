@@ -9,3 +9,15 @@ xcuserdata/
 build/
 dist/
 *.xcresult
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.cer
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+coverage/
+*.log
