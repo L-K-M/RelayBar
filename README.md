@@ -8,7 +8,7 @@ the name says where this came from without claiming to be it.
 > [!IMPORTANT]
 > LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
 
-Current version: <!-- version -->2.2.0<!-- /version -->. [Download](https://github.com/L-K-M/RelayBar/releases/latest).
+Current version: <!-- version -->2.3.0<!-- /version -->. [Download](https://github.com/L-K-M/RelayBar/releases/latest).
 
 Start at the
 [upstream README](https://github.com/lx2026/RelayBar#readme) for what RelayBar does, how
