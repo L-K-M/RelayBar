@@ -59,8 +59,9 @@ struct ApplicationMetadata: Equatable {
 }
 
 enum RelayBarProjectLink {
-    static let website = URL(string: "https://lx2026.github.io/RelayBar/")!
-    static let repository = URL(string: "https://github.com/lx2026/RelayBar")!
+    /// This fork's own repository. The fork publishes no website, so its
+    /// repository is its homepage; upstream's site describes upstream.
+    static let repository = URL(string: "https://github.com/L-K-M/RelayBar")!
 }
 
 @MainActor
@@ -148,10 +149,6 @@ final class ApplicationAboutModel: ObservableObject {
             guard !Task.isCancelled else { return }
             didCopyVersion = false
         }
-    }
-
-    func openWebsite() {
-        linkOpener.open(RelayBarProjectLink.website)
     }
 
     func openRepository() {

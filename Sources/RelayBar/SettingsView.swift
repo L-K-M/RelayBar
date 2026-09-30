@@ -354,15 +354,8 @@ struct SettingsView: View {
                 updateStatus
             }
 
-            HStack(spacing: 5) {
-                footerLink("Website", action: about.openWebsite)
-                    .accessibilityLabel("Open RelayBar website in browser")
-                Text("·")
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-                footerLink("GitHub", action: about.openRepository)
-                    .accessibilityLabel("Open RelayBar on GitHub in browser")
-            }
+            footerLink("GitHub", action: about.openRepository)
+                .accessibilityLabel("Open RelayBar on GitHub in browser")
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
