@@ -39,6 +39,9 @@
 		400000000000000000000020 /* SSHControlPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001D /* SSHControlPath.swift */; };
 		400000000000000000000021 /* TunnelFailureNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001E /* TunnelFailureNotifier.swift */; };
 		400000000000000000000022 /* NetworkPathMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30000000000000000000001F /* NetworkPathMonitor.swift */; };
+		400000000000000000000023 /* PopoverSizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000020 /* PopoverSizing.swift */; };
+		400000000000000000000024 /* RelayBarBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000021 /* RelayBarBackup.swift */; };
+		400000000000000000000025 /* BackupModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000022 /* BackupModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +76,9 @@
 		30000000000000000000001D /* SSHControlPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHControlPath.swift; sourceTree = "<group>"; };
 		30000000000000000000001E /* TunnelFailureNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelFailureNotifier.swift; sourceTree = "<group>"; };
 		30000000000000000000001F /* NetworkPathMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkPathMonitor.swift; sourceTree = "<group>"; };
+		300000000000000000000020 /* PopoverSizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverSizing.swift; sourceTree = "<group>"; };
+		300000000000000000000021 /* RelayBarBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayBarBackup.swift; sourceTree = "<group>"; };
+		300000000000000000000022 /* BackupModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -117,6 +123,9 @@
 				30000000000000000000001A /* ApplicationAbout.swift */,
 				30000000000000000000001B /* Updates.swift */,
 				300000000000000000000019 /* PopoverScrollContainer.swift */,
+				300000000000000000000020 /* PopoverSizing.swift */,
+				300000000000000000000021 /* RelayBarBackup.swift */,
+				300000000000000000000022 /* BackupModel.swift */,
 				30000000000000000000001F /* NetworkPathMonitor.swift */,
 				300000000000000000000001 /* RelayBarApp.swift */,
 				300000000000000000000002 /* RelayBarRootView.swift */,
@@ -276,6 +285,9 @@
 				40000000000000000000001C /* ApplicationAbout.swift in Sources */,
 				40000000000000000000001E /* Updates.swift in Sources */,
 				40000000000000000000001B /* PopoverScrollContainer.swift in Sources */,
+				400000000000000000000023 /* PopoverSizing.swift in Sources */,
+				400000000000000000000024 /* RelayBarBackup.swift in Sources */,
+				400000000000000000000025 /* BackupModel.swift in Sources */,
 				400000000000000000000022 /* NetworkPathMonitor.swift in Sources */,
 				400000000000000000000001 /* RelayBarApp.swift in Sources */,
 				400000000000000000000002 /* RelayBarRootView.swift in Sources */,

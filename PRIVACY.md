@@ -19,6 +19,15 @@ use private temporary storage that RelayBar removes when the preview or window
 closes. Remote file contents are transferred only between the user's configured
 SSH server and Mac; RelayBar sends them to no third party.
 
+Backups stay on the user's Mac. Automatic backups, when the user turns them
+on, and exports are written only to a folder or file the user chooses. They
+contain saved tunnel definitions and saved Remote Files hosts, not
+credentials, private keys, recent locations, or remote file contents, and
+RelayBar restricts each file to its owner. Imports read only the file the user
+chooses. RelayBar sends backups nowhere. If the chosen folder belongs to a
+cloud-syncing service such as iCloud Drive, that service's own handling of the
+files applies.
+
 Markdown images, embeds, wiki links, tags, HTML, and Mermaid source do not make network requests. Syntax highlighting and math rendering happen locally. RelayBar sends an HTTP, HTTPS, or email link to macOS only after the user clicks that link; the selected system browser or mail app then applies its own privacy policy.
 
 RelayBar uses Sparkle for software updates. It contacts RelayBar's GitHub-hosted HTTPS update feed only when the user chooses **Check for Updates…** or while scheduled checks are enabled; scheduled checks run about once a week and are off by default. Enabling the schedule, or launching RelayBar with an enabled schedule when no prior check exists or the prior check is overdue, may cause a prompt background request. Update requests include no macOS system-profile fields. Like any network request, the hosting service receives ordinary connection metadata such as the source IP address. If the user accepts an offered update, Sparkle downloads the release archive referenced by the signed feed. RelayBar disables automatic update downloads and installations and verifies signed update metadata and archives before installation.

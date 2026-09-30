@@ -4,7 +4,23 @@ Notable RelayBar Scion changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Backups. Settings has a new **Backup** section: turn on **Automatic
+  Backups**, choose a folder, and RelayBar saves a timestamped copy of your
+  forwarding profiles and saved Remote Files hosts after each change,
+  keeping the newest 30. **Export…** saves the same file anywhere, and
+  **Import…** restores one: **Add Missing** adds only what you don't have,
+  **Replace All** makes your saved profiles and hosts match the backup.
+  Nothing is imported until the whole file checks out.
+- The menu can be resized. Drag the grip in its bottom-trailing corner; the
+  size you choose is kept. VoiceOver can resize it from the **Resize menu**
+  control.
+
 ### Changed
+
+- The menu opens larger by default, at 420 × 580 points instead of
+  380 × 440, which is now its smallest size.
 
 - Long profile names and forwarding summaries in the menu now truncate in
   the middle, so profiles that differ only at the end stay distinguishable.

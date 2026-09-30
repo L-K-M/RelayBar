@@ -13,6 +13,18 @@
 - A v2 value that is present but does not decode is copied verbatim to `savedTunnels.v2.corrupt-backup` before the store falls back to legacy migration or an empty list, so the first later save cannot overwrite the only copy of the user's profiles. The backup is written once per affected launch and never read back automatically.
 - Legacy UUID, name, optional group tag, SSH host, bind, ports, destination, and allowed arguments are preserved. Missing `groupTag` decodes as ungrouped, missing `additionalArguments` still decodes as an empty array, missing `startsAtLaunch` decodes as false, and missing `openOnConnectURL` decodes as unset. A present but invalid `openOnConnectURL` still decodes, so it cannot discard the saved list; the profile is instead rejected as unsafe to run.
 - Runtime phase, processes, errors, retries, control paths, browser requests, owned-socket identities, and allocated remote ports are not persisted.
+- A backup import replaces or extends the saved list through `TunnelStore.importProfiles(_:mode:)`; see [Backup and restore](../modules/backup.md).
+
+## App preferences
+
+- The popover's chosen content size is a `width`/`height` dictionary under
+  `popover.contentSize.v1`, written when a resize ends. A missing, malformed,
+  or non-positive value falls back to the default size.
+- Backup settings live under `backup.automatic.enabled.v1`,
+  `backup.folderPath.v1`, `backup.automatic.lastDigest.v1`, and
+  `backup.automatic.lastDate.v1`. The folder is a plain path; RelayBar is not
+  sandboxed and needs no security-scoped bookmark. Automatic backups count as
+  on only while a folder path is also stored.
 
 ## Runtime ownership
 
@@ -46,5 +58,8 @@ The desired-active state lets a retrying profile remain stoppable while no proce
   all locations, or removing a standalone host changes only the matching local
   records; forwarding profiles and OpenSSH config remain unchanged.
 - Forwarding profiles and concrete aliases discovered from `~/.ssh/config` remain external inputs to the catalog. Config aliases are read on refresh and are not persisted as standalone RelayBar hosts.
+- A backup import adds or replaces standalone hosts through the app-lifetime
+  catalog under the same validity, one-record-per-connection, and 128-record
+  rules, and leaves recent connections and locations unchanged.
 - Remote Files directory snapshots are session-only. They are keyed by exact connection identity and normalized path, bounded by aggregate entry units, and cleared on session end; no listing or downloaded content enters `UserDefaults`.
 - The combined picker order is recent, standalone saved host, forwarding profile, then OpenSSH config. The first connection at each SSH-host-and-arguments identity wins.

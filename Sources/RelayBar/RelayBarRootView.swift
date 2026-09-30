@@ -5,6 +5,9 @@ struct RelayBarRootView: View {
     @EnvironmentObject private var store: TunnelStore
     @StateObject private var launchAtLogin: LaunchAtLoginModel
     @ObservedObject private var updates: UpdateModel
+    /// Held, not observed: only the Settings screen shows backup state.
+    private let backups: BackupModel
+    private let popoverSize: PopoverSizeModel?
     @State private var screen: Screen = .list
 
     private enum Screen {
@@ -15,12 +18,16 @@ struct RelayBarRootView: View {
 
     init(
         loginItemService: any LoginItemServicing = MainAppLoginItemService(),
-        updateModel: UpdateModel
+        updateModel: UpdateModel,
+        backupModel: BackupModel,
+        popoverSize: PopoverSizeModel? = nil
     ) {
         _launchAtLogin = StateObject(
             wrappedValue: LaunchAtLoginModel(service: loginItemService)
         )
         updates = updateModel
+        backups = backupModel
+        self.popoverSize = popoverSize
     }
 
     var body: some View {
@@ -55,12 +62,20 @@ struct RelayBarRootView: View {
                 SettingsView(
                     launchAtLogin: launchAtLogin,
                     updates: updates,
+                    backups: backups,
                     onBack: { screen = .list }
                 )
             }
         }
-        .frame(width: 380, height: 440)
+        // Fills whatever size its host gives it: the popover's content size
+        // is the one authority, so a resize never fights a fixed frame.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .bottomTrailing) {
+            if let popoverSize {
+                PopoverResizeGrip(model: popoverSize)
+            }
+        }
     }
 }
 

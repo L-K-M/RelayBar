@@ -1,8 +1,18 @@
 import SwiftUI
 
 enum RelayBarPopoverLayout {
-    static let width: CGFloat = 380
-    static let height: CGFloat = 440
+    /// The smallest size every popover screen was laid out and verified at,
+    /// so no drag can shrink the menu into an unverified layout.
+    static let minimumSize = CGSize(width: 380, height: 440)
+    /// The size before the user resizes the menu for the first time.
+    static let defaultSize = CGSize(width: 420, height: 580)
+    /// Rows are single-line cards; past this width they only gain padding.
+    static let maximumWidth: CGFloat = 720
+    /// Used only until the menu first opens on a known screen.
+    static let fallbackMaximumHeight: CGFloat = 1_200
+    /// Kept clear between the menu and the edges of the screen's visible
+    /// frame, which also leaves room for the popover arrow.
+    static let screenMargin: CGFloat = 40
     static let contentInset: CGFloat = 16
 
     static func contentWidth(

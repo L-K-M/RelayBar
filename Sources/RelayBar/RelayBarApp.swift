@@ -103,6 +103,18 @@ final class RelayBarAppDelegate:
 
     private lazy var store = TunnelStore.shared
     private lazy var updates = UpdateModel(service: UpdateServiceFactory.shared)
+    private lazy var popoverSize = PopoverSizeModel()
+    private lazy var backups = BackupModel(
+        dataSource: StoreBackupDataSource(
+            store: store,
+            catalog: RemoteFilesWindowController.shared.serverCatalog,
+            savedHostsDidChange: {
+                RemoteFilesWindowController.shared.refreshServers(
+                    tunnels: TunnelStore.shared.tunnels
+                )
+            }
+        )
+    )
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -122,6 +134,7 @@ final class RelayBarAppDelegate:
         installMainMenu()
         setUpStatusItem()
         observeTunnelActivity()
+        backups.startAutomaticBackups()
         UpdateServiceFactory.shared.start()
         if !configureDebugPreviewIfNeeded() {
             store.startProfilesMarkedForAutoStart()
@@ -500,6 +513,11 @@ final class RelayBarAppDelegate:
         reassertStatusItem()
         guard let button = statusItem?.button else { return }
         let popover = menuPopover()
+        // Re-clamped on every opening: the icon may now sit on a smaller
+        // screen than the one the size was chosen on.
+        popoverSize.updateVisibleScreenSize(
+            (button.window?.screen ?? NSScreen.main)?.visibleFrame.size
+        )
         NSApplication.shared.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         // The profile editor has text fields, so the popover has to take key
@@ -513,22 +531,50 @@ final class RelayBarAppDelegate:
     private func menuPopover() -> NSPopover {
         if let popover { return popover }
         let popover = NSPopover()
-        popover.contentSize = NSSize(
-            width: RelayBarPopoverLayout.width,
-            height: RelayBarPopoverLayout.height
-        )
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentViewController = NSHostingController(
-            rootView: RelayBarRootView(updateModel: updates)
+        let hostingController = NSHostingController(
+            rootView: RelayBarRootView(
+                updateModel: updates,
+                backupModel: backups,
+                popoverSize: popoverSize
+            )
                 .environmentObject(store)
         )
+        // The popover's content size is the single authority on its size.
+        // SwiftUI-derived minimum, intrinsic, maximum, or preferred sizes
+        // would fight every resize the grip asks for.
+        hostingController.sizingOptions = []
+        // Assigning the controller adopts its view's current size, so the
+        // intended size is set afterwards.
+        popover.contentViewController = hostingController
+        popover.contentSize = popoverSize.size
+        popoverSize.sizeDidChange = { [weak self] size, isLive in
+            self?.applyPopoverSize(size, isLive: isLive)
+        }
         self.popover = popover
         return popover
     }
 
+    private func applyPopoverSize(_ size: CGSize, isLive: Bool) {
+        guard let popover else { return }
+        guard isLive else {
+            popover.contentSize = size
+            return
+        }
+        // A drag has to track the pointer; an animated resize would trail
+        // behind it and make the corner swim.
+        let animates = popover.animates
+        popover.animates = false
+        popover.contentSize = size
+        popover.animates = animates
+    }
+
     func popoverDidClose(_ notification: Notification) {
         statusItem?.button?.highlight(false)
+        // A drag the close interrupted never delivers its end; finishing it
+        // here keeps the next drag from starting at a stale pointer.
+        popoverSize.endResize()
         guard
             PopoverToggleGuard.shouldRecordClose(
                 eventType: NSApp.currentEvent?.type
@@ -855,11 +901,15 @@ final class RelayBarAppDelegate:
         }
 
         let rootView = RelayBarRootView(
-            updateModel: UpdateModel(service: UnavailableUpdateService())
+            updateModel: UpdateModel(service: UnavailableUpdateService()),
+            backupModel: backups
         )
             .environmentObject(previewStore)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 440),
+            contentRect: NSRect(
+                origin: .zero,
+                size: RelayBarPopoverLayout.defaultSize
+            ),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -877,6 +927,8 @@ final class RelayBarAppDelegate:
     #endif
 
     func applicationWillTerminate(_ notification: Notification) {
+        // A change still inside the settle delay would otherwise be lost.
+        backups.performAutomaticBackupIfNeeded()
         RemoteFilesWindowController.shared.close()
         #if DEBUG
         remoteFilesPreviewPresenter?.cleanup()

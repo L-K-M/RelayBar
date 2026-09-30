@@ -244,6 +244,30 @@ final class RemoteServerCatalog {
             additionalArguments = server.additionalArguments
         }
 
+        init(host: BackupRemoteFilesHost) {
+            id = host.id
+            name = host.name
+            sshHost = host.sshHost
+            additionalArguments = host.additionalArguments
+        }
+
+        var backupHost: BackupRemoteFilesHost {
+            BackupRemoteFilesHost(
+                id: id,
+                name: name,
+                sshHost: sshHost,
+                additionalArguments: additionalArguments
+            )
+        }
+
+        var isValid: Bool {
+            RemoteServerCatalog.isValidSavedHost(
+                name: name,
+                sshHost: sshHost,
+                additionalArguments: additionalArguments
+            )
+        }
+
         func server(source: RemoteServer.Source) -> RemoteServer {
             RemoteServer(
                 id: id,
@@ -469,6 +493,82 @@ final class RemoteServerCatalog {
         return location
     }
 
+    /// The standalone saved hosts, in the form a backup carries them.
+    var savedHostsForBackup: [BackupRemoteFilesHost] {
+        savedRecords.map(\.backupHost)
+    }
+
+    /// Applies the hosts from a backup and returns how many hosts the
+    /// import added (Add Missing) or now makes up the saved list (Replace
+    /// All). Add Missing skips hosts whose connection or identity is already
+    /// saved. Both modes keep the saved-host invariants: valid records,
+    /// one record per connection, and the saved-host limit. Recent
+    /// connections and locations are history rather than saved work, so an
+    /// import leaves them unchanged.
+    @discardableResult
+    func importSavedHosts(
+        _ hosts: [BackupRemoteFilesHost],
+        mode: BackupImportMode
+    ) -> Int {
+        var records: [Record]
+        switch mode {
+        case .addMissing:
+            records = savedRecords
+        case .replaceAll:
+            records = []
+        }
+        var seenConnections = Set(records.map(\.connectionIdentity))
+        var seenIDs = Set(records.map(\.id))
+        var addedCount = 0
+        for host in hosts {
+            let record = Record(host: host)
+            // Checked before recording either key, so a host skipped for a
+            // repeated identity cannot hide a later host's connection.
+            guard
+                records.count < Self.savedLimit,
+                record.isValid,
+                !seenConnections.contains(record.connectionIdentity),
+                !seenIDs.contains(record.id)
+            else {
+                continue
+            }
+            seenConnections.insert(record.connectionIdentity)
+            seenIDs.insert(record.id)
+            records.append(record)
+            addedCount += 1
+        }
+
+        switch mode {
+        case .addMissing:
+            guard addedCount > 0 else { return 0 }
+            savedRecords = records
+            persist(savedRecords, key: Self.savedStorageKey)
+            return addedCount
+        case .replaceAll:
+            savedRecords = records
+            persist(savedRecords, key: Self.savedStorageKey)
+            return records.count
+        }
+    }
+
+    /// The saved-host record rules, shared with backup decoding so a backup
+    /// can never carry a host this catalog would refuse to load.
+    nonisolated static func isValidSavedHost(
+        name: String,
+        sshHost: String,
+        additionalArguments: [String]
+    ) -> Bool {
+        !name.isEmpty
+            && name.utf8.count <= 256
+            && !name.unicodeScalars.contains(where: {
+                CharacterSet.controlCharacters.contains($0)
+                    || CharacterSet.newlines.contains($0)
+            })
+            && sshHost.utf8.count <= 1_024
+            && SSHArgumentPolicy.isValidHostTarget(sshHost)
+            && SSHArgumentPolicy.areAdditionalArgumentsSafe(additionalArguments)
+    }
+
     func removeRecentLocation(id: UUID) {
         recentLocationRecords.removeAll { $0.id == id }
         persistLocations()
@@ -510,15 +610,7 @@ final class RemoteServerCatalog {
         var seen: Set<RemoteServer.ConnectionIdentity> = []
         for record in decoded.prefix(limit) {
             guard
-                !record.name.isEmpty,
-                record.name.utf8.count <= 256,
-                !record.name.unicodeScalars.contains(where: {
-                    CharacterSet.controlCharacters.contains($0)
-                        || CharacterSet.newlines.contains($0)
-                }),
-                record.sshHost.utf8.count <= 1_024,
-                SSHArgumentPolicy.isValidHostTarget(record.sshHost),
-                SSHArgumentPolicy.areAdditionalArgumentsSafe(record.additionalArguments),
+                record.isValid,
                 seen.insert(record.connectionIdentity).inserted
             else {
                 continue
@@ -545,17 +637,7 @@ final class RemoteServerCatalog {
         for record in decoded.prefix(limit) {
             guard
                 RemotePath.validationMessage(for: record.path) == nil,
-                !record.server.name.isEmpty,
-                record.server.name.utf8.count <= 256,
-                !record.server.name.unicodeScalars.contains(where: {
-                    CharacterSet.controlCharacters.contains($0)
-                        || CharacterSet.newlines.contains($0)
-                }),
-                record.server.sshHost.utf8.count <= 1_024,
-                SSHArgumentPolicy.isValidHostTarget(record.server.sshHost),
-                SSHArgumentPolicy.areAdditionalArgumentsSafe(
-                    record.server.additionalArguments
-                ),
+                record.server.isValid,
                 seen.insert(record.key).inserted
             else {
                 continue

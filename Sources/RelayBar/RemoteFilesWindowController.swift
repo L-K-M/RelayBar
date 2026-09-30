@@ -24,7 +24,10 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var model: RemoteFilesModel?
     private var screenObserver: AnyCancellable?
-    private let serverCatalog = RemoteServerCatalog.appDefault()
+    /// The one app-lifetime catalog. Internal so backups read and import
+    /// saved hosts through it: a second instance would hold its own copy of
+    /// the records and overwrite an import the next time it persisted.
+    let serverCatalog = RemoteServerCatalog.appDefault()
     private var retiringModels: [UUID: RemoteFilesModel] = [:]
     private var terminationCompletion: (@MainActor () -> Void)?
 
@@ -74,6 +77,12 @@ final class RemoteFilesWindowController: NSObject, NSWindowDelegate {
         self.window = window
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    /// Brings an open window's host list up to date after saved hosts or
+    /// profiles changed outside it, as a backup import does.
+    func refreshServers(tunnels: [Tunnel]) {
+        model?.updateTunnels(tunnels)
     }
 
     func close() {
