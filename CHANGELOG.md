@@ -22,6 +22,10 @@ Notable RelayBar Scion changes are recorded here.
 - The menu opens larger by default, at 420 × 580 points instead of
   380 × 440, which is now its smallest size.
 
+- **GitHub** in the Settings footer now opens this fork's repository
+  instead of upstream RelayBar's. The **Website** link, which opened
+  upstream's site, is gone: this fork has no website of its own.
+
 - Long profile names and forwarding summaries in the menu now truncate in
   the middle, so profiles that differ only at the end stay distinguishable.
 

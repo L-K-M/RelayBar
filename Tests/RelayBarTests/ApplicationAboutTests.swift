@@ -73,16 +73,15 @@ final class ApplicationAboutTests: XCTestCase {
         )
     }
 
-    func testProjectActionsOpenEachCanonicalURLOnce() {
+    func testRepositoryActionOpensThisForkOnce() {
         let opener = ExternalLinkOpenerSpy()
         let model = ApplicationAboutModel(linkOpener: opener)
 
-        model.openWebsite()
         model.openRepository()
 
         XCTAssertEqual(
             opener.openedURLs,
-            [RelayBarProjectLink.website, RelayBarProjectLink.repository]
+            [URL(string: "https://github.com/L-K-M/RelayBar")!]
         )
     }
 
