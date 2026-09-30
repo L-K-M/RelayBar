@@ -11,8 +11,11 @@ dist/
 *.xcresult
 .env
 .env.*
+.envrc
+*.env
 !.env.example
 *.p12
+*.pfx
 *.p8
 *.cer
 *.pem
