@@ -73,7 +73,7 @@ struct RelayBarRootView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottomTrailing) {
             if let popoverSize {
-                PopoverResizeGrip(model: popoverSize)
+                PopoverResizeHandles(model: popoverSize)
             }
         }
     }

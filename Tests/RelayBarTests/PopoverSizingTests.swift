@@ -65,10 +65,22 @@ final class PopoverSizeLimitsTests: XCTestCase {
         let resized = PopoverSizeLimits.resized(
             CGSize(width: 420, height: 580),
             from: CGPoint(x: 1_000, y: 300),
-            to: CGPoint(x: 1_030, y: 250)
+            to: CGPoint(x: 1_030, y: 250),
+            by: .bottomTrailingCorner
         )
 
         XCTAssertEqual(resized, CGSize(width: 480, height: 630))
+    }
+
+    func testBottomEdgeDragChangesOnlyTheHeight() {
+        let resized = PopoverSizeLimits.resized(
+            CGSize(width: 420, height: 580),
+            from: CGPoint(x: 1_000, y: 300),
+            to: CGPoint(x: 1_030, y: 250),
+            by: .bottom
+        )
+
+        XCTAssertEqual(resized, CGSize(width: 420, height: 630))
     }
 }
 
@@ -129,13 +141,13 @@ final class PopoverSizeModelTests: XCTestCase {
         var changes: [(CGSize, Bool)] = []
         model.sizeDidChange = { changes.append(($0, $1)) }
 
-        model.beginResize(at: CGPoint(x: 1_000, y: 300))
+        model.beginResize(.bottomTrailingCorner, at: CGPoint(x: 1_000, y: 300))
         model.continueResize(to: CGPoint(x: 1_020, y: 260))
 
         XCTAssertTrue(model.isResizing)
-        XCTAssertEqual(model.size, CGSize(width: 460, height: 620))
+        XCTAssertEqual(model.size, CGSize(width: 520, height: 760))
         XCTAssertEqual(changes.count, 1)
-        XCTAssertEqual(changes.first?.0, CGSize(width: 460, height: 620))
+        XCTAssertEqual(changes.first?.0, CGSize(width: 520, height: 760))
         XCTAssertEqual(changes.first?.1, true)
         XCTAssertNil(defaults.object(forKey: PopoverSizeModel.storageKey))
 
@@ -144,7 +156,24 @@ final class PopoverSizeModelTests: XCTestCase {
         XCTAssertFalse(model.isResizing)
         XCTAssertEqual(
             PopoverSizeModel(defaults: defaults).size,
-            CGSize(width: 460, height: 620)
+            CGSize(width: 520, height: 760)
+        )
+    }
+
+    func testBottomEdgeDragKeepsTheWidth() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let model = PopoverSizeModel(defaults: defaults)
+        model.updateVisibleScreenSize(CGSize(width: 1_440, height: 860))
+
+        model.beginResize(.bottom, at: CGPoint(x: 1_000, y: 300))
+        model.continueResize(to: CGPoint(x: 1_100, y: 340))
+        model.endResize()
+
+        XCTAssertEqual(
+            model.size,
+            CGSize(width: RelayBarPopoverLayout.defaultSize.width, height: 680)
         )
     }
 
@@ -155,7 +184,7 @@ final class PopoverSizeModelTests: XCTestCase {
         let model = PopoverSizeModel(defaults: defaults)
         model.updateVisibleScreenSize(CGSize(width: 1_440, height: 700))
 
-        model.beginResize(at: CGPoint(x: 1_000, y: 300))
+        model.beginResize(.bottomTrailingCorner, at: CGPoint(x: 1_000, y: 300))
         model.continueResize(to: CGPoint(x: 2_000, y: -2_000))
         model.endResize()
 

@@ -25,16 +25,25 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - A main menu supplies the standard editing key equivalents, which an
   `LSUIElement` app otherwise never routes to the first responder.
 - The popover contains the tunnel list, the profile editor, or the settings
-  screen. It opens at 420 × 580 points until the user resizes it, and a grip
-  in its bottom-trailing corner resizes it on every screen. The size stays at
+  screen. It opens at 480 × 720 points until the user resizes it. On every
+  screen, dragging its bottom edge changes the height, and dragging the grip
+  in its bottom-trailing corner changes both dimensions. The size stays at
   least 380 × 440 points, at most 720 points wide, and within the visible
   frame of the screen the menu opens on, less a 40-point margin. A drag
   resizes live without animation and follows the pointer while the popover
   is centered on its icon; the chosen size persists when the drag ends and is
   re-clamped at every opening without overwriting the stored preference on a
-  smaller screen. The grip is an adjustable **Resize menu** accessibility
-  element that grows or shrinks the menu by 40 × 60 points per step. Its
-  13-point target stays clear of the trailing **Quit** and **Save** buttons.
+  smaller screen. The handles are AppKit views, so a drag starts on the
+  first click and keeps tracking while the popover resizes under it. Both
+  show a **Drag to resize** tooltip. On macOS 15 or newer both show the
+  window-frame resize cursors. Earlier releases show the vertical resize
+  cursor on the bottom edge and keep the arrow on the corner, because they
+  have no public diagonal resize cursor. Scrolling over the 6-point bottom
+  edge still scrolls the Settings content beneath it. The grip is an
+  adjustable **Resize menu** accessibility element that grows or shrinks the
+  menu by 40 × 60 points per step; the bottom edge is hidden from
+  accessibility. The grip's 14-point target and the bottom edge both stay
+  clear of the **Quit**, **Cancel**, and **Save** buttons.
 - The popover's content size is the single size authority: the root view fills
   its host, and the hosting controller derives no minimum, intrinsic,
   maximum, or preferred size from SwiftUI.
