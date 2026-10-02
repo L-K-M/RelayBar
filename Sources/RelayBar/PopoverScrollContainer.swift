@@ -5,7 +5,7 @@ enum RelayBarPopoverLayout {
     /// so no drag can shrink the menu into an unverified layout.
     static let minimumSize = CGSize(width: 380, height: 440)
     /// The size before the user resizes the menu for the first time.
-    static let defaultSize = CGSize(width: 420, height: 580)
+    static let defaultSize = CGSize(width: 480, height: 720)
     /// Rows are single-line cards; past this width they only gain padding.
     static let maximumWidth: CGFloat = 720
     /// Used only until the menu first opens on a known screen.

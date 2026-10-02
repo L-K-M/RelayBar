@@ -13,14 +13,16 @@ Notable RelayBar Scion changes are recorded here.
   **Import…** restores one: **Add Missing** adds only what you don't have,
   **Replace All** makes your saved profiles and hosts match the backup.
   Nothing is imported until the whole file checks out.
-- The menu can be resized. Drag the grip in its bottom-trailing corner; the
+- The menu can be resized. Drag its bottom edge to change the height, or
+  the grip in its bottom-trailing corner to change both dimensions; the
   size you choose is kept. VoiceOver can resize it from the **Resize menu**
   control.
 
 ### Changed
 
-- The menu opens larger by default, at 420 × 580 points instead of
-  380 × 440, which is now its smallest size.
+- The menu opens larger by default, at 480 × 720 points instead of
+  380 × 440, which is now its smallest size. A smaller screen gets the
+  largest size that fits.
 
 - **GitHub** in the Settings footer now opens this fork's repository
   instead of upstream RelayBar's. The **Website** link, which opened
