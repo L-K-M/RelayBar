@@ -6,7 +6,7 @@
 # entries and finishes by running verify-update-feed.sh. Needs Sparkle's release
 # tools (resolved Xcode packages) and the fork's EdDSA key in the login Keychain.
 #
-# Usage: scripts/update-appcast.sh <final-stapled-RelayBarScion.zip> <immutable-download-url>
+# Usage: scripts/update-appcast.sh <final-stapled-RelayBarScion-macos-universal.zip> <immutable-download-url>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,7 +16,7 @@ APPCAST="$ROOT/docs/appcast.xml"
 SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-com.relaybarscion.RelayBarScion}"
 
 if [[ -z "$ARCHIVE" || -z "$DOWNLOAD_URL" ]]; then
-  echo "Usage: $0 <final-stapled-RelayBarScion.zip> <immutable-download-url>" >&2
+  echo "Usage: $0 <final-stapled-RelayBarScion-macos-universal.zip> <immutable-download-url>" >&2
   exit 2
 fi
 if [[ ! -f "$ARCHIVE" ]]; then
@@ -43,15 +43,16 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir "$RELAYBAR_TEMP/archives"
-cp "$ARCHIVE" "$RELAYBAR_TEMP/archives/RelayBarScion.zip"
+ASSET_NAME="$(basename "$DOWNLOAD_URL")"
+cp "$ARCHIVE" "$RELAYBAR_TEMP/archives/$ASSET_NAME"
 if [[ -f "$APPCAST" ]]; then
   cp "$APPCAST" "$RELAYBAR_TEMP/archives/appcast.xml"
 fi
 
 curl --fail --location --silent --show-error \
   "$DOWNLOAD_URL" \
-  --output "$RELAYBAR_TEMP/public-RelayBarScion.zip"
-if ! cmp -s "$ARCHIVE" "$RELAYBAR_TEMP/public-RelayBarScion.zip"; then
+  --output "$RELAYBAR_TEMP/public-$ASSET_NAME"
+if ! cmp -s "$ARCHIVE" "$RELAYBAR_TEMP/public-$ASSET_NAME"; then
   echo "The public archive differs from the final stapled archive." >&2
   exit 1
 fi

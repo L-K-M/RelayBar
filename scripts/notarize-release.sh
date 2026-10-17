@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds, signs, and packages a release (via package-release.sh), submits it with
 # notarytool, waits, staples + validates the app, re-zips the stapled app as the
-# final .build/RelayBarScion.zip (printed on success), and Gatekeeper-assesses it.
+# final .build/RelayBarScion-macos-universal.zip (printed on success), and Gatekeeper-assesses it.
 # Requires NOTARY_PROFILE, a notarytool keychain profile created with
 # `xcrun notarytool store-credentials`.
 #
@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE to a notarytool keychain profile}"
 
 APP="$ROOT/.build/RelayBarScion.app"
-ZIP="$ROOT/.build/RelayBarScion.zip"
+ZIP="$ROOT/.build/RelayBarScion-macos-universal.zip"
 
 "$ROOT/scripts/package-release.sh"
 
