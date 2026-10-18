@@ -82,14 +82,14 @@ jobs:
         # also carries build-app.sh's signing notices, so it must not be captured
         # as a path — notarize-release.sh relies on the same constant).
 
-      # The asset keeps the runbook-mandated immutable name RelayBarScion.zip
+      # The asset keeps the runbook-mandated immutable name RelayBarScion-macos-universal.zip
       # (update-appcast.sh derives the enclosure URL from it); the tag path in the
       # download URL provides uniqueness.
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: RelayBar Scion ${{ env.VERSION }}
-          files: .build/RelayBarScion.zip
+          files: .build/RelayBarScion-macos-universal.zip
           # A pre-release tag (contains a hyphen, e.g. v1.5.0-beta.1) must be marked
           # as a prerelease and NOT made "latest".
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -118,14 +118,14 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/published"
           gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published" \
-            --pattern "RelayBarScion.zip"
-          if ! cmp -- .build/RelayBarScion.zip "$RUNNER_TEMP/published/RelayBarScion.zip"; then
+            --pattern "RelayBarScion-macos-universal.zip"
+          if ! cmp -- .build/RelayBarScion-macos-universal.zip "$RUNNER_TEMP/published/RelayBarScion-macos-universal.zip"; then
             # The published copy provably differs from the built archive: take it
             # down before failing — a corrupt upload must not stay downloadable.
             # (Removing a never-valid upload is damage control, not an in-place
             # replacement; the runbook's immutability rule still forbids uploading
             # different bytes under the same tag — corrections use a higher build.)
-            gh release delete-asset "$GITHUB_REF_NAME" "RelayBarScion.zip" -y || true
-            echo "::error::published RelayBarScion.zip differed from the built archive and was removed"
+            gh release delete-asset "$GITHUB_REF_NAME" "RelayBarScion-macos-universal.zip" -y || true
+            echo "::error::published RelayBarScion-macos-universal.zip differed from the built archive and was removed"
             exit 1
           fi

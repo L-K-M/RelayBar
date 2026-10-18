@@ -4,7 +4,7 @@
 # match, declared byte length, a positive build number, and valid feed and
 # archive signatures.
 #
-# Usage: scripts/verify-private-update-feed.sh <appcast.xml> <RelayBarScion.zip> <loopback-port>
+# Usage: scripts/verify-private-update-feed.sh <appcast.xml> <RelayBarScion-macos-universal.zip> <loopback-port>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,7 +25,7 @@ if ! EXPECTED_KEY="$(
 fi
 
 if [[ -z "$APPCAST" || -z "$ARCHIVE" || -z "$PORT" ]]; then
-  echo "Usage: $0 <private-appcast.xml> <RelayBarScion.zip> <loopback-port>" >&2
+  echo "Usage: $0 <private-appcast.xml> <RelayBarScion-macos-universal.zip> <loopback-port>" >&2
   exit 2
 fi
 if [[ ! -f "$APPCAST" || ! -f "$ARCHIVE" ]]; then
@@ -94,7 +94,7 @@ print("\t".join(row))
 PY
 
 IFS=$'\t' read -r URL LENGTH SIGNATURE BUILD < "$RELAYBAR_PRIVATE_TEMP/enclosure.tsv"
-if [[ "$URL" != "http://127.0.0.1:$PORT/RelayBarScion.zip" ]]; then
+if [[ "$URL" != "http://127.0.0.1:$PORT/$(basename "$ARCHIVE")" ]]; then
   echo "Unexpected private enclosure URL: $URL" >&2
   exit 1
 fi

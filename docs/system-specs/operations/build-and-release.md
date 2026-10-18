@@ -32,7 +32,7 @@
   commits, and tags `vX.Y.Z`; `--push` pushes branch + tag, which triggers the
   release workflow below. Nothing publishes without `--push`.
 - `./scripts/build-app.sh` builds and signs `.build/RelayBarScion.app`.
-- `./scripts/package-release.sh` creates `.build/RelayBarScion.zip`.
+- `./scripts/package-release.sh` creates `.build/RelayBarScion-macos-universal.zip`.
 - `./scripts/notarize-release.sh` submits, waits, staples, and validates a release.
 - `./scripts/update-appcast.sh <final ZIP> <immutable HTTPS URL>` verifies the
   published archive byte-for-byte, preserves full-update history, signs the
@@ -63,7 +63,7 @@ keys back to `Packaging/Info.plist`; until then, releases are downloaded and
 installed by hand.
 
 Private update staging is deliberately separate from production publication.
-Its appcast may use only `http://127.0.0.1:<explicit-port>/RelayBarScion.zip`, is
+Its appcast may use only `http://127.0.0.1:<explicit-port>/RelayBarScion-macos-universal.zip`, is
 served from a new local directory, and is selected by the guarded maintainer
 launch argument described in the application-shell specification. It never edits
 `docs/appcast.xml`, accepts a network host, or weakens production HTTPS and
@@ -93,7 +93,7 @@ archive through `package-release.sh` — no signing secrets are read: this
 repository holds no Developer ID certificate or App Store Connect key, and per
 the maintainer decision recorded in task 062 the release is unsigned like the
 sibling family apps, with release notes explaining the Gatekeeper bypass —
-publishes the immutable `RelayBarScion.zip` on the GitHub release (hyphenated
+publishes the immutable `RelayBarScion-macos-universal.zip` on the GitHub release (hyphenated
 tags are marked prerelease and never "latest"), and byte-compares the asset
 GitHub serves against the archive it just built.
 
@@ -125,7 +125,7 @@ verification checks the feed signature before downloading and validating every
 retained enclosure.
 
 Create an annotated version tag on the verified release commit. A stable GitHub
-release contains one immutable `RelayBarScion.zip`, is neither a draft nor a
+release contains one immutable `RelayBarScion-macos-universal.zip`, is neither a draft nor a
 prerelease, and must not have its asset replaced in place. Independently
 download the public asset without repository credentials, compare its SHA-256
 and bytes with the verified local archive, and repeat signature, ticket,
