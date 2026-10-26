@@ -33,11 +33,11 @@
     },
     {
       "name": "RelayBar (upstream)",
-      "version": "1.3.0 fork base",
+      "version": "1.5.1",
       "license": "MIT",
       "source": "https://github.com/lx2026/RelayBar",
       "files": ["../LICENSE"],
-      "reason": "This fork branched from upstream RelayBar 1.3.0 and later ported upstream changes, so most of the executable is upstream code. Upstream's LICENSE is the repository's LICENSE, unchanged."
+      "reason": "This fork branched from upstream RelayBar 1.3.0 and merged upstream through 1.5.1 (lx2026/RelayBar 1cc8c45, merge commit 51c4243), so most of the executable is upstream code. Upstream's LICENSE is the repository's LICENSE, unchanged."
     }
   ]
 }
