@@ -90,11 +90,21 @@ commit, tags `vX.Y.Z`, and with `--push` lets CI test, build, and publish an
 unsigned (ad-hoc-signed) GitHub Release, like the sibling family apps' releases
 — Gatekeeper warns on first launch, and the release notes explain the bypass.
 
-Bundled third-party license text is in
-[`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt).
-
 ## Test
 
 ```bash
 swift test
 ```
+
+## License
+
+RelayBar Scion is a fork of [lx2026/RelayBar](https://github.com/lx2026/RelayBar).
+Its code, including this fork's changes, is released under the
+[MIT License](LICENSE) (Copyright (c) 2026 RelayBar contributors). The app
+bundles Sparkle, MarkdownUI, NetworkImage, swift-cmark, HighlighterSwift (with
+highlight.js) and SwiftMath (derived from iosMath, with the Latin Modern Math
+font under the GUST Font License), which keep their own licenses. Their notices
+ship in `RelayBarScion.app/Contents/Resources` as
+[`THIRD_PARTY_NOTICES.txt`](Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt),
+next to `LICENSE.txt`, and SwiftMath's font licenses stay in its resource
+bundle.

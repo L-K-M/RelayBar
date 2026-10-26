@@ -73,6 +73,8 @@ server when the rehearsal ends.
 
 The Xcode target prunes unused renderer resources from the generated app bundle. It retains Highlighter's formatter and the two themes RelayBar selects, plus SwiftMath's default Latin Modern font, metrics, and bundled font licenses. It removes the other highlight themes, alternate math fonts, and SwiftMath's package-development conversion script. Source dependencies remain unchanged and every clean build reproduces the same pruning step.
 
+License notices ship inside the app. A Run Script phase installs the repository's `LICENSE` (upstream RelayBar's MIT license, which covers this fork) as `Contents/Resources/LICENSE.txt`. `Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt` is generated, not hand-written: `scripts/third-party-notices.sh` runs `scripts/swiftpm-notices.py` over both `Package.resolved` files and the resolved package checkouts, with the reviewed overrides in `scripts/third-party-notices.json`, and fails on a package without license text or on lockfiles that pin a package differently. Regenerate and commit it after any package change. `build-app.sh` and the CI build fail when the committed file differs from the resolved packages, or when `THIRD_PARTY_NOTICES.txt`, `LICENSE.txt` or SwiftMath's iosMath, OFL and GUST license files are missing from the built app.
+
 Release builds generate a dSYM and then apply non-global symbol stripping to the installed executable. Debug builds remain unstripped. The dSYM and executable UUIDs must match before a release artifact is accepted.
 
 The app is distributed outside the Mac App Store, uses the hardened runtime, and is intentionally not sandboxed.
@@ -93,7 +95,7 @@ archive through `package-release.sh` — no signing secrets are read: this
 repository holds no Developer ID certificate or App Store Connect key, and per
 the maintainer decision recorded in task 062 the release is unsigned like the
 sibling family apps, with release notes explaining the Gatekeeper bypass —
-publishes the immutable `RelayBarScion-macos-universal.zip` on the GitHub release (hyphenated
+checks the license notices inside the archive, publishes the immutable `RelayBarScion-macos-universal.zip` on the GitHub release (hyphenated
 tags are marked prerelease and never "latest"), and byte-compares the asset
 GitHub serves against the archive it just built.
 

@@ -15,6 +15,12 @@
 - `./scripts/release.sh X.Y.Z [--push]` cuts a release (same shared engine): bumps `MARKETING_VERSION`, the Sparkle build number (`scripts/bump-build-number.sh`), and the README version marker in one commit, then tags `vX.Y.Z`; `--push` triggers `.github/workflows/release.yml` (test → build → publish, unsigned/ad-hoc per task 062). The tag must match the committed version.
 - Release machinery beyond that — `package-release.sh`, `notarize-release.sh`, `update-appcast.sh`, `verify-update-feed.sh`, `stage-private-update.sh`, `verify-private-update-feed.sh`, `prune-renderer-resources.sh` — is documented in `docs/system-specs/operations/build-and-release.md`, the authoritative runbook. `check-task-spec-registry.sh` is the docs-hygiene CI check described in `docs/task-specs/README.md`.
 
+## Licensing
+
+- RelayBar Scion's code, including upstream lx2026/RelayBar's, is MIT (`LICENSE`, Copyright (c) 2026 RelayBar contributors). Keep `NSHumanReadableCopyright` in `Packaging/Info.plist` and the README consistent with it; CI checks the plist line.
+- Before adding a dependency, vendored file or bundled asset (fonts, images, icons, data), confirm its license allows redistribution in the app. Never vendor third-party code without its license file.
+- `Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt` is generated; never edit it by hand. After any package change, build once and run `scripts/third-party-notices.sh .build/LocalDerivedData/SourcePackages`, then commit the result. Record gaps as overrides with reasons in `scripts/third-party-notices.json`. `build-app.sh` and CI fail when the file is stale or a notice file is missing from the app.
+
 ## Task-spec writing
 
 - Keep task specs concise and non-redundant.
