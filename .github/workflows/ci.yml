@@ -28,6 +28,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the task-spec registry
         run: ./scripts/check-task-spec-registry.sh
+      # The About panel line is the only copyright statement inside the app,
+      # so it must keep LICENSE's holder (upstream attribution) and license.
+      - name: Check the app's copyright line
+        run: |
+          grep -A1 '<key>NSHumanReadableCopyright</key>' Packaging/Info.plist \
+            | grep -qF 'Copyright © 2026 RelayBar contributors. MIT License.' \
+            || { echo "::error::NSHumanReadableCopyright in Packaging/Info.plist must name LICENSE's holder and the MIT License"; exit 1; }
 
   test:
     runs-on: macos-15
@@ -47,5 +54,22 @@ jobs:
           -scheme RelayBar
           -configuration Release
           -destination 'platform=macOS'
+          -derivedDataPath "$RUNNER_TEMP/DerivedData"
           CODE_SIGNING_ALLOWED=NO
           build
+      # The built app must carry its license notices, and the committed
+      # notices must match the packages Xcode resolved. The check also fails
+      # when the two Package.resolved files disagree, which a Dependabot bump
+      # of only the SwiftPM side causes.
+      - name: Check bundled license notices
+        run: |
+          ./scripts/third-party-notices.sh --check "$RUNNER_TEMP/DerivedData/SourcePackages"
+          RESOURCES="$RUNNER_TEMP/DerivedData/Build/Products/Release/RelayBarScion.app/Contents/Resources"
+          FONT_BUNDLE="$RESOURCES/SwiftMath_SwiftMath.bundle/Contents/Resources/mathFonts.bundle"
+          for notice in "$RESOURCES/THIRD_PARTY_NOTICES.txt" "$RESOURCES/LICENSE.txt" \
+            "$FONT_BUNDLE/LICENSE" "$FONT_BUNDLE/OFL.txt" "$FONT_BUNDLE/GUST-FONT-LICENSE.txt"; do
+            test -s "$notice" || { echo "::error::${notice#"$RESOURCES/"} missing from RelayBarScion.app"; exit 1; }
+          done
+          grep -q '^Sparkle ' "$RESOURCES/THIRD_PARTY_NOTICES.txt"
+          grep -q '^RelayBar (upstream) ' "$RESOURCES/THIRD_PARTY_NOTICES.txt"
+          grep -q 'Copyright (c) 2026 RelayBar contributors' "$RESOURCES/LICENSE.txt"

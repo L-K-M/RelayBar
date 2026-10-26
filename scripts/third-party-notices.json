@@ -1,0 +1,43 @@
+{
+  "comment": "Overrides for scripts/swiftpm-notices.py, which generates Sources/RelayBar/Resources/THIRD_PARTY_NOTICES.txt. Keys under packages are SwiftPM identities from Package.resolved. Every entry needs a reason. Paths are relative to this file; checkout:<identity>/<path> points into a package checkout; skip_files paths are relative to the package checkout.",
+  "preamble": [
+    "RelayBar Scion is a fork of RelayBar (https://github.com/lx2026/RelayBar).",
+    "Its code, including upstream's, is released under the MIT License,",
+    "Copyright (c) 2026 RelayBar contributors; the app ships it as LICENSE.txt.",
+    "The components below are compiled into or bundled with the app and keep",
+    "their own licenses. The Swift runtime and system frameworks ship with macOS."
+  ],
+  "packages": {
+    "sparkle": {
+      "binary_reviewed": true,
+      "reason": "Sparkle's binary target is the Sparkle.xcframework from this project's own release at the pinned tag; its LICENSE, including the external licenses section, and Vendor/ed25519-sparkle/license.txt cover it."
+    },
+    "swiftmath": {
+      "license": "MIT AND OFL-1.1 AND LicenseRef-GUST-Font-License",
+      "skip_files": ["Sources/SwiftMath/mathFonts.bundle/LICENSE"],
+      "reason": "The math-font bundle ships fonts under the SIL OFL 1.1 and the GUST Font License next to SwiftMath's MIT code. Its LICENSE file is iosMath's MIT license, listed as the iosMath component instead."
+    }
+  },
+  "components": [
+    {
+      "name": "iosMath",
+      "version": "0.9.5",
+      "license": "MIT",
+      "source": "https://github.com/kostub/iosMath",
+      "files": ["checkout:swiftmath/Sources/SwiftMath/mathFonts.bundle/LICENSE"],
+      "verify_version": {
+        "file": "checkout:swiftmath/README.md",
+        "regex": "translation of the latest `iosMath` v([0-9.]*[0-9])"
+      },
+      "reason": "SwiftMath is a Swift translation of iosMath (its README names the version), so the compiled SwiftMath code derives from iosMath. SwiftMath ships iosMath's license in mathFonts.bundle."
+    },
+    {
+      "name": "RelayBar (upstream)",
+      "version": "1.5.1",
+      "license": "MIT",
+      "source": "https://github.com/lx2026/RelayBar",
+      "files": ["../LICENSE"],
+      "reason": "This fork branched from upstream RelayBar 1.3.0 and merged upstream through 1.5.1 (lx2026/RelayBar 1cc8c45, merge commit 51c4243), so most of the executable is upstream code. Upstream's LICENSE is the repository's LICENSE, unchanged."
+    }
+  ]
+}

@@ -97,6 +97,31 @@ if [[ ! -d "$SPARKLE_VERSION" ]]; then
   exit 1
 fi
 
+# The app must carry its license notices: LICENSE (upstream's MIT notice),
+# the third-party notices, and the iosMath and font licenses that
+# prune-renderer-resources.sh keeps in SwiftMath's bundle. The committed
+# notices must also match the packages Xcode resolved for this build.
+RESOURCES="$APP/Contents/Resources"
+FONT_BUNDLE="$RESOURCES/SwiftMath_SwiftMath.bundle/Contents/Resources/mathFonts.bundle"
+for notice in \
+  "$RESOURCES/THIRD_PARTY_NOTICES.txt" \
+  "$RESOURCES/LICENSE.txt" \
+  "$FONT_BUNDLE/LICENSE" \
+  "$FONT_BUNDLE/OFL.txt" \
+  "$FONT_BUNDLE/GUST-FONT-LICENSE.txt"
+do
+  if [[ ! -s "$notice" ]]; then
+    echo "License notice missing from the built app: ${notice#"$APP/"}" >&2
+    exit 1
+  fi
+done
+
+if ! "$ROOT/scripts/third-party-notices.sh" --check "$DERIVED_DATA/SourcePackages"; then
+  echo "THIRD_PARTY_NOTICES.txt does not match the resolved packages. Regenerate it with:" >&2
+  echo "  scripts/third-party-notices.sh \"$DERIVED_DATA/SourcePackages\"" >&2
+  exit 1
+fi
+
 # Sparkle contains nested executable code. Sign every boundary inside-out so
 # the final app seal and each helper retain a valid hardened-runtime identity.
 for component in \

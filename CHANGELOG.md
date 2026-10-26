@@ -20,6 +20,11 @@ Notable RelayBar Scion changes are recorded here.
 
 ### Changed
 
+- The About panel's copyright line now names RelayBar contributors, the MIT
+  License and upstream lx2026/RelayBar. The app ships its license as
+  `LICENSE.txt` next to `THIRD_PARTY_NOTICES.txt`, which now lists every
+  bundled package with its exact version and full license texts.
+
 - The menu opens larger by default, at 480 × 720 points instead of
   380 × 440, which is now its smallest size. A smaller screen gets the
   largest size that fits.

@@ -35,7 +35,7 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>RelayBar Scion connects to SSH hosts on your local network to create tunnels.</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 RelayBar Scion</string>
+    <string>Copyright © 2026 RelayBar contributors. MIT License. Fork of lx2026/RelayBar.</string>
     <!-- No SUFeedURL or SUPublicEDKey: this fork has no update feed of its
          own, and upstream's feed and signing key would replace this build with
          upstream's. Sparkle's start() throws without them, which the updater

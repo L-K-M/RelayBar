@@ -82,6 +82,21 @@ jobs:
         # also carries build-app.sh's signing notices, so it must not be captured
         # as a path — notarize-release.sh relies on the same constant).
 
+      # build-app.sh already checked the notices in the built app; check them
+      # again in the archive users download, before it is published.
+      - name: Verify license notices in the archive
+        run: |
+          ditto -x -k .build/RelayBarScion-macos-universal.zip "$RUNNER_TEMP/unpacked"
+          RESOURCES="$RUNNER_TEMP/unpacked/RelayBarScion.app/Contents/Resources"
+          FONT_BUNDLE="$RESOURCES/SwiftMath_SwiftMath.bundle/Contents/Resources/mathFonts.bundle"
+          for notice in "$RESOURCES/THIRD_PARTY_NOTICES.txt" "$RESOURCES/LICENSE.txt" \
+            "$FONT_BUNDLE/LICENSE" "$FONT_BUNDLE/OFL.txt" "$FONT_BUNDLE/GUST-FONT-LICENSE.txt"; do
+            test -s "$notice" || { echo "::error::${notice#"$RESOURCES/"} missing from the release archive"; exit 1; }
+          done
+          grep -q '^Sparkle ' "$RESOURCES/THIRD_PARTY_NOTICES.txt"
+          grep -q '^RelayBar (upstream) ' "$RESOURCES/THIRD_PARTY_NOTICES.txt"
+          grep -q 'Copyright (c) 2026 RelayBar contributors' "$RESOURCES/LICENSE.txt"
+
       # The asset keeps the runbook-mandated immutable name RelayBarScion-macos-universal.zip
       # (update-appcast.sh derives the enclosure URL from it); the tag path in the
       # download URL provides uniqueness.
