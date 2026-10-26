@@ -28,6 +28,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the task-spec registry
         run: ./scripts/check-task-spec-registry.sh
+      # The About panel line is the only copyright statement inside the app,
+      # so it must keep LICENSE's holder (upstream attribution) and license.
+      - name: Check the app's copyright line
+        run: |
+          grep -A1 '<key>NSHumanReadableCopyright</key>' Packaging/Info.plist \
+            | grep -qF 'Copyright © 2026 RelayBar contributors. MIT License.' \
+            || { echo "::error::NSHumanReadableCopyright in Packaging/Info.plist must name LICENSE's holder and the MIT License"; exit 1; }
 
   test:
     runs-on: macos-15
