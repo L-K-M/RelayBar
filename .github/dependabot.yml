@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  # Updates Package.swift and the root Package.resolved only. Bump the Xcode
+  # project's package pin and its Package.resolved by hand, then regenerate
+  # THIRD_PARTY_NOTICES.txt; CI fails until the lockfiles and notices agree.
   - package-ecosystem: swift
     directory: /
     schedule:
