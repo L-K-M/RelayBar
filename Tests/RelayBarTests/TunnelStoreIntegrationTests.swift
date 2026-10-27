@@ -1138,10 +1138,14 @@ final class TunnelStoreIntegrationTests: XCTestCase {
     func testHostKeyFailureAfterAddressEditRequiresManualRecovery() async throws {
         let errorFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("RelayBarHostKeyError-\(UUID().uuidString)")
+        let outageFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarHostKeyOutage-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: errorFile) }
-        let fixture = try makeFakeSSHFixture(
-            overrides: ["RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE": errorFile.path]
-        )
+        defer { try? FileManager.default.removeItem(at: outageFile) }
+        let fixture = try makeFakeSSHFixture(overrides: [
+            "RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE": errorFile.path,
+            "RELAYBAR_FAKE_SSH_OUTAGE_FILE": outageFile.path
+        ])
         defer { fixture.cleanup() }
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -1189,12 +1193,28 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         // A network change cannot approve a key. Even after trust is repaired,
         // the failed profile waits for the user's explicit start.
         try FileManager.default.removeItem(at: errorFile)
+        let witness = makeGroupedProfile(
+            name: "Network Recovery Witness", port: 43_299,
+            group: nil, sshHost: "witness.example.test"
+        )
+        store.add(witness)
+        try Data().write(to: outageFile)
+        store.start(witness)
+        let witnessRetrying = await waitUntil {
+            if case .retrying = store.phase(for: witness) { return true }
+            return false
+        }
+        XCTAssertTrue(witnessRetrying)
+        try FileManager.default.removeItem(at: outageFile)
         network.simulateChange()
-        try await Task.sleep(for: .milliseconds(100))
+        // Wait for observable completion of the same reconnect pass rather
+        // than assuming a fixed sleep outlasts its scheduling and debounce.
+        let networkChangeHandled = await waitUntil { store.phase(for: witness) == .running }
+        XCTAssertTrue(networkChangeHandled)
         XCTAssertEqual(store.phase(for: tunnel), .failed(message))
         XCTAssertEqual(
             masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
-            2
+            4
         )
         store.start(tunnel)
         let recovered = await waitUntil { store.phase(for: tunnel) == .running }

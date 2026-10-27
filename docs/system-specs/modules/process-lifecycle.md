@@ -20,7 +20,7 @@
 ## Recovery
 
 - Unexpected exits retry up to 10 times, except recognized SSH host-key verification failures.
-- A host-key verification failure immediately changes the profile to failed, clears pending retries and browser launches, and does not restart on network changes. Its message distinguishes an unverified key from a changed saved key and points to **Verify SSH Host Key…** in the profile menu. After repairing trust, the user explicitly starts the profile again. RelayBar never approves or removes host keys, and the normal master's batch mode and host-key policy stay unchanged.
+- A host-key verification failure immediately changes the profile to failed, clears pending retries and browser launches, and does not restart on network changes. Its message distinguishes an unverified key from a changed saved key and points to **Verify SSH Host Key…** in the action menu. After repairing trust, the user explicitly starts the profile again. RelayBar never approves or removes host keys, and the normal master's batch mode and host-key policy stay unchanged.
 - Delays are 1, 2, 4, 8, 16, 32, then 60 seconds for remaining attempts.
 - A successful complete profile resets the retry count.
 - Each retry creates a new control directory and clears prior runtime port allocations.
