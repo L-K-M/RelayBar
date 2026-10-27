@@ -18,6 +18,7 @@ ignore_master_term="${RELAYBAR_FAKE_SSH_IGNORE_MASTER_TERM:-}"
 # master fails to connect the way ssh does when its host is unreachable. A test
 # brings the network back by deleting the file.
 outage_file="${RELAYBAR_FAKE_SSH_OUTAGE_FILE:-}"
+master_error_file="${RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE:-}"
 
 if [ -n "$log_file" ]; then
     {
@@ -58,6 +59,13 @@ if [ "$is_master" -eq 1 ]; then
     if [ -z "$control_socket" ]; then
         printf 'missing fake control socket\n' >&2
         exit 2
+    fi
+    if [ -n "$master_error_file" ] && [ -f "$master_error_file" ]; then
+        cat "$master_error_file" >&2
+        if [ -n "${RELAYBAR_FAKE_SSH_HOLD_STDERR_SECONDS:-}" ]; then
+            sleep "$RELAYBAR_FAKE_SSH_HOLD_STDERR_SECONDS" >&2 &
+        fi
+        exit 255
     fi
     if [ -n "$outage_file" ] && [ -f "$outage_file" ]; then
         printf 'ssh: connect to host example.com port 22: No route to host\n' >&2

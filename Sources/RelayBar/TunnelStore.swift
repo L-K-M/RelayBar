@@ -50,7 +50,7 @@ final class TunnelStore: ObservableObject {
     private var terminatingSSHProcesses: Set<ObjectIdentifier> = []
     private var forceTerminationTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var errorPipes: [UUID: Pipe] = [:]
-    private var errorBuffers: [UUID: Data] = [:]
+    private var errorBuffers: [UUID: MasterErrorBuffer] = [:]
     private var desiredTunnels: [UUID: Tunnel] = [:]
     private var retryAttempts: [UUID: Int] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
@@ -594,7 +594,8 @@ final class TunnelStore: ObservableObject {
 
         controlDirectories[id] = controlLocations.directory
         controlSocketURLs[id] = controlLocations.socket
-        errorBuffers[id] = Data()
+        let errorBuffer = MasterErrorBuffer(limit: masterErrorOutputLimit)
+        errorBuffers[id] = errorBuffer
         phases[id] = .starting
 
         let process = Process()
@@ -613,11 +614,7 @@ final class TunnelStore: ObservableObject {
         let tunnelID = tunnel.id
 
         errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            DispatchQueue.main.async {
-                store.appendMasterError(data, for: tunnelID)
-            }
+            errorBuffer.readAvailableData(from: handle)
         }
 
         process.terminationHandler = { finishedProcess in
@@ -1089,14 +1086,6 @@ final class TunnelStore: ObservableObject {
         terminatingSSHProcessCount = terminatingSSHProcesses.count
     }
 
-    private func appendMasterError(_ data: Data, for id: UUID) {
-        errorBuffers[id] = appendingBounded(
-            data,
-            to: errorBuffers[id] ?? Data(),
-            limit: masterErrorOutputLimit
-        )
-    }
-
     private func processDidExit(id: UUID, status: Int32, process: Process) {
         guard processes[id] === process else { return }
         let startupMessage = startupFailureMessages.removeValue(forKey: id)
@@ -1120,10 +1109,14 @@ final class TunnelStore: ObservableObject {
 
     private func errorMessage(for id: UUID) -> String {
         guard
-            let data = errorBuffers[id],
-            let output = String(data: data, encoding: .utf8)
+            let buffer = errorBuffers[id],
+            let handle = errorPipes[id]?.fileHandleForReading
         else {
             return ""
+        }
+        let output = buffer.finishReading(from: handle)
+        if let failure = SSHHostKeyFailure(output: output) {
+            return failure.message
         }
         return output
             .split(whereSeparator: \Character.isNewline)
@@ -1136,6 +1129,12 @@ final class TunnelStore: ObservableObject {
         runtimePorts[id] = nil
         guard desiredTunnels[id] != nil else {
             phases[id] = .stopped
+            return
+        }
+
+        if let failure = SSHHostKeyFailure(output: message) {
+            stop(id: id)
+            phases[id] = .failed(failure.message)
             return
         }
 
@@ -1486,6 +1485,67 @@ private func appendingBounded(_ data: Data, to buffer: Data, limit: Int) -> Data
     var result = buffer
     result.append(data)
     return result.count > limit ? result.suffix(limit) : result
+}
+
+/// The pipe callback and exit callback share one reader and bounded buffer.
+/// Capturing this object also keeps a retired launch's stderr out of its successor.
+private final class MasterErrorBuffer: @unchecked Sendable {
+    // Darwin's FIONREAD (_IOR('f', 127, int)) is not imported into Swift.
+    private static let bytesAvailableRequest: UInt = 0x4004667f
+    private let lock = NSLock()
+    private let limit: Int
+    private var data = Data()
+    private var finished = false
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func readAvailableData(from handle: FileHandle) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        drainAvailableData(from: handle, byteLimit: limit)
+    }
+
+    func finishReading(from handle: FileHandle) -> String {
+        handle.readabilityHandler = nil
+        lock.lock()
+        defer { lock.unlock() }
+        if !finished {
+            finished = true
+            var queuedBytes: Int32 = 0
+            let byteLimit = ioctl(handle.fileDescriptor, Self.bytesAvailableRequest, &queuedBytes) == 0
+                ? max(limit, Int(queuedBytes)) : limit
+            drainAvailableData(from: handle, byteLimit: byteLimit)
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func drainAvailableData(from handle: FileHandle, byteLimit: Int) {
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags != -1, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1 else {
+            return
+        }
+
+        // A proxy helper may inherit stderr and outlive SSH. At exit, drain
+        // only the queued-byte snapshot, retaining its tail without waiting
+        // for EOF or letting new helper output extend the work indefinitely.
+        var remaining = byteLimit
+        var bytes = [UInt8](repeating: 0, count: 4_096)
+        while remaining > 0 {
+            let count = Darwin.read(descriptor, &bytes, min(bytes.count, remaining))
+            if count > 0 {
+                data = appendingBounded(Data(bytes.prefix(count)), to: data, limit: limit)
+                remaining -= count
+            } else if count == -1, errno == EINTR {
+                continue
+            } else {
+                return
+            }
+        }
+    }
 }
 
 private struct ControlOutputBuffers {

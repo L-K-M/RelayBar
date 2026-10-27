@@ -3,6 +3,90 @@ import XCTest
 @testable import RelayBar
 
 final class SSHMasterPolicyTests: XCTestCase {
+    func testClassifiesHostKeyDiagnosticsWithoutTreatingNetworkErrorsAsTrustFailures() {
+        XCTAssertEqual(
+            SSHHostKeyFailure(output: "Host key verification failed.\n"),
+            .unverified
+        )
+        XCTAssertEqual(
+            SSHHostKeyFailure(output: "No ED25519 host key is known for example.com and you have requested strict checking."),
+            .unverified
+        )
+        XCTAssertEqual(
+            SSHHostKeyFailure(output: "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\nHost key verification failed."),
+            .changed
+        )
+        XCTAssertEqual(
+            SSHHostKeyFailure(output: "Host key for example.com has changed and you have requested strict checking."),
+            .changed
+        )
+        for failure in [SSHHostKeyFailure.changed, .unverified] {
+            XCTAssertEqual(SSHHostKeyFailure(output: failure.message), failure)
+        }
+        for diagnostic in ["", "Connection refused", "No route to host", "Permission denied (publickey)."] {
+            XCTAssertNil(SSHHostKeyFailure(output: diagnostic))
+        }
+    }
+
+    func testVerificationCommandAsksForTrustWithoutShellForwardsOrControlReuse() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarVerification-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let identity = directory.appendingPathComponent("identity with 'quotes' and $(false)")
+        try Data().write(to: identity)
+        let tunnel = Tunnel(
+            name: "Verify",
+            localPort: 43_210,
+            destinationHost: "127.0.0.1",
+            destinationPort: 80,
+            sshHost: "guarded-master",
+            additionalArguments: [
+                "-p", "2222", "-l", "test-user",
+                "-i", identity.path,
+                "-J", "jump.example.test",
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no"
+            ]
+        )
+        let command = SSHCommandFormatter.hostKeyVerificationCommand(for: tunnel)
+        // Evaluate the copied shell text with real OpenSSH, offline. This checks
+        // both shell escaping and first-value option precedence against config.
+        let process = Process()
+        let response = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c", "exec /usr/bin/ssh -G -F \"$1\" " + command.dropFirst("ssh ".count),
+            "verify-test", hostileConfigurationURL.path
+        ]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = response
+        process.standardError = response
+        try process.run()
+        let output = String(
+            decoding: response.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        )
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0, output)
+        let lines = Set(output.split(separator: "\n").map(String.init))
+        for expected in [
+            "batchmode no", "stricthostkeychecking ask", "controlmaster false",
+            "controlpersist no", "clearallforwardings yes", "sessiontype none",
+            "requesttty false", "permitlocalcommand no", "forwardagent no",
+            "forwardx11 no", "forkafterauthentication no", "tunnel false",
+            "hostname target.example.test", "port 2222", "user test-user",
+            "identityfile \(identity.path)",
+            "proxyjump jump.example.test"
+        ] {
+            XCTAssertTrue(lines.contains(expected), "Missing \(expected): \(output)")
+        }
+        XCTAssertFalse(lines.contains { $0.hasPrefix("localforward ") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("remoteforward ") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("dynamicforward ") })
+        XCTAssertFalse(lines.contains { $0.hasPrefix("controlpath ") })
+    }
+
     func testBothMasterBuildersApplyEachEnforcedOptionExactlyOnce() throws {
         let socket = URL(fileURLWithPath: "/tmp/relaybar-master-policy/socket")
         let connectionArguments = [

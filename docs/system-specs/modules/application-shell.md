@@ -72,6 +72,15 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
 - A retrying row counts down the seconds until the next attempt against the
   retry deadline the store records when scheduling it, instead of freezing
   the delay that was current when the retry began.
+- A row failed by SSH host-key verification offers **Verify SSH Host Key…**
+  below its status and in its action menu. It opens instructions and offers
+  to copy an interactive
+  verification command using the profile's host and connection arguments,
+  including its port, user, identity, and jump host. The command asks before
+  trusting a key, creates no forwards or remote shell, and does not reuse a
+  control connection. The instructions tell the user to verify the fingerprint
+  independently, update the indicated saved entry only after verifying a
+  replacement key, press Control-C in Terminal, and start the profile again.
 - The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files row opens one 920 × 600 point resizable split workspace with

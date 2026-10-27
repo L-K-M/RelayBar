@@ -14,12 +14,13 @@
 - A helper's pipe handlers are detached before its remaining output is read, so one reader owns each descriptor. Output delivered after an operation completes is discarded rather than carried into the next operation.
 - A profile stays Starting until every rule succeeds. Any failure or timeout terminates the master and removes all forwards rather than publishing a partially running profile.
 - For each remote TCP port-`0` rule, the helper's numeric stdout is associated with that stable rule UUID. Non-numeric or ambiguous output fails startup.
-- Master standard input and output are discarded; the last 16 KiB of standard error is retained for status messages.
+- Master standard input and output are discarded; the last 16 KiB of standard error is retained for status messages. On exit, a nonblocking drain captures the queued stderr tail without waiting for inherited helper descriptors to close or accepting an unbounded stream of new output.
 - Local Unix listeners are preflighted before launch. RelayBar records the device and inode of sockets created by its rules and removes only a still-matching socket during cleanup.
 
 ## Recovery
 
-- Unexpected exits retry up to 10 times.
+- Unexpected exits retry up to 10 times, except recognized SSH host-key verification failures.
+- A host-key verification failure immediately changes the profile to failed, clears pending retries and browser launches, and does not restart on network changes. Its message distinguishes an unverified key from a changed saved key and points to **Verify SSH Host Key…** in the profile menu. After repairing trust, the user explicitly starts the profile again. RelayBar never approves or removes host keys, and the normal master's batch mode and host-key policy stay unchanged.
 - Delays are 1, 2, 4, 8, 16, 32, then 60 seconds for remaining attempts.
 - A successful complete profile resets the retry count.
 - Each retry creates a new control directory and clears prior runtime port allocations.

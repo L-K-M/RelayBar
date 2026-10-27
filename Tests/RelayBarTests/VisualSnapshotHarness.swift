@@ -13,6 +13,51 @@ final class VisualSnapshotHarness: XCTestCase {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] ?? "")
     }
 
+    func testCaptureHostKeyRecoverySnapshots() throws {
+        try XCTSkipIf(
+            ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] == nil,
+            "Set RELAYBAR_SNAPSHOT_DIR to capture snapshots."
+        )
+
+        let suiteName = "RelayBarHostKeySnapshot.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TunnelStore.makeForTesting(defaults: defaults)
+        let failures: [SSHHostKeyFailure] = [.unverified, .changed]
+        for (index, failure) in failures.enumerated() {
+            let tunnel = Tunnel(
+                name: failure == .unverified ? "Unverified Server" : "Changed Server Key",
+                localPort: 8_000 + index,
+                destinationHost: "localhost",
+                destinationPort: 3_000 + index,
+                sshHost: "preview-\(index + 1).example.com"
+            )
+            store.add(tunnel)
+            store.setPreviewPhase(.failed(failure.message), for: tunnel)
+        }
+
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearanceLabel = appearanceName == .aqua ? "light" : "dark"
+            for size in [NSSize(width: 380, height: 440), NSSize(width: 480, height: 720)] {
+                let sizeLabel = "\(Int(size.width))x\(Int(size.height))"
+                try capture(
+                    view: RelayBarRootView(
+                        loginItemService: LoginItemServiceSpy(status: .enabled),
+                        updateModel: previewUpdateModel(),
+                        backupModel: previewBackupModel()
+                    )
+                    .environmentObject(store),
+                    appearance: appearanceName,
+                    size: size,
+                    assertHorizontalContainment: true,
+                    to: outputDirectory.appendingPathComponent(
+                        "host-key-recovery-\(sizeLabel)-\(appearanceLabel).png"
+                    )
+                )
+            }
+        }
+    }
+
     func testCaptureTunnelListSnapshots() throws {
         try XCTSkipIf(
             ProcessInfo.processInfo.environment["RELAYBAR_SNAPSHOT_DIR"] == nil,
