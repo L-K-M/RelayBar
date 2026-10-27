@@ -81,6 +81,8 @@ RelayBar is a native macOS 13 or newer menu-bar application: an AppKit
   control connection. The instructions tell the user to verify the fingerprint
   independently, update the indicated saved entry only after verifying a
   replacement key, press Control-C in Terminal, and start the profile again.
+  An already-presented alert retains its host and instructions if the profile's
+  failure clears.
 - The list header reports the active tunnel count.
 - A labeled Remote Files row below the tunnel list opens or focuses one separate window.
 - The Remote Files row opens one 920 × 600 point resizable split workspace with

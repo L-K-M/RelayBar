@@ -1089,7 +1089,7 @@ final class TunnelStore: ObservableObject {
     private func processDidExit(id: UUID, status: Int32, process: Process) {
         guard processes[id] === process else { return }
         let startupMessage = startupFailureMessages.removeValue(forKey: id)
-        let message = startupMessage ?? errorMessage(for: id)
+        let message = startupMessage ?? finalizeMasterErrorMessage(for: id)
         cleanupRuntime(for: id, process: process)
 
         guard desiredTunnels[id] != nil else {
@@ -1107,7 +1107,8 @@ final class TunnelStore: ObservableObject {
         }
     }
 
-    private func errorMessage(for id: UUID) -> String {
+    /// Seals this launch's stderr capture. Call only after the master exits.
+    private func finalizeMasterErrorMessage(for id: UUID) -> String {
         guard
             let buffer = errorBuffers[id],
             let handle = errorPipes[id]?.fileHandleForReading

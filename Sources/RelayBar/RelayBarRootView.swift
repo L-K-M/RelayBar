@@ -569,9 +569,7 @@ private struct TunnelRow: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if let hostKeyFailure {
-                Text("\(tunnel.sshHost)\n\n\(hostKeyFailure.recoveryInstructions)")
-            }
+            Text("\(tunnel.sshHost)\n\n\(SSHHostKeyFailure.recoveryInstructions)")
         }
     }
 

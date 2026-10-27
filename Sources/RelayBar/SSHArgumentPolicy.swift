@@ -218,15 +218,17 @@ enum SSHHostKeyFailure: Equatable {
         }
     }
 
+    /// The failed phase stores this text, and the row parses it with init(output:).
+    /// Preserve that round trip when changing the copy; both cases have tests.
     var message: String {
         let reason = self == .changed
             ? "This server's saved host key has changed."
             : "SSH could not verify this server's host key."
         return "Host key verification failed. \(reason) "
-            + "Choose Verify SSH Host Key… from the profile menu."
+            + "Choose Verify SSH Host Key… from the action menu."
     }
 
-    var recoveryInstructions: String {
+    static let recoveryInstructions =
         """
         RelayBar cannot show SSH's trust prompt while connecting in the background.
 
@@ -236,5 +238,4 @@ enum SSHHostKeyFailure: Equatable {
 
         After verification, press Control-C in Terminal and start this profile again.
         """
-    }
 }

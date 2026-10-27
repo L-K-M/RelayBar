@@ -20,7 +20,7 @@ final class VisualSnapshotHarness: XCTestCase {
         )
 
         let suiteName = "RelayBarHostKeySnapshot.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = TunnelStore.makeForTesting(defaults: defaults)
         let failures: [SSHHostKeyFailure] = [.unverified, .changed]
