@@ -7,6 +7,22 @@ import Foundation
 /// explicitly (bare-port and `localhost` binds behave identically under the
 /// default `GatewayPorts=no`, and the importer normalizes to `localhost`).
 enum SSHCommandFormatter {
+    /// A foreground trust check must make a fresh connection and ask before
+    /// saving a key, even if the profile or SSH config would bypass the prompt.
+    static func hostKeyVerificationCommand(for tunnel: Tunnel) -> String {
+        let options = [
+            "BatchMode=no",
+            "StrictHostKeyChecking=ask",
+            "ControlMaster=no",
+            "ControlPath=none"
+        ] + SSHMasterPolicy.enforcedOptions.filter { $0 != "BatchMode=yes" }
+        let arguments = ["ssh", "-N", "-T"]
+            + options.flatMap { ["-o", $0] }
+            + tunnel.additionalArguments
+            + [tunnel.sshHost]
+        return arguments.map(shellQuoted).joined(separator: " ")
+    }
+
     static func command(for tunnel: Tunnel) -> String {
         var parts: [String] = ["ssh", "-N", "-T"]
         for rule in tunnel.rules {

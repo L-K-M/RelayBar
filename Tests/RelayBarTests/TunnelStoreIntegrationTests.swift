@@ -1135,6 +1135,146 @@ final class TunnelStoreIntegrationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.logURL.path))
     }
 
+    func testHostKeyFailureAfterAddressEditRequiresManualRecovery() async throws {
+        let errorFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarHostKeyError-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: errorFile) }
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE": errorFile.path]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let network = FakeNetworkPathObserver()
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 10,
+            retryDelay: 60,
+            browserOpener: { openedURLs.append($0) },
+            networkPathObserver: network
+        )
+        var tunnel = makeLocalProfile()
+        store.add(tunnel)
+        store.start(tunnel)
+        defer { store.stopAll() }
+        let initiallyRunning = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(initiallyRunning)
+
+        try Data("Host key verification failed.\n".utf8).write(to: errorFile)
+        tunnel.sshHost = "root@192.0.2.2"
+        store.update(tunnel)
+        let failed = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(failed, "Host-key failures must stop without spending the retry budget.")
+        guard case .failed(let message) = store.phase(for: tunnel) else { return }
+        XCTAssertTrue(message.contains("Verify SSH Host Key"))
+        XCTAssertFalse(message.contains("network changes"))
+        XCTAssertNil(store.retryDeadline(for: tunnel))
+        XCTAssertEqual(store.runningCount, 0)
+        XCTAssertEqual(store.runtimePorts(for: tunnel), [:])
+        XCTAssertTrue(openedURLs.isEmpty)
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
+            2
+        )
+        let invocations = parsedInvocations(
+            try String(contentsOf: fixture.logURL, encoding: .utf8)
+        )
+        XCTAssertEqual(invocations.last?.last, tunnel.sshHost)
+
+        // A network change cannot approve a key. Even after trust is repaired,
+        // the failed profile waits for the user's explicit start.
+        try FileManager.default.removeItem(at: errorFile)
+        network.simulateChange()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(store.phase(for: tunnel), .failed(message))
+        XCTAssertEqual(
+            masterInvocationCount(try String(contentsOf: fixture.logURL, encoding: .utf8)),
+            2
+        )
+        store.start(tunnel)
+        let recovered = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(recovered)
+        XCTAssertTrue(openedURLs.isEmpty)
+    }
+
+    func testHostKeyFailureDoesNotWaitForInheritedStderrToClose() async throws {
+        let errorFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarHostKeyError-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: errorFile) }
+        try Data("Host key verification failed.\n".utf8).write(to: errorFile)
+        let fixture = try makeFakeSSHFixture(overrides: [
+            "RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE": errorFile.path,
+            "RELAYBAR_FAKE_SSH_HOLD_STDERR_SECONDS": "3"
+        ])
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = makeFakeStore(defaults: defaults, fixture: fixture)
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+        let started = Date()
+        store.start(tunnel)
+        defer { store.stopAll() }
+        let failed = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(failed)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
+    func testChangedHostKeyDiagnosticIsPreservedBeyondStatusTail() async throws {
+        let errorFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RelayBarHostKeyError-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: errorFile) }
+        let verboseOutput = String(repeating: "debug1: authentication setup\n", count: 2_000)
+        try Data((verboseOutput + """
+        @ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @
+        Offending ED25519 key in /tmp/test_known_hosts:3
+        Host key for 192.0.2.2 has changed and you have requested strict checking.
+        Host key verification failed.
+
+        """).utf8).write(to: errorFile)
+        let fixture = try makeFakeSSHFixture(
+            overrides: ["RELAYBAR_FAKE_SSH_MASTER_ERROR_FILE": errorFile.path]
+        )
+        defer { fixture.cleanup() }
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var openedURLs: [URL] = []
+        let store = makeFakeStore(
+            defaults: defaults,
+            fixture: fixture,
+            maxRetryAttempts: 10,
+            retryDelay: 60,
+            browserOpener: { openedURLs.append($0) }
+        )
+        let tunnel = makeLocalProfile()
+        store.add(tunnel)
+        store.openInBrowser(tunnel)
+        defer { store.stopAll() }
+        let failed = await waitUntil {
+            if case .failed = store.phase(for: tunnel) { return true }
+            return false
+        }
+        XCTAssertTrue(failed)
+        guard case .failed(let message) = store.phase(for: tunnel) else { return }
+        XCTAssertTrue(message.contains("server's saved host key has changed"))
+        XCTAssertTrue(message.contains("Verify SSH Host Key"))
+        XCTAssertNil(store.retryDeadline(for: tunnel))
+
+        try FileManager.default.removeItem(at: errorFile)
+        store.start(tunnel)
+        let recovered = await waitUntil { store.phase(for: tunnel) == .running }
+        XCTAssertTrue(recovered)
+        XCTAssertTrue(openedURLs.isEmpty, "Failure must cancel a queued browser launch.")
+    }
+
     /// Task 049. Exhausting automatic retries posts one notification so a
     /// tunnel that gives up while the popover is closed is never silent.
     func testRetryExhaustionPostsAFailureNotification() async throws {

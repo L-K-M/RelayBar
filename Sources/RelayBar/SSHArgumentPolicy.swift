@@ -196,3 +196,45 @@ enum SSHMasterPolicy {
         ["-o", option]
     }
 }
+
+/// Host trust needs an explicit user decision; retries cannot repair it.
+enum SSHHostKeyFailure: Equatable {
+    case changed
+    case unverified
+
+    init?(output: String) {
+        let diagnostic = output.lowercased()
+        if diagnostic.contains("remote host identification has changed")
+            || diagnostic.contains("saved host key has changed")
+            || (diagnostic.contains("host key for ") && diagnostic.contains("has changed"))
+        {
+            self = .changed
+        } else if diagnostic.contains("host key verification failed")
+            || diagnostic.contains("host key is known for ")
+        {
+            self = .unverified
+        } else {
+            return nil
+        }
+    }
+
+    var message: String {
+        let reason = self == .changed
+            ? "This server's saved host key has changed."
+            : "SSH could not verify this server's host key."
+        return "Host key verification failed. \(reason) "
+            + "Choose Verify SSH Host Key… from the profile menu."
+    }
+
+    var recoveryInstructions: String {
+        """
+        RelayBar cannot show SSH's trust prompt while connecting in the background.
+
+        Copy the verification command and run it in Terminal. Compare the fingerprint with the one provided by your server provider or administrator before accepting it.
+
+        If SSH reports a changed key, verify the replacement before updating the indicated known_hosts entry.
+
+        After verification, press Control-C in Terminal and start this profile again.
+        """
+    }
+}

@@ -345,6 +345,7 @@ private struct TunnelRow: View {
 
     @State private var isNamingNewGroup = false
     @State private var isConfirmingDeletion = false
+    @State private var isShowingHostKeyRecovery = false
 
     var body: some View {
         VStack(spacing: 9) {
@@ -443,6 +444,11 @@ private struct TunnelRow: View {
                         }
                     }
                     Divider()
+                    if hostKeyFailure != nil {
+                        Button("Verify SSH Host Key…", systemImage: "key") {
+                            isShowingHostKeyRecovery = true
+                        }
+                    }
                     Button("Copy SSH Command", systemImage: "command") {
                         copy(SSHCommandFormatter.command(for: tunnel))
                     }
@@ -505,6 +511,17 @@ private struct TunnelRow: View {
                 )
             }
 
+            if hostKeyFailure != nil {
+                Button("Verify SSH Host Key…") {
+                    isShowingHostKeyRecovery = true
+                }
+                .font(.system(size: 11))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 19)
+            }
+
             if isNamingNewGroup {
                 Divider()
                 InlineGroupNameEditor(
@@ -546,6 +563,21 @@ private struct TunnelRow: View {
         } message: {
             Text(deletionPrompt.message)
         }
+        .alert("Verify SSH Host Key", isPresented: $isShowingHostKeyRecovery) {
+            Button("Copy Verification Command") {
+                copy(SSHCommandFormatter.hostKeyVerificationCommand(for: tunnel))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let hostKeyFailure {
+                Text("\(tunnel.sshHost)\n\n\(hostKeyFailure.recoveryInstructions)")
+            }
+        }
+    }
+
+    private var hostKeyFailure: SSHHostKeyFailure? {
+        guard case .failed(let message) = phase else { return nil }
+        return SSHHostKeyFailure(output: message)
     }
 
     private var deletionPrompt: TunnelDeletionPrompt {
